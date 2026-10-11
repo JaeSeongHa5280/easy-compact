@@ -26,25 +26,21 @@
 
 Windows only · Claude Code **2.1.295 or later**. The desktop app and the terminal share the same settings, so installing once works in both.
 
-**Claude desktop app (Code tab).** Send this to Claude in a Code session — it installs the plugin for you:
-
-```
-Install https://github.com/JaeSeongHa5280/easy-compact
-```
-
-Then quit the Claude app completely and open it again. The band appears above the input.
-(Typing `/plugin install …` in the desktop app opens the app's own plugin browser, which only shows marketplaces you've already added — so it can't find easy-compact the first time.)
-
-> **Note for Claude:** in the desktop app `claude` is usually not on PATH, so run the install with the running engine, in PowerShell: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. Check that `plugin list` shows `easy-compact@easy-compact` enabled, then ask the user to quit and reopen the app. Don't clone this repository or edit `settings.json`.
-
-**Terminal (`claude` CLI).** In a session, one line at a time:
+In Claude Code — the desktop app's Code tab or the terminal — type these one at a time:
 
 ```
 /plugin marketplace add JaeSeongHa5280/easy-compact
 /plugin install easy-compact@easy-compact
 ```
 
-or from your shell in one line: `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`, then start a new session.
+- **Desktop app:** the first line opens **Add marketplace** — click **Sync**. The red warning there is the standard notice for any marketplace Anthropic doesn't run. The second line opens easy-compact in the plugin list — install it.
+- **Terminal:** the second line opens the plugin's details — choose **Install for you**.
+
+Then quit the Claude app completely and open it again (or start a new `claude` session). The band appears above the input.
+
+**Or just ask Claude:** send `Install https://github.com/JaeSeongHa5280/easy-compact` in a Code session.
+
+> **Note for Claude:** in the desktop app `claude` is usually not on PATH, so run the install with the running engine, in PowerShell: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. Check that `plugin list` shows `easy-compact@easy-compact` enabled, then ask the user to quit and reopen the app. Don't clone this repository or edit `settings.json`.
 
 <details>
 <summary><b>Check · update · remove</b></summary>

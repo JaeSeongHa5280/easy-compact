@@ -26,25 +26,21 @@
 
 Windows 전용 · Claude Code **2.1.295 이상**. 데스크톱 앱과 터미널은 같은 설정을 써서, 한 곳에서 설치하면 둘 다 됩니다.
 
-**Claude 데스크톱 앱(Code 탭).** Code 세션의 Claude 에게 이렇게 보내세요 — 알아서 설치합니다.
-
-```
-https://github.com/JaeSeongHa5280/easy-compact 설치해줘
-```
-
-그다음 Claude 앱을 완전히 껐다 켭니다. 입력창 위에 띠가 뜹니다.
-(데스크톱 앱에서 `/plugin install …` 을 치면 앱 자체의 플러그인 창이 열리는데, 이미 추가한 마켓만 보여 줘서 처음엔 easy-compact 를 못 찾습니다.)
-
-> **Claude 에게:** 데스크톱 앱에선 보통 `claude` 가 PATH 에 없으니, PowerShell 에서 지금 도는 엔진으로 설치하세요: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. `plugin list` 에서 `easy-compact@easy-compact` 가 enabled 인지 보고, 앱을 완전히 껐다 켜 달라고 안내하세요. 이 저장소를 clone 하거나 `settings.json` 을 고치지 마세요.
-
-**터미널(`claude` CLI).** 세션 안에서 한 줄씩:
+Claude Code — 데스크톱 앱 Code 탭이든 터미널이든 — 에서 한 줄씩 입력하세요.
 
 ```
 /plugin marketplace add JaeSeongHa5280/easy-compact
 /plugin install easy-compact@easy-compact
 ```
 
-또는 셸에서 한 줄로 `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact` 뒤 새 세션을 엽니다.
+- **데스크톱 앱:** 첫 줄을 치면 **마켓플레이스 추가** 창이 뜹니다 — **동기화** 를 누르세요. 빨간 경고는 Anthropic 이 운영하지 않는 마켓이면 늘 뜨는 안내입니다. 둘째 줄을 치면 플러그인 목록에 easy-compact 가 보입니다 — 설치하세요.
+- **터미널:** 둘째 줄을 치면 플러그인 정보가 열립니다 — **Install for you** 를 고르세요.
+
+그다음 Claude 앱을 완전히 껐다 켜거나 새 `claude` 세션을 엽니다. 입력창 위에 띠가 뜹니다.
+
+**Claude 에게 맡겨도 됩니다:** Code 세션에 `https://github.com/JaeSeongHa5280/easy-compact 설치해줘` 를 보내세요.
+
+> **Claude 에게:** 데스크톱 앱에선 보통 `claude` 가 PATH 에 없으니, PowerShell 에서 지금 도는 엔진으로 설치하세요: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. `plugin list` 에서 `easy-compact@easy-compact` 가 enabled 인지 보고, 앱을 완전히 껐다 켜 달라고 안내하세요. 이 저장소를 clone 하거나 `settings.json` 을 고치지 마세요.
 
 <details>
 <summary><b>확인 · 업데이트 · 지우기</b></summary>
