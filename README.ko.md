@@ -24,30 +24,41 @@
 
 ## 설치
 
-Claude Code 입력창에 붙여 넣으세요 — 복사 버튼은 상자 오른쪽에 있습니다.
+데스크톱 앱과 터미널은 같은 설정을 써서, 한 곳에서 설치하면 둘 다 됩니다. Claude Code **2.1.295 이상**이 필요합니다.
+
+**Claude 데스크톱 앱(Code 탭).** 앱에서 `/plugin` 을 치면 앱 자체의 플러그인 창이 열리는데, 이미 추가한 마켓만 보여 줍니다 — 그래서 처음 한 번은 셸에서 추가합니다.
+
+Windows 라면 PowerShell 에 붙여 넣으세요(앱에 든 `claude` 를 씁니다).
+
+```powershell
+$c = Get-ChildItem "$env:APPDATA\Claude\claude-code\*\*\claude.exe" | Sort-Object LastWriteTime | Select-Object -Last 1; & $c.FullName plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact
+```
+
+또는 Code 세션에 이 문장을 붙여 넣어 Claude 에게 맡깁니다.
 
 ```
-/plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact
+easy-compact 플러그인을 설치해 줘: 셸에서 `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact` 를 실행하고, `claude` 가 PATH 에 없으면 Claude 데스크톱 앱에 든 것을 써(Windows 는 %APPDATA%\Claude\claude-code\ 아래). 끝나면 앱을 다시 켜라고 알려 줘.
 ```
 
-그다음 Claude 앱을 완전히 껐다 켜거나 새 `claude` 세션을 엽니다. 입력창 위에 띠가 뜹니다.
-Claude Code **2.1.295 이상**이 필요합니다.
+그다음 Claude 앱을 완전히 껐다 켭니다. 입력창 위에 띠가 뜹니다.
+
+**터미널(`claude` CLI).** 세션 안에서 한 줄씩:
+
+```
+/plugin marketplace add JaeSeongHa5280/easy-compact
+/plugin install easy-compact@easy-compact
+```
+
+또는 셸에서 한 줄로 `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact` 뒤 새 세션을 엽니다.
 
 <details>
-<summary><b>터미널에서 설치하거나 Claude 에게 맡길 때</b></summary>
+<summary><b>확인 · 업데이트 · 지우기</b></summary>
 
-같은 설치를 터미널 명령 한 줄로 — Claude 가 대신 실행할 수 있습니다.
+- **확인:** `claude plugin list` 에서 `easy-compact@easy-compact` 가 **enabled**. `claude --version` 이 2.1.295 보다 낮으면 먼저 `claude update`.
+- **업데이트:** `claude plugin update easy-compact@easy-compact` — Anthropic 밖 마켓은 자동 업데이트가 꺼져 있습니다(터미널 세션 `/plugin` → **Marketplaces** 에서 켤 수 있음).
+- **지우기:** `claude plugin uninstall easy-compact@easy-compact`
 
-```
-claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact --scope user
-```
-
-1. `claude --version` 이 2.1.295 보다 낮으면 먼저 `claude update`.
-2. `claude plugin list` 에서 `easy-compact@easy-compact` 가 **enabled** 인지 확인.
-3. Claude 앱을 다시 켜거나 새 `claude` 세션을 엽니다.
-
-이게 전부입니다 — `~/.claude` 에 clone 하거나 `settings.json` 을 고칠 필요가 없습니다.
-지우기: `claude plugin uninstall easy-compact@easy-compact`(또는 `/plugin uninstall easy-compact@easy-compact`)
+`~/.claude` 에 clone 하거나 `settings.json` 을 고칠 필요는 없습니다.
 
 </details>
 

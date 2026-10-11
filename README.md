@@ -24,30 +24,41 @@
 
 ## Install
 
-Paste this into Claude Code — the copy button is at the right of the box:
+The desktop app and the terminal share the same settings, so installing once works in both. Needs Claude Code **2.1.295 or later**.
+
+**Claude desktop app (Code tab).** In the app, `/plugin` opens the app's own plugin browser, which only lists marketplaces you've already added — so add this one from a shell once.
+
+On Windows, paste this into PowerShell (it uses the `claude` that comes with the app):
+
+```powershell
+$c = Get-ChildItem "$env:APPDATA\Claude\claude-code\*\*\claude.exe" | Sort-Object LastWriteTime | Select-Object -Last 1; & $c.FullName plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact
+```
+
+Or paste this into a Code session and let Claude do it:
 
 ```
-/plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact
+Install the easy-compact plugin: run `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact` in a shell. If `claude` is not on PATH, use the Claude desktop app's own copy (on Windows under %APPDATA%\Claude\claude-code\). Then tell me to restart the app.
 ```
 
-Then quit the Claude app completely and open it again (or start a new `claude` session). The band appears above the input.
-Needs Claude Code **2.1.295 or later**.
+Then quit the Claude app completely and open it again. The band appears above the input.
+
+**Terminal (`claude` CLI).** In a session, one line at a time:
+
+```
+/plugin marketplace add JaeSeongHa5280/easy-compact
+/plugin install easy-compact@easy-compact
+```
+
+or from your shell in one line: `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`, then start a new session.
 
 <details>
-<summary><b>From a terminal, or asking Claude to install it</b></summary>
+<summary><b>Check · update · remove</b></summary>
 
-The same install as one terminal command — Claude can run this for you:
+- **Check:** `claude plugin list` shows `easy-compact@easy-compact` as **enabled**. If `claude --version` is older than 2.1.295, run `claude update` first.
+- **Update:** `claude plugin update easy-compact@easy-compact` — marketplaces outside Anthropic's don't auto-update unless you turn it on (`/plugin` → **Marketplaces** in a terminal session).
+- **Remove:** `claude plugin uninstall easy-compact@easy-compact`
 
-```
-claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact --scope user
-```
-
-1. If `claude --version` is older than 2.1.295, run `claude update` first.
-2. Check with `claude plugin list` — `easy-compact@easy-compact` should say **enabled**.
-3. Restart the Claude app (or open a new `claude` session).
-
-That is all — no cloning into `~/.claude` and no `settings.json` edits.
-To remove it: `claude plugin uninstall easy-compact@easy-compact` (or `/plugin uninstall easy-compact@easy-compact`).
+No cloning into `~/.claude` and no `settings.json` edits are needed.
 
 </details>
 
