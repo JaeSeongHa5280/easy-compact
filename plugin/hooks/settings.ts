@@ -1,7 +1,7 @@
 // 설정: 컴팩트 시점(구간 · 직접 지정) · 캐시 경고 · 정리 후 컴팩트 문구.
 //
 // 값은 $.store 'settings' 한 곳(모든 세션이 같이 쓰고 앱을 껐다 켜도 남는다). 화면(사용량 패널 안 설정)과
-// /easy-compact 명령이 같은 함수를 부른다. 숫자는 ◀ ▶ · −/+ 단계로, 직접 쓰는 컴팩트 문구는 입력칸이나 명령으로 받는다.
+// (숨은) /easy-compact 명령이 같은 함수를 부른다. 숫자는 ◀ ▶ · −/+ 단계로, 직접 쓰는 컴팩트 문구는 입력칸으로 받는다.
 //
 // 예전엔 기준 프리셋(빡빡하게 · 기본 · 느슨하게 · 내 프리셋)과 자동(내 질문 값 분포)이 있었다. 기준이 습관 따라 움직이고
 // 공유하면 남의 값이 되는 문제로 뺐다 — 권장 크기 하나를 계산식 최적이 따라가거나 손으로 고정한다.
@@ -145,8 +145,8 @@ export function paneAutoUse(isOn: boolean): string {
   return isOn
     ? L('새 세션은 사용량 패널을 연 채로 시작합니다. 그 뒤 닫으면 닫힌 채로 둡니다.', 'New sessions start with the Usage pane open. Once you close it, it stays closed.')
     : L(
-        `새 세션은 패널이 닫힌 채로 시작합니다. 바의 ${onTerminal() ? '사용량 패널' : '📊'} 버튼 · /easy-compact 패널 로 엽니다.`,
-        `New sessions start with the pane closed. Open it with the ${onTerminal() ? 'Usage pane' : '📊'} button on the bar or /easy-compact panel.`,
+        `새 세션은 패널이 닫힌 채로 시작합니다. 바의 ${onTerminal() ? '사용량 패널' : '📊'} 버튼으로 엽니다.`,
+        `New sessions start with the pane closed. Open it with the ${onTerminal() ? 'Usage pane' : '📊'} button on the bar.`,
       )
 }
 

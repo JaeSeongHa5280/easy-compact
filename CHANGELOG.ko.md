@@ -4,6 +4,12 @@ easy-compact 의 판마다 바뀐 것입니다. 판 번호는 [유의적 버전]
 
 **새 판 받기:** `claude plugin marketplace update easy-compact` → `claude plugin update easy-compact@easy-compact` → Claude 다시 켜기 — [새 판 받기](README.ko.md#새-판-받기) 참고.
 
+## [0.3.1] — 2026-10-12
+
+### 바뀜
+- **명령은 `/easy-compact 보이기` · `안보이기` 둘만 보입니다** — 입력 메뉴 · 도움말 · README 에서 나머지를 뺐습니다. 크기 · 자동 숨김 · 패널 · 설정은 바의 버튼과 ⚙ 설정 탭에서 합니다(버튼은 대화 기록에 안 남아 토큰이 들지 않습니다). 예전 명령은 지우지 않아 쳐도 그대로 됩니다.
+- README 맨 위 GIF 와 기능 그림을 0.3.0 화면(창 버튼 · 접힘 버튼 · 회색 / 파랑 🗜)으로 새로 만들었습니다. 바를 끈 뒤 다시 켜는 법 그림을 더했습니다.
+
 ## [0.3.0] — 2026-10-12
 
 ### 새로 생김
@@ -37,6 +43,7 @@ easy-compact 의 판마다 바뀐 것입니다. 판 번호는 [유의적 버전]
 
 첫 공개: 입력창 위 띠(요금제 사용량 · 요청당 값 · 컨텍스트 · 컴팩트 구간 · 캐시), 사용량 패널(질문 · 동작별 비용, 컨텍스트 흐름, 컴팩트 효과), 비용표로 컴팩트 시점 고르기, 클릭 한 번 *저장하고 컴팩트*.
 
+[0.3.1]: https://github.com/JaeSeongHa5280/easy-compact/releases/tag/v0.3.1
 [0.3.0]: https://github.com/JaeSeongHa5280/easy-compact/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JaeSeongHa5280/easy-compact/tree/v0.2.0
 [0.1.0]: https://github.com/JaeSeongHa5280/easy-compact/tree/v0.1.0

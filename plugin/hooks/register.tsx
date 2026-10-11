@@ -1217,8 +1217,8 @@ const bandHelp = () =>
   )
 
 /**
- * 띠 단축 명령 — 도움말 · 슬래시 메뉴 맨 앞에 두는 것들(띠가 거슬린다는 말에서): 보이기 · 안보이기, 자동숨김 켜기 · 끄기,
- * 최소 · 최대, 패널 열기 · 닫기. 동사와 인자는 띄어쓰기를 무시하고 읽는다("자동 숨김 켜기" · "안 보이기"). 단축 명령이
+ * 띠 단축 명령 — 보이기 · 안보이기(메뉴 · 도움말에 보이는 건 이 둘뿐), 그리고 숨은 명령 자동숨김 켜기 · 끄기,
+ * 최소 · 최대, 패널 열기 · 닫기(바의 버튼과 같은 일 — 테스트가 쓴다). 동사와 인자는 띄어쓰기를 무시하고 읽는다("자동 숨김 켜기" · "안 보이기"). 단축 명령이
  * 아니면 null. 크기 · 자동 숨김을 고르면 안 보이기도 푼다 — 보려고 고른 것이라
  */
 async function bandShortcut($: EngineInterface, verb: string, rest: string): Promise<string | null> {
@@ -1388,45 +1388,16 @@ async function settingsCommand($: EngineInterface, verb: string, rest: string): 
   return null
 }
 
+/** 도움말 — 남은 명령 둘과, 나머지는 어디서 하는지. 명령 출력은 기록에 남아 다음 요청이 같이 읽으니 짧게 */
 const help = () =>
   L(
     [
-      '[이지 컴팩트 바 단축 명령] 모든 세션에 바로 적용 · 앱을 껐다 켜도 남음 — 영어도 됨: show | hide | auto on|off | min | max | panel',
-      '/easy-compact 보이기 | 안보이기         입력창 위 이지 컴팩트 바 늘 보이기(자동 숨김도 끔) · 끄기 — 끄기는 바의 ✕ 버튼',
-      `/easy-compact 자동숨김 켜기 | 끄기      컴팩트 구간 시작(노랑) 전엔 바를 접었다가 그때 보임 — 바의 ⇲ 버튼, 접힌 동안 입력창 아래 [${revealLabel(false)}] 로 펴기(켜기 · 끄기 없이 치면 번갈아)`,
-      '/easy-compact 최소 | 최대               바 크기: 한 줄 · 세 줄 — 바의 — / □ 버튼',
-      '/easy-compact 패널 [열기 | 닫기]        오른쪽 사용량 패널(바가 없을 때도, 열기 · 닫기 없이 치면 번갈아)',
-      '/easy-compact 패널 자동 켜기 | 끄기     새 세션에서 사용량 패널 자동으로 열기(기본 끔)',
-      '/easy-compact 패널 같이 켜기 | 끄기     한 세션에서 열고 닫으면 다른 데스크톱 세션도 같이(기본 켬)',
-      '',
-      '[설정]',
-      '/easy-compact settings   사용량 패널의 설정 탭 열기',
-      '/easy-compact set 권장 <크기|구간>   컴팩트 크기 직접 지정(예: set 권장 30만) · 구간 방식(set 권장 구간)',
-      '/easy-compact set 구간 <시작> <끝>   컴팩트 구간(예: set 구간 15만 25만) — 시작부터 노랑, 끝부터 빨강',
-      '/easy-compact set 캐시 <분>   캐시 남은 분이 이보다 적으면 노랑',
-      '/easy-compact 문구 <일반|긴 세션 이어가기|마무리|직접|직접 쓸 글>   저장하고 컴팩트 문구',
-      '/easy-compact 칸 <이름> <켜기|끄기>   최대 크기의 칸(5시간 · 7일 · 리셋 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문, 모두)',
-      '/easy-compact lang <auto|ko|en>   화면 언어(자동 = Claude 설정 → 앱 언어 → OS 언어)',
-      '/easy-compact            사용량 · 세션 기록(컨텍스트 흐름) 다시 읽기',
+      '/easy-compact 보이기 | 안보이기   입력창 위 이지 컴팩트 바 켜기 · 끄기(모든 세션) — 영어: show | hide',
+      `나머지는 바의 버튼: 📊 사용량 패널(⚙ 설정 탭) · ⇲ 자동 숨김 · — / □ 한 줄 / 전체 · ✕ 끄기. 접히거나 꺼 두면 입력창 아래 [${revealLabel(false)}]`,
     ].join('\n'),
     [
-      '[Easy Compact bar shortcuts] apply to every session at once and stay after a restart',
-      '/easy-compact show | hide          always show the Easy Compact bar above the input (auto-hide off too) · turn it off — the ✕ button',
-      `/easy-compact auto on | off        auto-hide until the start of the compact range (yellow) — the ⇲ button; while folded, [${revealLabel(false)}] below the input unfolds it (without on/off it toggles)`,
-      '/easy-compact min | max            bar size: one line · three rows — the — / □ button',
-      '/easy-compact panel [open | close] the Usage pane on the right, even with no bar (without open/close it toggles)',
-      '/easy-compact panel auto on | off  open the Usage pane by itself in new sessions (off by default)',
-      '/easy-compact panel share on | off opening or closing it in one session does the same in the other desktop sessions (on by default)',
-      '',
-      '[Settings]',
-      '/easy-compact settings   open the Settings tab of the Usage pane',
-      '/easy-compact set compact <size|range>   set a compact size (e.g. set compact 300k) · range mode (set compact range)',
-      '/easy-compact set range <start> <end>   compact range (e.g. set range 150k 250k) — yellow from start, red from end',
-      '/easy-compact set cache <minutes>   yellow when fewer cache minutes remain',
-      '/easy-compact prompt <Normal|Long-session handoff|Wrap-up|Custom|your own text>   Save & compact text',
-      '/easy-compact band <part> <on|off>   parts shown at Full size (5h · 7d · reset · request · context · range · cache · question, all)',
-      '/easy-compact lang <auto|ko|en>   display language (auto = Claude settings → app language → OS language)',
-      '/easy-compact            re-read usage · the session transcript (context flow)',
+      '/easy-compact show | hide   turn the Easy Compact bar above the input on or off (every session)',
+      `Everything else is on the bar's buttons: 📊 Usage pane (⚙ Settings tab) · ⇲ auto-hide · — / □ one line / full · ✕ off. When folded or off: [${revealLabel(false)}] below the input`,
     ].join('\n'),
   )
 
@@ -1457,14 +1428,10 @@ export const register: Register = on => {
     await ensureLang($)
     await $.command.register({
       name: 'easy-compact',
-      description: L(
-        '입력창 위 바 보이기 · 안보이기 · 자동숨김 켜기|끄기 · 최소 · 최대 · 패널 열기|닫기, 그리고 컴팩트 설정(settings · set · 문구)',
-        'Bar above the input: show · hide · auto on|off (auto-hide) · min · max · panel open|close, plus compact settings (settings · set · prompt)',
-      ),
-      argumentHint: L(
-        '[보이기 | 안보이기 | 자동숨김 켜기|끄기 | 최소 | 최대 | 패널 | settings | set … | 문구 … | 칸 <이름> 켜기|끄기 | lang]',
-        '[show | hide | auto on|off | min | max | panel | settings | set … | prompt … | band <part> on|off | lang]',
-      ),
+      // 메뉴 · 도움말엔 보이기 · 안보이기만 — 나머지는 바의 버튼 · 설정 탭이 다 한다(버튼은 기록에 안 남아 토큰 0).
+      // 그 밖의 명령(패널 · settings · set · 문구 · 칸 · lang · 최소 · 최대 · 자동숨김 · 다시 읽기)은 지우지 않고 숨긴다 — 테스트가 쓴다
+      description: L('입력창 위 이지 컴팩트 바 보이기 · 안보이기 — 나머지는 바의 버튼', 'Show or hide the Easy Compact bar above the input — everything else is on its buttons'),
+      argumentHint: L('[보이기 | 안보이기]', '[show | hide]'),
     })
     // 재로드도 session.start 다 — 여기서 턴 비용을 세면 턴이 아닌 구간이 섞인다
     await refreshUsage($, { categories: false, pushHistory: false })
@@ -1750,14 +1717,14 @@ export const register: Register = on => {
     const rest = args.slice(verb.length).trim()
     const settingsReply = await settingsCommand($, verb, rest)
     if (settingsReply !== null) return { text: settingsReply }
-    // 보이기 · 안보이기 · 필요할때만 · 최소 · 최대 · 패널(usage)은 settingsCommand 의 bandShortcut 이 받는다
+    // 보이기 · 안보이기(와 숨은 명령 — 최소 · 최대 · 자동숨김 · 패널)는 settingsCommand 의 bandShortcut 이 받는다
     if (['?', 'help', '-h', '--help', '도움말'].includes(verb.toLowerCase())) return { text: help() }
-    // 모르는 말엔 한 줄만 — 명령 출력은 대화 기록에 남아 다음 요청이 같이 읽는다(도움말 전체는 수백 토큰)
+    // 모르는 말엔 한 줄만 — 명령 출력은 대화 기록에 남아 다음 요청이 같이 읽는다
     if (verb !== '')
       return {
         text: L(
-          `모르는 명령입니다. 단축: 보이기 · 안보이기 · 자동숨김 켜기|끄기 · 최소 · 최대 · 패널 — 전체: /easy-compact ?`,
-          `Unknown command. Shortcuts: show · hide · auto on|off · min · max · panel — all: /easy-compact ?`,
+          '모르는 명령입니다. 명령은 /easy-compact 보이기 · 안보이기 — 나머지는 바의 버튼(📊 패널 · ⚙ 설정 탭)',
+          'Unknown command. Commands: /easy-compact show · hide — everything else is on the bar (📊 pane · ⚙ Settings tab)',
         ),
       }
     // 흐름 먼저 — 사용량은 컴팩트 직후인지를 흐름에서 본다

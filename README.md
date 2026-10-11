@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.3.0-4c9be8" alt="Version 0.3.0">
+  <img src="https://img.shields.io/badge/version-0.3.1-4c9be8" alt="Version 0.3.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/tested_on-Windows-4c9be8" alt="Tested on Windows">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-030">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#commands">Commands</a>
+  <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-030">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a>
 </p>
 
 ---
@@ -148,13 +148,13 @@ flowchart LR
 
 ### 5. Usage pane
 
-Open it with **📊** on the bar (or `/easy-compact panel`): cost per question and step, the context flow, and what each compact saved. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Usage pane**.
+Open it with **📊** on the bar: cost per question and step, the context flow, and what each compact saved. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Usage pane**.
 
 ### 6. Terminal too
 
 <img src="docs/img/terminal.png" width="900" alt="The same bar and Usage pane in the Claude Code terminal">
 
-**The same bar and Usage pane in the CLI.** Open the pane with `/easy-compact panel`.
+**The same bar and Usage pane in the CLI.** To press the bar's buttons, press ctrl+x tab to move into the bar (or click, in fullscreen mode).
 
 ## Hide, fold, bring it back
 
@@ -167,39 +167,11 @@ The window buttons sit at the top right of the bar. Every choice applies to all 
 | **✕** off | Turns the bar off in every session — a pause before you decide to uninstall | Press **🔽 Easy Compact closed ⇱** (grey) below the input, or type `/easy-compact show` |
 | **📊** | Opens or closes the Usage pane | Press it again |
 
-**Buttons cost nothing.** Typed commands don't call the model either, but the command and its one-line answer stay in the conversation, so they are re-sent with your next request (a few hundred tokens). Prefer the buttons when you can.
+<img src="docs/img/fold.png" width="900" alt="After turning the bar off: a note on how to turn it back on, and the grey Easy Compact closed button below the input">
 
-## Commands
+**There are only two commands: `/easy-compact show` · `hide`** — use `show` to turn the bar back on after turning it off. Everything else is on the bar's buttons and the **⚙ Settings** tab of the 📊 pane. Settings sections start folded, with the current value on each title.
 
-Everything below is also a button on the bar or in Settings — Settings sections start folded, with the current value on each title.
-
-| Shortcut | What it does |
-|---|---|
-| `/easy-compact show` · `hide` | Always show the bar (turns auto-hide off too) · turn it off |
-| `/easy-compact auto on` · `auto off` | Auto-hide (without `on` / `off` it toggles) |
-| `/easy-compact min` · `max` | Bar size: one line · full |
-| `/easy-compact panel` | Open · close the Usage pane (`panel open` · `panel close`) |
-
-Korean words work too: `보이기` `안보이기` `자동숨김 켜기` `자동숨김 끄기` `최소` `최대` `패널`.
-
-<details>
-<summary><b>All commands</b></summary>
-
-| Command | What it does |
-|---|---|
-| `/easy-compact panel auto on \| off` | Open the Usage pane by itself in new sessions (off by default). Once you close it, it stays closed |
-| `/easy-compact panel share on \| off` | Opening or closing the pane in one desktop session does the same in the other open ones (on by default) |
-| `/easy-compact settings` | Open the Settings tab |
-| `/easy-compact set range <start> <end>` | Compact range, e.g. `set range 250k 300k` |
-| `/easy-compact set compact <size>` | A fixed compact size (100k–1M) |
-| `/easy-compact set compact range` | Back to range mode |
-| `/easy-compact set cache <minutes>` | Warn when this much cache time is left |
-| `/easy-compact prompt <Normal \| Long-session handoff \| Wrap-up \| Custom \| your text>` | Save & compact text |
-| `/easy-compact band <part> <on \| off>` | Parts of the full bar: `5h` `7d` `reset` `request` `context` `range` `cache` `question` (`all` for every part) |
-| `/easy-compact lang <auto \| ko \| en>` | Display language |
-| `/easy-compact help` | This list in the session |
-
-</details>
+**Buttons cost nothing.** Typed commands don't call the model either, but the command and its one-line answer stay in the conversation, so they are re-sent with your next request.
 
 ## Good to know
 

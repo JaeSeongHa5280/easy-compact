@@ -1,6 +1,6 @@
 {
   "name": "easy-compact",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "The Easy Compact bar above the input and a Usage pane for Claude Code: live context, cost and plan limits, when to compact, and one-click Save & compact. Tested on Windows.",
   "types": "./types/index.d.ts",
   "author": {

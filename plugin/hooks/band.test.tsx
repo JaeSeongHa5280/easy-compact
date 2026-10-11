@@ -2687,9 +2687,13 @@ test('띠 단축 명령: 최소 ↔ 최대(띠 버튼 · 명령), 필요할 때�
   await footer.press({ key: 'band-reveal' })
   expect(store.get('settings')).toMatchObject({ bandHidden: false, bandAuto: false })
 
-  // 모르는 말엔 한 줄만(명령 출력은 대화 기록에 남는다) — 전체 도움말은 ?
-  expect(await run('이거 스킬처럼 입력하니깐')).toMatch(/^모르는 명령입니다\. 단축: .* 전체: \/easy-compact \?$/)
-  expect(await run('?')).toMatch(/^\[이지 컴팩트 바 단축 명령\]/)
+  // 모르는 말엔 한 줄만(명령 출력은 대화 기록에 남는다) — 사람에게 보이는 명령은 보이기 · 안보이기뿐, 나머지는 바의 버튼
+  expect(await run('이거 스킬처럼 입력하니깐')).toBe('모르는 명령입니다. 명령은 /easy-compact 보이기 · 안보이기 — 나머지는 바의 버튼(📊 패널 · ⚙ 설정 탭)')
+  const help = await run('?')
+  expect(help).toMatch(/^\/easy-compact 보이기 \| 안보이기 /)
+  expect(help.split('\n').length).toBe(2)
+  // 숨은 명령(테스트 · 예전 사용법)은 도움말에 안 나온다
+  for (const hidden of ['최소', '최대 ', 'settings', 'set ', '문구', 'lang', '자동숨김']) expect(help.includes(hidden)).toBe(false)
   // 예전 이름(툴바)으로 쳐도 칸 명령
   expect(await run('툴바')).toMatch(/^이지 컴팩트 바: 늘 보이기 · 최대/)
 })

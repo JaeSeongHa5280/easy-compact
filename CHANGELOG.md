@@ -4,6 +4,12 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** `claude plugin marketplace update easy-compact`, then `claude plugin update easy-compact@easy-compact`, then restart Claude — see [Update](README.md#update).
 
+## [0.3.1] — 2026-10-12
+
+### Changed
+- **Only two commands are listed: `/easy-compact show` · `hide`.** The rest are gone from the slash menu, the help and the README — size, auto-hide, the pane and settings are on the bar's buttons and the ⚙ Settings tab (buttons leave nothing in the conversation, so they cost no tokens). The old commands still work if you type them.
+- New README GIF and feature images for the 0.3.0 screens (window buttons, fold button, grey / blue 🗜), plus a picture of how to turn the bar back on.
+
 ## [0.3.0] — 2026-10-12
 
 ### Added
@@ -37,6 +43,7 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 First public release: the band above the input (plan usage, per-request cost, context, compact range, cache), the Usage pane (cost per question and step, context flow, compact effect), compact timing from a cost table, and one-click *Save & compact*.
 
+[0.3.1]: https://github.com/JaeSeongHa5280/easy-compact/releases/tag/v0.3.1
 [0.3.0]: https://github.com/JaeSeongHa5280/easy-compact/releases/tag/v0.3.0
 [0.2.0]: https://github.com/JaeSeongHa5280/easy-compact/tree/v0.2.0
 [0.1.0]: https://github.com/JaeSeongHa5280/easy-compact/tree/v0.1.0
