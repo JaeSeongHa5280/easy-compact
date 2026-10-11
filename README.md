@@ -41,13 +41,18 @@ Then quit the Claude app completely and open it again (or start a new `claude` s
 
 **Or just ask Claude:** send `Install https://github.com/JaeSeongHa5280/easy-compact` in a Code session.
 
-> **Note for Claude:** in the desktop app `claude` is usually not on PATH, so run the install with the running engine, in PowerShell: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. Check that `plugin list` shows `easy-compact@easy-compact` enabled, then ask the user to quit and reopen the app. Don't clone this repository or edit `settings.json`.
+> **Note for Claude:** in the desktop app `claude` is usually not on PATH, so run the install with the running engine, in PowerShell: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. Check that `plugin list` shows `easy-compact@easy-compact` enabled, then ask the user to quit and reopen the app. Don't clone this repository or edit `settings.json`. To update an existing install, run `plugin marketplace update easy-compact` first, then `plugin update easy-compact@easy-compact` (same engine path) — without the first step it reports the old version as the latest.
 
 <details>
 <summary><b>Check · update · remove</b></summary>
 
 - **Check:** `claude plugin list` shows `easy-compact@easy-compact` as **enabled**. If `claude --version` is older than 2.1.295, run `claude update` first.
-- **Update:** `claude plugin update easy-compact@easy-compact` — marketplaces outside Anthropic's don't auto-update unless you turn it on (`/plugin` → **Marketplaces** in a terminal session).
+- **Update:** fetch the new list first, then update, then restart Claude:
+  ```
+  claude plugin marketplace update easy-compact
+  claude plugin update easy-compact@easy-compact
+  ```
+  Typing the install line again only says it is already installed, and `plugin update` alone reports the old version as the latest — marketplaces outside Anthropic's don't refresh on their own. In the desktop app you can also send `Update https://github.com/JaeSeongHa5280/easy-compact` to Claude in a Code session.
 - **Remove:** `claude plugin uninstall easy-compact@easy-compact`
 
 No cloning into `~/.claude` and no `settings.json` edits are needed.

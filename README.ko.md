@@ -41,13 +41,18 @@ Claude Code — 데스크톱 앱 Code 탭이든 터미널이든 — 에서 한 �
 
 **Claude 에게 맡겨도 됩니다:** Code 세션에 `https://github.com/JaeSeongHa5280/easy-compact 설치해줘` 를 보내세요.
 
-> **Claude 에게:** 데스크톱 앱에선 보통 `claude` 가 PATH 에 없으니, PowerShell 에서 지금 도는 엔진으로 설치하세요: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. `plugin list` 에서 `easy-compact@easy-compact` 가 enabled 인지 보고, 앱을 완전히 껐다 켜 달라고 안내하세요. 이 저장소를 clone 하거나 `settings.json` 을 고치지 마세요.
+> **Claude 에게:** 데스크톱 앱에선 보통 `claude` 가 PATH 에 없으니, PowerShell 에서 지금 도는 엔진으로 설치하세요: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. `plugin list` 에서 `easy-compact@easy-compact` 가 enabled 인지 보고, 앱을 완전히 껐다 켜 달라고 안내하세요. 이 저장소를 clone 하거나 `settings.json` 을 고치지 마세요. 이미 설치된 것을 업데이트할 땐 같은 엔진 경로로 `plugin marketplace update easy-compact` 를 먼저, 그다음 `plugin update easy-compact@easy-compact` — 첫 단계 없이는 옛 판을 최신이라고 답합니다.
 
 <details>
 <summary><b>확인 · 업데이트 · 지우기</b></summary>
 
 - **확인:** `claude plugin list` 에서 `easy-compact@easy-compact` 가 **enabled**. `claude --version` 이 2.1.295 보다 낮으면 먼저 `claude update`.
-- **업데이트:** `claude plugin update easy-compact@easy-compact` — Anthropic 밖 마켓은 자동 업데이트가 꺼져 있습니다(터미널 세션 `/plugin` → **Marketplaces** 에서 켤 수 있음).
+- **업데이트:** 마켓 목록을 먼저 새로 받고, 업데이트한 뒤, Claude 를 다시 켭니다.
+  ```
+  claude plugin marketplace update easy-compact
+  claude plugin update easy-compact@easy-compact
+  ```
+  설치 줄을 다시 치면 "이미 설치됨"만 나오고, `plugin update` 만 치면 옛 판을 최신이라고 답합니다 — Anthropic 밖 마켓은 목록을 스스로 새로 받지 않습니다. 데스크톱 앱에선 Code 세션에 `https://github.com/JaeSeongHa5280/easy-compact 업데이트해줘` 를 보내도 됩니다.
 - **지우기:** `claude plugin uninstall easy-compact@easy-compact`
 
 `~/.claude` 에 clone 하거나 `settings.json` 을 고칠 필요는 없습니다.
