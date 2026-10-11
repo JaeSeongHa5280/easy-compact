@@ -1,0 +1,15 @@
+{
+  "name": "easy-compact",
+  "owner": {
+    "name": "JaeSeongHa5280"
+  },
+  "description": "easy-compact — see what every request costs, know when to compact, and compact in one click.",
+  "plugins": [
+    {
+      "name": "easy-compact",
+      "source": "./plugin",
+      "description": "A band above the input and a Usage pane for Claude Code: live context, cost and plan limits, when to compact, and one-click Save & compact.",
+      "version": "0.1.0"
+    }
+  ]
+}

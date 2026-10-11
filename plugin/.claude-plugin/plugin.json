@@ -1,0 +1,11 @@
+{
+  "name": "easy-compact",
+  "version": "0.1.0",
+  "description": "A band above the input and a Usage pane for Claude Code: live context, cost and plan limits, when to compact, and one-click Save & compact.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "JaeSeongHa5280"
+  },
+  "homepage": "https://github.com/JaeSeongHa5280/easy-compact",
+  "license": "MIT"
+}
