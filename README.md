@@ -90,9 +90,9 @@ Claude Code re-reads the whole context on every request — a session at 300k pa
 | *"Compact now or later?"* | 🟡 **Good time** · 🔴 **Overdue** · grey 🗜 = not yet |
 | *"Where were we?"* after a compact | **Next steps kept** in the summary |
 
-## Demo · 45 s
+## Demo · 58 s
 
-https://github.com/user-attachments/assets/cd8fd962-4361-4056-9372-fa321d3dda42
+https://github.com/user-attachments/assets/265a46aa-b564-4041-98d1-a458c4a27d83
 
 ## Features
 

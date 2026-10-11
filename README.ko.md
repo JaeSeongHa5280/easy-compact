@@ -90,9 +90,9 @@ Claude Code 는 요청마다 컨텍스트 전체를 다시 읽습니다. 300k �
 | *"지금 컴팩트할까, 나중에?"* | 🟡 **좋은 때** · 🔴 **늦어짐** · 회색 🗜 = 아직 |
 | 컴팩트 뒤 *"어디까지 했더라?"* | 요약에 **이어서 할 일**이 남음 |
 
-## 데모 · 45초
+## 데모 · 58초
 
-https://github.com/user-attachments/assets/cd8fd962-4361-4056-9372-fa321d3dda42
+https://github.com/user-attachments/assets/265a46aa-b564-4041-98d1-a458c4a27d83
 
 ## 기능
 
