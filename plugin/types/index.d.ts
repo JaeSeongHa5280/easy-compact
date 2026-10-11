@@ -35,19 +35,32 @@ export type Settings = {
    * 영어. ko · en 은 고정 — 감지가 빗나갈 때(CLI 만 쓰고 아무것도 안 정한 경우 등) 설정 탭 맨 위 줄에서 바꾼다
    */
   lang: 'auto' | 'ko' | 'en'
-  /** 입력창 위 띠 보기(BandMode). 띠 오른쪽 위 버튼(전체 ↔ 최소화) · 설정 탭 · /easy-compact band 로 바꾼다 */
+  /** 입력창 위 띠 크기(BandMode). 띠 오른쪽 위 버튼(▾ 최소 / ▴ 최대) · 설정 탭 · /easy-compact 최소|최대 로 바꾼다 */
   band: BandMode
-  /** 전체 보기 띠에 보일 칸 — 설정 탭 "UI 레이아웃 상세 조정". 끈 칸은 빠지고, 칸이 다 빠진 비용 줄은 줄째 빠진다 */
+  /**
+   * 필요할 때만: 켜면 컨텍스트가 컴팩트 구간 시작(노랑)에 닿기 전엔 띠를 아예 안 그린다(입력창 위 자리가 빈다). 닿으면 고른
+   * 크기로 나오고, 최소여도 이지 컴팩트 버튼이 붙는다. 크기와 따로 켜고 끈다
+   */
+  bandAuto: boolean
+  /** 안 보이기: 모든 세션에서 띠를 끈다(보이기 전까지). 사용량 패널은 /easy-compact 패널 로 연다 */
+  bandHidden: boolean
+  /** 최대(전체) 띠에 보일 칸 — 설정 탭 "UI 레이아웃 상세 조정". 끈 칸은 빠지고, 칸이 다 빠진 비용 줄은 줄째 빠진다 */
   bandShow: BandShow
+  /**
+   * 사용량 패널: 새 세션에서 자동으로 열기(기본 끔). 그 뒤 닫으면 그대로. 예전엔 다른 세션이 연 값을 따라 새 세션에 들어가
+   * 채팅만 쳐도 패널이 저절로 열렸다
+   */
+  paneAutoOpen: boolean
+  /** 사용량 패널: 모든 데스크톱 세션 같이 열고 닫기(기본 끔) — 사람이 연 · 닫은 것을 떠 있는 다른 데스크톱 세션이 따라 한다. 터미널은 늘 혼자 */
+  paneShared: boolean
 }
 
 /**
- * 띠 보기. full = 전체(한도 · 비용 · 질문 세 줄 + 이지 컴팩트 버튼), min = 한 줄(요청당 · 컨텍스트 · 컴팩트 구간 + 사용량
- * 패널 버튼 — 이지 컴팩트 버튼 · 캐시 · 한도 · 질문 줄은 뺀다), auto = 컴팩트할 때만: 컨텍스트가 컴팩트 구간 시작(노랑)에
- * 닿기 전엔 띠를 아예 안 그려 입력창 위 자리를 비우고, 닿으면 min 한 줄 + 이지 컴팩트 버튼. 띠가 늘 떠 있어 거슬린다는
- * 말에서 min · auto 를 더했다
+ * 바 크기. full = 최대(한도 · 비용 · 질문 세 줄 + 이지 컴팩트 버튼), min = 최소 한 줄(요청당 · 컨텍스트 · 컴팩트 구간 +
+ * 사용량 패널 · 이지 컴팩트 버튼 — 캐시 · 한도 · 질문 줄은 뺀다). 늘 떠 있어 거슬린다는 말에서 min 과 자동 숨김(bandAuto) ·
+ * 안 보이기(bandHidden)를 더했다. 0.2.0 의 'auto' 는 min + bandAuto 로 옮긴다(normalizeSettings)
  */
-export type BandMode = 'full' | 'min' | 'auto'
+export type BandMode = 'full' | 'min'
 
 /** 전체 보기 띠의 칸마다 보일지. 5시간 · 7일 = 요금제 한도 막대, resets = 그 뒤 "N 후 리셋" */
 export type BandShow = {
@@ -113,7 +126,7 @@ export type Usage = {
   rateLimits: { kind: string; percentUsed: number; resetsAt?: string }[]
   /** /context 의 항목별 토큰. 패널이 열려 있을 때만 잰다 */
   categories: { name: string; tokens: number; kind: 'used' | 'free' | 'buffer' }[]
-  /** 이 세션 트랜스크립트의 마지막 기록 시각 — 캐시 1h 타이머의 기준 */
+  /** 이 대화의 마지막 메인 요청 · 컴팩트 시각 — 캐시 1h 타이머의 기준. 컴팩트 뒤 첫 요청 전이면 null(캐시 없음) */
   lastActivityMs: number | null
   /** 최근 턴들의 컨텍스트 토큰(오래된 것부터, 최대 12) */
   history: number[]
@@ -122,6 +135,8 @@ export type Usage = {
    * 컴팩트 뒤 추정값(지난 컴팩트의 실측, 없으면 기본값)이다. 첫 요청이 재면 false
    */
   contextEstimated?: boolean
+  /** 컴팩트 뒤 아직 요청이 없다 — 캐시가 없고(lastActivityMs = null) 다음 요청이 요약을 처음 쓴다 */
+  isAfterCompact?: boolean
   /**
    * 마지막 요청과 다른 모델을 골랐다 — 그 요청의 모델(이 대화 캐시가 있는 모델). 새 모델엔 캐시가 없어
    * 다음 요청이 컨텍스트 전체를 다시 쓴다. 새 모델로 요청이 한 번 끝나면(또는 원래 모델로 돌아오면) 없어진다
@@ -230,7 +245,6 @@ export type StoredPane = { view: PaneView }
 declare module 'claude-code' {
   interface PluginState {
     'easy-compact': {
-      isHidden: boolean
       isConfirmingCompact: boolean
       paneView: PaneView | null
       /** 터미널(CLI) 세션이 열어 둔 화면 — 데스크톱 세션은 $.store 'pane' 을 같이 따르고, 터미널 세션은 이것만 본다 */
@@ -259,8 +273,11 @@ declare module 'claude-code' {
       usageTab: UsageTab
       /** 설정의 컴팩트 문구 "보내는 글 전체"를 펼쳤는가(처음엔 접힘 — 단계 보기만) */
       tidyRawOpen: boolean
-      /** 설정의 "UI 레이아웃 상세 조정" 을 펼쳤는가(처음엔 접힘). 세션마다 따로 */
-      layoutOpen: boolean
+      /**
+       * 설정 탭에서 펼친 칸(compact · tidy · band · layout · lang → true). 처음엔 컴팩트 시점 · 문구만 펼침, 접힌 칸은
+       * 제목 줄에 지금 값만(캐시 경고는 접지 않는다). 세션마다 따로
+       */
+      settingsOpen: Record<string, boolean>
       /** 사용량 카드 펼침(간략 보기): 접으면 제목 줄의 요약만. 처음엔 다 펼침 */
       cardsOpen: { now: boolean; history: boolean; compact: boolean }
       /** 설정의 직접 쓴 문구 입력칸에 치는 중인 글(Enter 전). 화면을 다시 그려도 친 글이 남게 칸 값으로 다시 준다 */

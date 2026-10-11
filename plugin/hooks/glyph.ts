@@ -10,6 +10,11 @@ export function setSurface(surface: string): void {
   isTerminal = surface === 'terminal'
 }
 
+/** 지금 그리는 표면이 터미널인가(그림 글자 대신 글을 고르는 자리) */
+export function onTerminal(): boolean {
+  return isTerminal
+}
+
 /** 그림 글자 + 글: 터미널이면 글만 */
 export function withIcon(icon: string, text: string): string {
   return isTerminal ? text : `${icon} ${text}`

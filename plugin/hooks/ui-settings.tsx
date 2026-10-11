@@ -3,9 +3,18 @@ import { fmtTokens, fmtUsd, modelName, ratesFor } from './cost'
 import {
   BAND_MODES,
   BAND_PARTS,
+  BAND_SHOW_MODES,
   bandModeName,
+  bandShowMode,
+  bandShowName,
+  bandShowUse,
+  bandStateText,
+  setBandShow,
   bandModeUse,
   bandPartName,
+  paneAutoUse,
+  paneStateText,
+  paneSyncUse,
   chooseTidy,
   customName,
   customUse,
@@ -39,6 +48,7 @@ import {
   CARD_INSET,
   section,
 } from './ui-common'
+import type { Fold } from './ui-common'
 import { cellsOf } from './text'
 import type { Ui } from './ui-common'
 
@@ -68,8 +78,11 @@ export type SettingsActions = {
   typeTidy: (text: string) => void
   saveTidy: (text: string) => void
   toggleRaw: () => void
-  toggleLayout: () => void
+  /** 설정 칸 접기 · 펼치기: compact · tidy · band · layout(바 안 상세 조정) · cache · lang */
+  toggleFold: (key: string) => void
   setLang: (choice: Settings['lang']) => void
+  /** 사용량 패널 옵션: 새 세션에서 자동으로 열기(paneAutoOpen) · 모든 세션 같이 열고 닫기(paneShared) */
+  setPaneOption: (key: 'paneAutoOpen' | 'paneShared', isOn: boolean) => void
 }
 
 export function drawSettings(
@@ -84,7 +97,7 @@ export function drawSettings(
   ctxNow: number | null = null,
   surface = 'desktop',
   cols: number | null = null,
-  layoutOpen = false,
+  open: Record<string, boolean> = {},
 ) {
   const { Box, Button, Input, Text } = ui
   const isTerminal = surface === 'terminal'
@@ -499,14 +512,25 @@ export function drawSettings(
     ]
   }
 
+  // 칸마다 접기(제목 줄 맨 앞 ▸ / ▾): 접으면 제목 줄에 지금 값만 — 설정 탭이 길어져 훑기 어려웠다. 처음엔
+  // 컴팩트 시점 · 문구만 펼침, 캐시 경고는 한 줄이라 접지 않는다. 펼치면 제목 옆은 원래 설명. 펼친 칸은 세션마다(settingsOpen)
+  const fold = (k: string): Fold => ({ isOpen: open[k] === true, onToggle: () => act.toggleFold(k) })
+  const summary = (k: string, folded: unknown, opened?: unknown) => (open[k] === true ? opened : folded)
+
   // 컴팩트 시점은 테두리 카드로 한 덩어리 — 표 · 적용이 설정의 다른 글과 섞여 보였다
   const compactSection = section(
     ui,
     'set-compact',
     L('컴팩트 시점', 'Compact timing'),
     rows,
-    d.follow ? L('노랑 = 컴팩트하기 좋은 때, 빨강 = 늦어짐', 'yellow = good time to compact, red = overdue') : L('빨강 = 정한 크기', 'red = the set size'),
+    summary(
+      'compact',
+      appliedText,
+      d.follow ? L('노랑 = 컴팩트하기 좋은 때, 빨강 = 늦어짐', 'yellow = good time to compact, red = overdue') : L('빨강 = 정한 크기', 'red = the set size'),
+    ),
     true,
+    undefined,
+    fold('compact'),
   )
   const cacheSection = section(ui, 'set-cache', L('캐시 경고', 'Cache warning'), [
     <Box key="cache-row" columnGap={1} alignItems="center">
@@ -521,6 +545,7 @@ export function drawSettings(
         </Text>
       </Box>
     </Box>,
+    // 캐시 경고는 한 줄뿐이라 접지 않는다 — 테두리 카드만
   ], undefined, true)
 
   // 문구는 버튼 넷(프리셋 셋 + 직접) — 직접을 고르면 아래에 한 줄 입력칸, Enter 로 저장.
@@ -592,31 +617,53 @@ export function drawSettings(
         ))}
       </Box>
     ) : null,
-  ], undefined, true)
+  ], summary('tidy', isCustom ? customName() : tidyStyles()[s.tidy as TidyStyleId].name), true, undefined, fold('tidy'))
 
-  // 입력창 위 띠: 보기 셋(전체 · 최소화 · 컴팩트할 때만)과, 접어 둔 "UI 레이아웃 상세 조정" — 전체 보기 띠의 칸을 줄(한도 ·
-  // 비용 · 질문)마다 묶어 켜고 끈다. 상세 조정은 테두리로 한 덩어리(띠가 늘 떠 있어 거슬린다 · 5시간 등 필요 없는 칸을 빼고
-  // 싶다는 말에서)
+  // 이지 컴팩트 바: 보이기 · 필요할 때만 · 크기와, 접어 둔 "UI 레이아웃 상세 조정" — 최대 크기의 칸을 줄(한도 · 비용 ·
+  // 질문)마다 묶어 켜고 끈다. 상세 조정은 테두리로 한 덩어리(늘 떠 있어 거슬린다 · 5시간 등 필요 없는 칸을 빼고 싶다는 말에서).
+  // 이름은 "이지 컴팩트 바" — "입력창 위 띠" · "표시줄" 은 무엇인지 안 읽혔고, 다음 이름 "입력창 툴바" 도
+  // 바꿔 달라 했다
   const groups = [
     { id: 'limits', name: L('한도 줄', 'Limits row') },
     { id: 'cost', name: L('비용 줄', 'Cost row') },
     { id: 'turn', name: L('질문 줄', 'Question row') },
   ] as const
-  const bandSection = section(ui, 'set-band', L('입력창 위 띠', 'Band above the input'), [
-    <Box key="band-mode-row" columnGap={1} alignItems="center" flexWrap="wrap">
-      <Text>{L('보기', 'View')}</Text>
-      {BAND_MODES.map(m => pick(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m })))}
-    </Box>,
+  // 표시(늘 보이기 · 자동 숨김 · 안 보이기 한 줄) → 크기 순(명령 도움말과 같은 순서). 이름 칸은 비용표 설명과 같은 폭.
+  // 줄마다 아래 풀이 한 줄을 두고 크기 줄은 한 칸 띄운다 — 버튼 줄이 바로 붙으니 겹쳐 보였다
+  const bandRow = (key: string, name: string, picks: unknown[], gap = 0) => (
+    <Box key={key} columnGap={1} alignItems="center" flexWrap="wrap" marginTop={gap}>
+      {cell('t', TERM_W, <Text>{name}</Text>)}
+      {picks}
+    </Box>
+  )
+  const layoutOpen = open.layout === true
+  const showMode = bandShowMode(s)
+  const bandSection = section(ui, 'set-band', L('이지 컴팩트 바', 'Easy Compact bar'), [
+    bandRow(
+      'band-show-row',
+      L('표시', 'Show'),
+      BAND_SHOW_MODES.map(m => pick(`vis-${m}`, bandShowName(m), showMode === m, () => save(setBandShow(s, m)))),
+    ),
+    <Text key="band-show-use" dimColor wrap="wrap">
+      {bandShowUse(showMode)}
+    </Text>,
+    bandRow(
+      'band-mode-row',
+      L('크기', 'Size'),
+      BAND_MODES.map(m => pick(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m }))),
+      1,
+    ),
     <Text key="band-use" dimColor wrap="wrap">
       {bandModeUse(s.band)}
     </Text>,
+
     <Box key="band-detail-row" marginTop={1}>
-      <Button key="band-detail" label={`${layoutOpen ? '▾' : '▸'} ${L('UI 레이아웃 상세 조정', 'UI layout details')}`} variant="secondary" onPress={act.toggleLayout} />
+      <Button key="band-detail" label={`${layoutOpen ? '▾' : '▸'} ${L('UI 레이아웃 상세 조정', 'UI layout details')}`} variant="secondary" onPress={() => act.toggleFold('layout')} />
     </Box>,
     layoutOpen ? (
       <Box key="band-detail-box" flexDirection="column" {...CARD}>
         <Text dimColor wrap="wrap">
-          {L('전체 보기 띠에 보일 칸 — 누르면 켜고 끕니다(✓ = 보임).', 'Parts of the Full band — press to turn on or off (✓ = shown).')}
+          {L('최대 크기에 보일 칸 — 누르면 켜고 끕니다(✓ = 보임).', 'Parts shown at Full size — press to turn on or off (✓ = shown).')}
         </Text>
         {groups.map(g => (
           <Box key={`band-g-${g.id}`} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'} marginTop={1}>
@@ -633,15 +680,34 @@ export function drawSettings(
         </Box>
       </Box>
     ) : null,
-  ], undefined, true)
+  ], summary('band', bandStateText(s)), true, undefined, fold('band'))
 
-  // 명령 안내 줄은 뺐다 — 화면에서 다 바꿀 수 있어 사족이었다. 명령은 /easy-compact 도움말에 있다
+  // 사용량 패널(오른쪽): 바가 아니라 패널 이야기라 바 칸 아래 따로. 두 옵션은 따로 켠다 — 처음엔 "세션마다 · 모든
+  // 세션 같이" 하나였는데 새 세션에서 열리는 것과 열고 닫기가 맞물리는 것이 한데 섞여 무엇이 다른지 안 읽혔다
+  const paneOn = (key: 'paneAutoOpen' | 'paneShared', onName: string) =>
+    [false, true].map(isOn =>
+      pick(`${key === 'paneAutoOpen' ? 'pane-auto' : 'pane-sync'}-${isOn ? 'on' : 'off'}`, isOn ? onName : L('끄기', 'Off'), s[key] === isOn, () => act.setPaneOption(key, isOn)),
+    )
+  const paneSection = section(ui, 'set-pane', L('사용량 패널', 'Usage pane'), [
+    bandRow('pane-auto-row', L('자동 열기', 'Auto-open'), paneOn('paneAutoOpen', L('새 세션에서 열기', 'In new sessions'))),
+    <Text key="pane-auto-use" dimColor wrap="wrap">
+      {paneAutoUse(s.paneAutoOpen)}
+    </Text>,
+    bandRow('pane-sync-row', L('같이 여닫기', 'Together'), paneOn('paneShared', L('모든 세션 같이', 'All sessions')), 1),
+    <Text key="pane-sync-use" dimColor wrap="wrap">
+      {paneSyncUse(s.paneShared)}
+    </Text>,
+  ], summary('pane', paneStateText(s)), true, undefined, fold('pane'))
+
+  // 명령 안내 줄은 뺐다 — 화면에서 다 바꿀 수 있어 사족이었다. 명령은 /easy-compact 도움말에 있다.
+  // 자주 바꾸는 순: 컴팩트 시점 → 컴팩트 문구 → 이지 컴팩트 바 → 사용량 패널 → 캐시 경고(언어는 맨 아래, drawSettingsView)
   return (
     <Box flexDirection="column">
       {compactSection}
-      {cacheSection}
       {tidy}
       {bandSection}
+      {paneSection}
+      {cacheSection}
     </Box>
   )
 }
@@ -670,7 +736,7 @@ export function drawSettingsView(
   ctxNow: number | null = null,
   autoLang: Lang | null = null,
   cols: number | null = null,
-  layoutOpen = false,
+  open: Record<string, boolean> = {},
 ) {
   const { Box, Button, Text } = ui
   const look = phaseLook(phase, kind)
@@ -682,7 +748,10 @@ export function drawSettingsView(
     ) : (
       <Button key={key} label={label} variant="secondary" dimColor onPress={() => act.setLang(choice)} />
     )
-  // 설정 탭의 칸은 모두 같은 테두리 카드(사용량 탭과 같은 꼴) — 언어 줄만 맨몸으로 떠 있었다
+  // 설정 탭의 칸은 모두 같은 테두리 카드(사용량 탭과 같은 꼴) — 언어 줄만 맨몸으로 떠 있었다.
+  // 한 번 정하면 끝이라 맨 아래, 접힌 제목 줄엔 지금 언어
+  const langName = s.lang === 'ko' ? '한국어' : s.lang === 'en' ? 'English' : L(`자동(${autoName})`, `Auto (${autoName})`)
+  const langOpen = open.lang === true
   const langRow = section(
     ui,
     'set-lang',
@@ -694,13 +763,14 @@ export function drawSettingsView(
         {langPick('lang-en', 'English', 'en')}
       </Box>,
     ],
-    undefined,
+    langOpen ? undefined : langName,
     true,
+    undefined,
+    { isOpen: langOpen, onToggle: () => act.toggleFold('lang') },
   )
   const dot = look ? pulseDot(ui, surface, look.hex, look.text) : null
   return (
     <Box key="s-settings" flexDirection="column">
-      {langRow}
       {look ? (
         <Box key="s-busy" columnGap={1} alignItems="flex-start">
           {/* 빈 글 한 칸을 곁들여 줄 높이를 잡는다 — 점이 첫 줄 글의 세로 가운데에 온다 */}
@@ -722,7 +792,8 @@ export function drawSettingsView(
           {L('바꾸면 모든 세션에 바로 적용됩니다.', 'Changes apply to all sessions right away.')}
         </Text>
       )}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, layoutOpen)}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open)}
+      {langRow}
     </Box>
   )
 }

@@ -75,7 +75,8 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
     // 거쳐 온 꼴 — "~$로 더 쌈 / 권장 안 함(~$로 더 비쌈)" 은 쌈·비쌈이 한 글자 차라 둘 다 비싸다로 읽혔고 줄이 넘어갔다.
     // "이어 가면 ~$X · 컴팩트하면 ~$Y" 에 싼 쪽 초록 · 비싼 쪽 빨강은 색이 이득/손해를 대신해 더 헷갈렸다.
     // 금액엔 "~" · 빨강을 붙이지 않는다 — 빨간 "~$2.36" 이 "−$2.36" 으로 읽혀 무엇이 드는지 헷갈렸다.
-    // 드는 값은 "소비", 차이는 "이득 / 손해" 로 말이 뜻을 맡는다.
+    // 드는 값은 "소비", 차이는 "이득 / 손해" 로 말이 뜻을 맡는다. 차이엔 말과 같이 색 — 이득 초록 · 손해 빨강(말이 붙어
+    // 있어 빼기로 안 읽힌다. 손해만 색이 없어 이득과 짝이 안 맞았다). 드는 값(소비 · 컴팩트 값)엔 색 없음.
     // 데스크톱 띠는 truncate-end 를 안 지키고 줄을 바꾼다 — 짧게(그래서 컴팩트 구간은 이 줄엔 안 붙인다).
     // 같은 계산: 컴팩트 버튼의 "바로 컴팩트 권장"(coldCompact · 지난 컴팩트 실측 크기). 이어 가기 = 전체 다시 쓰기
     const c = inputs ? coldCompact(u.contextTokens, inputs, u.model) : null
@@ -91,7 +92,7 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
         {c === null ? null : isWin ? (
           <Text color="green" bold>{L(`${fmtUsd(gap)} 이득`, `saves ${fmtUsd(gap)}`)}</Text>
         ) : (
-          <Text bold>{L(`${fmtUsd(gap)} 손해`, `costs ${fmtUsd(gap)} more`)}</Text>
+          <Text bold color="red">{L(`${fmtUsd(gap)} 손해`, `costs ${fmtUsd(gap)} more`)}</Text>
         )}
         {ctx ? <Text dimColor> · </Text> : null}
         {ctx}
@@ -99,7 +100,9 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
     )
   }
   const hasCache = show.cache && est.minsLeft !== null
-  if (!show.perRequest && !ctx && !show.range && !hasCache) return null
+  // 컴팩트 뒤 첫 요청 전: 캐시가 없다 — 분 대신 "다음 요청이 새로 씀"(컴팩트 시각부터 세면 캐시가 있는 것처럼 보였다)
+  const isNewCache = show.cache && u.isAfterCompact === true
+  if (!show.perRequest && !ctx && !show.range && !hasCache && !isNewCache) return null
   return (
     <Text wrap="truncate-end">
       {show.perRequest ? <Text dimColor>{L('요청당 ', 'Per request ')}</Text> : null}
@@ -116,6 +119,7 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
       {hasCache ? (
         <Text {...(est.minsLeft! < thresholds().cacheWarnMin ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}분`, `${est.minsLeft}m`)}</Text>
       ) : null}
+      {isNewCache ? <Text dimColor>{L(' · 캐시 없음(다음 요청이 새로 씀)', ' · no cache yet (the next request writes it)')}</Text> : null}
     </Text>
   )
 }

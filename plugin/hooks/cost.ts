@@ -185,6 +185,18 @@ export function estimate(contextTokens: number, model: string, lastActivityMs: n
  */
 export const SAVE_GUESS: SaveTurn = { steps: 3, output: 2_000, write: 2_000 }
 
+/**
+ * 컴팩트해도 줄어드는 게 거의 없다고 보는 선: 지금 크기가 컴팩트 직후 크기의 이 배 미만. 띠 툴팁 · 확인 카드 · 사용량 패널이
+ * 같은 선으로 "아낄 게 거의 없음 — 지금 컴팩트하면 손해" 를 판정한다. 아끼는 값이 0 보다 조금만 커도 "요청 1회당 ~$0.00 아낌"
+ * 이 초록으로 보였다(74k → 72k)
+ */
+export const LITTLE_SHRINK = 1.3
+
+/** 아낄 게 거의 없다: 본전이 없거나(아끼는 값 0 이하) 줄어드는 몫이 LITTLE_SHRINK 미만 */
+export function isLittleToSave(ctx: number, after: number, breakEvenCalls: number | null): boolean {
+  return breakEvenCalls === null || ctx < Math.min(after, ctx) * LITTLE_SHRINK
+}
+
 /** 정리 후 컴팩트의 손익: 드는 값과, 그 뒤 요청 · 질문마다 아끼는 값 */
 export type Payoff = {
   nowCallUsd: number

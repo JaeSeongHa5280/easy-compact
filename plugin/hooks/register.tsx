@@ -26,6 +26,7 @@ import {
   average,
   compactMixOf,
   compactPayoff,
+  isLittleToSave,
   costOf,
   endsWithTail,
   coldCompact,
@@ -50,7 +51,17 @@ import {
   BAND_PARTS,
   bandModeName,
   bandPartName,
+  bandShowMode,
+  bandStateText,
+  hiddenNote,
+  HIDDEN_NOTE_MS,
+  paneAutoUse,
+  paneSyncUse,
+  revealLabel,
+  setBandShow,
   chooseTidy,
+  isAutoWord,
+  parseOnOff,
   customName,
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -99,7 +110,7 @@ import type { Flow } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, promptHead, isWide, fitCells, stepLabel } from './text'
 import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, directKeep, tidyVerdict } from './tidy'
-import { ACCENT, row, gridOf, phaseLook, pulseDot, CARD_INSET, emptyLine } from './ui-common'
+import { ACCENT, BRAND_HEX, row, gridOf, phaseLook, pulseDot, CARD_INSET, emptyLine } from './ui-common'
 import type { Ui, Fold } from './ui-common'
 import { drawLimitsLine, drawEstimateLine, MIN_SHOW, rewriteNote, drawLastTurnLine } from './ui-band'
 import {
@@ -270,8 +281,6 @@ async function saveLang($: EngineInterface, choice: Settings['lang']): Promise<v
 
 const PANE = 'easy-compact'
 
-/** $.store 키: 사용량 패널을 열어 두었는가(StoredPane). 모든 데스크톱 세션이 따라 연다 — 터미널 세션은 localPane */
-const PANE_KEY = 'pane'
 
 // 사용량 = 지금(컨텍스트 · 비용) · 컴팩트 · 질문별 비용, 설정은 패널 안 탭(예전 이름 '비용' 은 내용보다 좁았다)
 const paneTitle = () => L('사용량', 'Usage')
@@ -299,8 +308,6 @@ const OUTPUT_KEY = 'compactOutputTokens'
 const SAVE_KEY = 'saveTurns'
 
 const SAVE_KEEP = 5
-
-const isHidden = atom({ plugin: 'easy-compact', key: 'isHidden' } as const, false)
 
 const isConfirmingCompact = atom({ plugin: 'easy-compact', key: 'isConfirmingCompact' } as const, false)
 
@@ -331,7 +338,8 @@ const usageTab = atom({ plugin: 'easy-compact', key: 'usageTab' } as const, 'mai
 
 const tidyRawOpen = atom({ plugin: 'easy-compact', key: 'tidyRawOpen' } as const, false)
 
-const layoutOpen = atom({ plugin: 'easy-compact', key: 'layoutOpen' } as const, false)
+// 처음 펼친 칸: 컴팩트 시점 · 컴팩트 문구(자주 보는 것) — 바 · 언어는 접힘
+const settingsOpen = atom({ plugin: 'easy-compact', key: 'settingsOpen' } as const, { compact: true, tidy: true })
 
 const cardsOpen = atom({ plugin: 'easy-compact', key: 'cardsOpen' } as const, { now: true, history: true, compact: true })
 
@@ -367,8 +375,17 @@ async function transcriptPath($: EngineInterface): Promise<string> {
   return `${await claudeHome($)}/projects/${projectSlug(await $.session.cwd())}/${await $.session.id()}.jsonl`
 }
 
-/** 트랜스크립트는 모델 호출마다 덧붙는다 — 그 수정 시각이 캐시 타이머의 기준 (statusline 과 같은 방식) */
+/**
+ * 캐시 타이머의 기준 = 이 대화의 마지막 메인 요청(흐름의 마지막 점) · 컴팩트 중 늦은 것. 처음엔 기록 파일 수정 시각을 썼는데
+ * (statusline 과 같은 방식), 앱이 세션을 다시 열거나 제목을 바꿀 때 기록에 메타 줄(last-prompt · custom-title · mode)을
+ * 덧붙여 하루 넘게 쉰 세션도 "방금 씀"으로 보였다 — 캐시 만료 · 바로 컴팩트 권장이 안 뜨고 저장하고 컴팩트가 전체를 다시
+ * 썼다. 흐름이 비었으면(첫 요청 전 · 아직 못 읽음) 수정 시각
+ */
 async function lastActivity($: EngineInterface): Promise<number | null> {
+  const points = await read($, flowPoints)
+  const done = await read($, compactions)
+  const at = Math.max(points[points.length - 1]?.atMs ?? 0, done[done.length - 1]?.atMs ?? 0)
+  if (at > 0) return at
   try {
     return (await $.fs.stat(await transcriptPath($))).mtimeMs
   } catch {
@@ -469,16 +486,19 @@ async function refreshUsage($: EngineInterface, opts: { categories: boolean; pus
     // 컨텍스트 크기는 우리가 잰 마지막 메인 요청 값(흐름의 마지막 점)이 기준 — 띠 · 패널 · 그래프 · 질문별 비용이
     // 같은 값을 보인다. 흐름이 비었으면(기록을 못 읽음 · 첫 요청 전) 엔진 값.
     // 컴팩트 직후 · 첫 요청 전엔 엔진 값이 마지막 응답 기준이라 컴팩트 전 크기 그대로다(띠가 "권장 54%" 를 띄웠다) —
-    // 그 동안은 추정값. 엔진 값이 이미 줄어 있으면(컴팩트 전의 8할 아래) 그것을 믿는다
+    // 그 동안은 추정값. 엔진 값이 이미 줄어 있으면(컴팩트 전의 8할 아래) 그것을 믿는다. 엔진 값이 0 이어도(다시 연 세션의
+    // 컴팩트 직후 — 띠가 "컨텍스트 0" 이었다) 추정값
     const flow = await readFlow($)
     const pending = pendingCompact(flow)
     const engineTokens = measured.context.tokens ?? 0
     const lastCtx = flow.points[flow.points.length - 1]?.ctx ?? null
-    const isStale = pending !== null && pending.before > 0 && engineTokens >= pending.before * 0.8
+    const isStale = pending !== null && pending.before > 0 && (engineTokens <= 0 || engineTokens >= pending.before * 0.8)
     // 추정값은 계산식 재료와 같은 직후 크기 — 막 읽은 흐름으로 바로 잰다(걸어 둔 최적은 이 함수 끝에서야 갱신된다)
     const afterNow = isStale ? ((await measureOptimal($, prev?.model ?? (await $.session.model()))).inputs?.after ?? null) : null
     const tokens = isStale
-      ? Math.min(afterNow ?? engineTokens, engineTokens)
+      ? engineTokens > 0
+        ? Math.min(afterNow ?? engineTokens, engineTokens)
+        : (afterNow ?? 0)
       : pending !== null
         ? engineTokens
         : (lastCtx ?? engineTokens)
@@ -503,7 +523,10 @@ async function refreshUsage($: EngineInterface, opts: { categories: boolean; pus
         r.resetsAt ? { kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt } : { kind: r.kind, percentUsed: r.percentUsed },
       ),
       categories,
-      lastActivityMs: await lastActivity($),
+      // 컴팩트 뒤 아직 요청이 없으면 캐시 타이머가 없다 — 요약은 다음 요청이 처음 쓴다. 컴팩트 시각부터 세니 띠가 "캐시
+      // 39분" 으로 캐시가 있는 것처럼 보였다. 그 동안은 "캐시 다음 요청이 새로 씀"(isAfterCompact)
+      lastActivityMs: pending !== null ? null : await lastActivity($),
+      isAfterCompact: pending !== null,
       history: opts.pushHistory ? [...(prev?.history ?? []), tokens].slice(-12) : (prev?.history ?? []),
     }
     await update($, usage, () => next)
@@ -514,12 +537,29 @@ async function refreshUsage($: EngineInterface, opts: { categories: boolean; pus
   }
 }
 
-// ── 사이드 패널: 데스크톱 세션은 $.store 의 화면을 같이 따라 열고, 터미널 세션은 혼자 연다 ─────────
+// ── 사이드 패널: 세션마다 따로 연다. 설정 "자동 열기" 는 새 세션의 처음, "같이 여닫기" 는 그 뒤 사람이 연 · 닫은 것만 퍼뜨린다 ──
+//
+// 처음엔 데스크톱 세션들이 열림 값 하나($.store)를 같이 따랐다 — 새 세션에 들어가 채팅만 쳐도 패널이 저절로 열렸고, 한
+// 곳에서 닫으면 다 닫혔다. 그러면 안 되고 옵션으로 — "새 세션에서 열기" 와 "같이 열고 닫기" 둘로
+// 나눈다. 그래서 열림 값은 세션마다(localPane) 두고, 두 옵션은 따로 켠다:
+// - 자동 열기(paneAutoOpen): 처음 보는 세션(PANE_AUTO_KEY 목록에 없는 세션 id)이면 시작할 때 연다. 그 뒤 닫으면 그대로
+// - 같이 여닫기(paneShared, 데스크톱만): 사람이 열거나 닫으면 그 일(PANE_EVENT_KEY)을 남기고, 이미 떠 있던 다른 데스크톱
+//   세션이 따라 한다. 새 세션은 시작 전 일을 따르지 않는다 — 처음 상태는 자동 열기가 정한다
+
+/** $.store 키: 같이 여닫기에서 마지막으로 사람이 열거나 닫은 일(PaneEvent) */
+const PANE_EVENT_KEY = 'paneEvent'
+
+/** $.store 키: 자동 열기를 한 번 한 세션 id 목록(최근 PANE_AUTO_KEEP 개) — mod 를 다시 불러와도 또 열지 않게 */
+const PANE_AUTO_KEY = 'paneAutoOpened'
+
+const PANE_AUTO_KEEP = 200
+
+type PaneEvent = { view: PaneView | null; at: number; from: string }
 
 /**
- * 터미널(CLI) 세션인가. 앱에선 세션을 옮겨 다녀도 패널이 따라와야 하지만 터미널 창은 저마다 따로 보여 따라갈 까닭이 없다 —
- * 같이 따르면 CLI 에서 열 때 앱의 모든 세션에 패널이 뜨고, 앱에서 닫으면 CLI 패널도 닫혔다(2026-10-11: CLI 에서 settings 가
- * "열었다"고 답했는데 앱에서 닫힌 상태를 따라 패널이 사라짐). 못 읽으면 같이 따르는 쪽(예전 동작)
+ * 터미널(CLI) 세션인가. 터미널 창은 저마다 따로 보여 같이 여닫을 까닭이 없다 — 같이 따르면 CLI 에서 열 때 앱의 모든 세션에
+ * 패널이 뜨고, 앱에서 닫으면 CLI 패널도 닫혔다(2026-10-11: CLI 에서 settings 가 "열었다"고 답했는데 앱에서 닫힌 상태를 따라
+ * 패널이 사라짐). 못 읽으면 데스크톱으로 본다
  */
 async function isTerminalSession($: EngineInterface): Promise<boolean> {
   try {
@@ -529,27 +569,80 @@ async function isTerminalSession($: EngineInterface): Promise<boolean> {
   }
 }
 
+/** 같이 여닫기를 쓰나: 데스크톱이고 설정을 켰을 때 */
+async function isPaneShared($: EngineInterface): Promise<boolean> {
+  if (await isTerminalSession($)) return false
+  return (await currentSettings($)).paneShared
+}
+
 async function wantedView($: EngineInterface): Promise<PaneView | null> {
-  if (await isTerminalSession($)) return read($, localPane)
-  return (await $.store.get(PANE_KEY)) ? 'usage' : null
+  return read($, localPane)
 }
 
-/** 열 화면을 정한다(null = 닫기). 터미널은 이 세션에만, 데스크톱은 $.store 에 두어 모든 데스크톱 세션이 따라간다 */
+/** 이 프로세스가 시작한 때(같이 여닫기: 그 전 일은 따르지 않는다) · 마지막으로 본 일의 때 */
+let paneStartAt: number | null = null
+let paneEventAt = 0
+
+/** 사람이 열고 닫는 길(띠 버튼 · 명령 · 패널 닫기): 이 세션 값을 바꾸고, 같이 여닫기면 다른 세션에 알린다 */
 async function setWantedView($: EngineInterface, view: PaneView | null): Promise<void> {
-  if (await isTerminalSession($)) await update($, localPane, () => view)
-  else if (view === null) await $.store.delete(PANE_KEY)
-  else await $.store.set(PANE_KEY, { view })
+  const prev = await read($, localPane)
+  await update($, localPane, () => view)
+  // 탭만 바꿀 땐(열린 채 같은 화면) 알리지 않는다 — 다른 세션 패널이 열리면 안 된다
+  if (prev === view || !(await isPaneShared($))) return
+  // 알리기가 안 돼도(저장소 · 세션 id 를 못 읽음) 이 세션의 여닫기는 그대로
+  try {
+    const at = await $.clock.now()
+    paneEventAt = at
+    await $.store.set(PANE_EVENT_KEY, { view, at, from: await $.session.id() })
+  } catch {}
 }
 
-/** 이 세션의 패널을 저장된 화면에 맞춘다. 타이머가 계속 불러 세션을 옮겨도 따라 열린다 */
+/** 같이 여닫기: 이 세션이 시작한 뒤 다른 세션이 연 · 닫은 일이 새로 있으면 따라 한다 */
+async function followPaneEvent($: EngineInterface): Promise<void> {
+  if (!(await isPaneShared($))) return
+  const raw = (await $.store.get(PANE_EVENT_KEY)) as Partial<PaneEvent> | undefined
+  if (!raw || typeof raw.at !== 'number' || raw.at <= paneEventAt) return
+  paneEventAt = raw.at
+  if (raw.at < (paneStartAt ?? 0) || raw.from === (await $.session.id())) return
+  await update($, localPane, () => (raw.view === 'usage' ? 'usage' : null))
+}
+
+/** 자동 열기: 켜져 있고 처음 보는 세션이면 연다(session.start — mod 를 다시 불러와도 오므로 본 세션은 목록으로 거른다) */
+async function autoOpenPane($: EngineInterface): Promise<void> {
+  if (!(await currentSettings($)).paneAutoOpen) return
+  const id = await $.session.id()
+  const raw = await $.store.get(PANE_AUTO_KEY)
+  const seen = Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
+  if (seen.includes(id)) return
+  await $.store.set(PANE_AUTO_KEY, [...seen, id].slice(-PANE_AUTO_KEEP))
+  await update($, localPane, () => 'usage')
+}
+
+/** 이 프로세스에서 처음 맞추는가 — 열린 패널을 이어받는다 */
+let isPaneSeeded = false
+
+/** 이 세션의 패널을 이 세션 값에 맞춘다. 타이머가 계속 부른다(같이 여닫기면 다른 세션의 일을 따라) */
 async function syncPane($: EngineInterface): Promise<void> {
-  const want = await wantedView($)
-  const have = await read($, paneView)
+  if (paneStartAt === null) paneStartAt = await $.clock.now()
   const open = await $.ui.panes()
   const isOpen = open.some(pane => pane.id === PANE)
+  // 이 프로세스에서 처음 볼 땐(mod 다시 불러옴 포함) 열린 패널을 그대로 둔다 — 지우지는 않는다(명령으로 막 연 값을 덮지 않게).
+  // 새 세션은 열린 패널이 없어 닫힌 채로 시작한다(자동 열기면 그 전에 연다)
+  if (!isPaneSeeded) {
+    isPaneSeeded = true
+    if (isOpen) await update($, localPane, () => 'usage')
+  }
+  await followPaneEvent($).catch(() => {})
+  const want = await wantedView($)
+  const have = await read($, paneView)
   if (want === null) {
     if (isOpen) await $.ui.close({ id: PANE })
-    if (have !== null) await update($, paneView, () => null)
+    if (have !== null) {
+      await update($, paneView, () => null)
+      // 다시 열면 늘 사용량 탭부터 — 설정 탭을 보다 닫으면 다음에 설정으로 열렸다. 설정은 /easy-compact settings 로.
+      // 열려 있던 것이 닫힐 때만(열린 적 없는 패널엔 손대지 않는다)
+      await update($, usageTab, () => 'main')
+    }
     return
   }
   if (want === have && isOpen) return
@@ -567,6 +660,13 @@ async function toggleView($: EngineInterface, view: PaneView): Promise<PaneView 
   await setWantedView($, next)
   await syncPane($)
   return next
+}
+
+/** 사용량 패널 옵션(설정 탭 · 명령): 새 세션에서 자동으로 열기 · 모든 세션 같이 열고 닫기 */
+async function setPaneOption($: EngineInterface, key: 'paneAutoOpen' | 'paneShared', isOn: boolean): Promise<void> {
+  await saveSettings($, { ...(await currentSettings($)), [key]: isOn })
+  // 같이 여닫기를 켜는 때 남아 있던 일은 따르지 않는다(켠 뒤 사람이 연 · 닫은 것부터)
+  if (key === 'paneShared' && isOn) paneEventAt = Math.max(paneEventAt, await $.clock.now())
 }
 
 /** 패널 안 탭: 닫지 않고 화면만 바꾼다 */
@@ -1070,10 +1170,30 @@ async function toggleTidyRaw($: EngineInterface): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
-/** 설정의 "UI 레이아웃 상세 조정" 펼치기 · 접기 */
-async function toggleLayout($: EngineInterface): Promise<void> {
-  const next = !(await read($, layoutOpen))
-  await update($, layoutOpen, () => next)
+/**
+ * 바가 접혀 있나: 안 보이기(✕), 또는 자동 숨김이고 노랑 전(식은 캐시라 바로 컴팩트 권장 · 저장 · 컴팩트 중 · 확인창이
+ * 열린 동안은 아니다). 입력창 아래 [🗜 ⇱] 를 그릴지 — 바(AbovePrompt)의 자동 숨김 조건과 같게 둘 것
+ */
+async function isBandTucked($: EngineInterface): Promise<boolean> {
+  const s = await currentSettings($)
+  if (s.bandHidden) return true
+  if (!s.bandAuto) return false
+  const phase = await read($, compactPhase)
+  if (phase === 'tidying' || phase === 'compacting' || (await read($, isConfirmingCompact))) return false
+  const u = await read($, usage)
+  if (!u) return true
+  const inputs = (await read($, optimal))?.inputs ?? null
+  const est = estimate(u.contextTokens, u.model, u.lastActivityMs, await $.clock.now(), Boolean(u.switchedFrom))
+  const cold = inputs && est.kind === 'cold' ? coldCompact(u.contextTokens, inputs, u.model) : null
+  const isColdWin = cold !== null && cold.compactUsd < cold.continueUsd
+  const shownLevel = est.kind === 'cold' && !isColdWin ? 'ok' : levelOf(u.contextTokens)
+  return shownLevel === 'ok' && !isColdWin
+}
+
+/** 설정 탭 칸 펼치기 · 접기(컴팩트 시점 · 문구 · 바 · 그 안 상세 조정 · 캐시 경고 · 언어) */
+async function toggleFold($: EngineInterface, key: string): Promise<void> {
+  const cur = await read($, settingsOpen)
+  await update($, settingsOpen, () => ({ ...cur, [key]: !cur[key] }))
   $.ui.invalidate('ui.render')
 }
 
@@ -1092,46 +1212,108 @@ const setHelp = () =>
 
 const bandHelp = () =>
   L(
-    '쓰는 법: /easy-compact 띠 <전체|최소화|컴팩트할때만> · 띠 <칸> <켜기|끄기> · 띠 모두 켜기  칸 = 5시간 · 7일 · 리셋 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문(전체 보기 띠)',
-    'Usage: /easy-compact band <full|min|auto> · band <part> <on|off> · band all on  parts = 5h · 7d · reset · request · context · range · cache · question (Full band)',
+    '쓰는 법: /easy-compact 칸 <이름> <켜기|끄기> · 칸 모두 켜기  이름 = 5시간 · 7일 · 리셋 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문(최대 크기)\n이지 컴팩트 바 보이기 · 크기는 /easy-compact 보이기 | 안보이기 | 자동숨김 켜기|끄기 | 최소 | 최대',
+    'Usage: /easy-compact band <part> <on|off> · band all on  parts = 5h · 7d · reset · request · context · range · cache · question (Full size)\nShow · size: /easy-compact show | hide | auto on|off | min | max',
   )
 
-/** 띠 명령: 보기(전체 · 최소화 · 컴팩트할 때만) · 전체 보기 칸 켜고 끄기 — 설정 탭 "입력창 위 띠" 와 같은 값 */
+/**
+ * 띠 단축 명령 — 도움말 · 슬래시 메뉴 맨 앞에 두는 것들(띠가 거슬린다는 말에서): 보이기 · 안보이기, 자동숨김 켜기 · 끄기,
+ * 최소 · 최대, 패널 열기 · 닫기. 동사와 인자는 띄어쓰기를 무시하고 읽는다("자동 숨김 켜기" · "안 보이기"). 단축 명령이
+ * 아니면 null. 크기 · 자동 숨김을 고르면 안 보이기도 푼다 — 보려고 고른 것이라
+ */
+async function bandShortcut($: EngineInterface, verb: string, rest: string): Promise<string | null> {
+  const s = await currentSettings($)
+  const words = `${verb} ${rest}`.trim().split(/\s+/)
+  const bare = words.join('').toLowerCase()
+  const onOff = words.length > 1 ? parseOnOff(words[words.length - 1]!) : null
+  const head = onOff === null ? bare : words.slice(0, -1).join('').toLowerCase()
+  // 보이기 = 늘 보이기(숨김 · 자동 숨김을 다 푼다) — 숨긴 뒤 안내는 다시 켜는 이 명령 하나만
+  if (['show', '보이기', '보임', '늘보이기'].includes(bare)) {
+    const next = setBandShow(s, 'always')
+    await saveSettings($, next)
+    return L(`이지 컴팩트 바를 늘 보입니다(${bandStateText(next)}).`, `Easy Compact bar always shown (${bandStateText(next)}).`)
+  }
+  if (['hide', '안보이기', '숨기기', '숨김'].includes(bare)) {
+    await saveSettings($, setBandShow(s, 'never'))
+    return hiddenNote()
+  }
+  const size = parseBandMode(bare)
+  if (size) {
+    await saveSettings($, { ...s, band: size, bandHidden: false })
+    return L(`바 크기를 ${bandModeName(size)}로 바꿨습니다(${bandStateText({ ...s, band: size, bandHidden: false })}).`, `Bar size: ${bandModeName(size)} (${bandStateText({ ...s, band: size, bandHidden: false })}).`)
+  }
+  if (isAutoWord(head)) {
+    // 켜기 · 끄기를 안 주면 번갈아
+    const on = onOff ?? bandShowMode(s) !== 'auto'
+    await saveSettings($, setBandShow(s, on ? 'auto' : 'always'))
+    return on
+      ? L(
+          `자동 숨김 켬 — 컴팩트 구간(노랑) 전엔 입력창 아래 [${revealLabel(false)}] 로 접힙니다. 늘 보이게: 그 버튼 또는 /easy-compact 보이기`,
+          `Auto-hide on — until the compact range (yellow) the bar folds into [${revealLabel(false)}] below the input. Always show: that button or /easy-compact show`,
+        )
+      : L('자동 숨김 끔 — 이지 컴팩트 바가 늘 보입니다.', 'Auto-hide off — the Easy Compact bar is always shown.')
+  }
+  // 사용량 패널 옵션 둘(켜기 · 끄기 없이 치면 번갈아): 새 세션에서 자동으로 열기 · 모든 세션 같이 열고 닫기
+  if (['패널자동', '패널자동열기', '패널자동으로열기', 'panelauto', 'paneauto', 'panelautoopen'].includes(head)) {
+    const isOn = onOff ?? !s.paneAutoOpen
+    await setPaneOption($, 'paneAutoOpen', isOn)
+    return L(`새 세션에서 자동으로 열기 ${isOn ? '켬' : '끔'} — ${paneAutoUse(isOn)}`, `Auto-open in new sessions ${isOn ? 'on' : 'off'} — ${paneAutoUse(isOn)}`)
+  }
+  if (['패널같이', '패널공유', '패널모든세션', '패널같이열고닫기', 'panelshare', 'panelshared', 'panelsync', 'paneshare', 'panesync'].includes(head)) {
+    const isOn = onOff ?? !s.paneShared
+    await setPaneOption($, 'paneShared', isOn)
+    return L(`모든 세션 같이 열고 닫기 ${isOn ? '켬' : '끔'} — ${paneSyncUse(isOn)}`, `Open/close together ${isOn ? 'on' : 'off'} — ${paneSyncUse(isOn)}`)
+  }
+  if (['panel', 'pane', 'usage', '패널', '사용량', '사용량패널', '사이드패널'].includes(head)) {
+    // 열기 · 닫기를 안 주면 번갈아 — 어느 쪽이 됐는지 알린다("열거나 닫았습니다" 로는 닫힌 게 고장처럼 보였다)
+    let isOpened: boolean
+    if (onOff === null) isOpened = (await toggleView($, 'usage')) !== null
+    else {
+      await setWantedView($, onOff ? 'usage' : null)
+      await syncPane($)
+      isOpened = onOff
+    }
+    return isOpened ? L(`${paneTitle()} 패널을 열었습니다.`, `Opened the ${paneTitle()} pane.`) : L(`${paneTitle()} 패널을 닫았습니다.`, `Closed the ${paneTitle()} pane.`)
+  }
+  return null
+}
+
+/** 띠 명령: 최대 띠 칸 켜고 끄기(설정 탭 "UI 레이아웃 상세 조정" 과 같은 값). 크기 · 자동 숨김도 받는다(band min · band auto on) */
 async function bandCommand($: EngineInterface, rest: string): Promise<string> {
   const s = await currentSettings($)
   const words = rest.split(/\s+/).filter(Boolean)
   if (words.length === 0) {
     const off = BAND_PARTS.filter(p => !s.bandShow[p.key]).map(p => bandPartName(p.key))
     return L(
-      `띠 보기: ${bandModeName(s.band)}${off.length ? ` · 뺀 칸: ${off.join(', ')}` : ''}\n${bandHelp()}`,
-      `Band view: ${bandModeName(s.band)}${off.length ? ` · hidden parts: ${off.join(', ')}` : ''}\n${bandHelp()}`,
+      `이지 컴팩트 바: ${bandStateText(s)}${off.length ? ` · 뺀 칸: ${off.join(', ')}` : ''}\n${bandHelp()}`,
+      `Easy Compact bar: ${bandStateText(s)}${off.length ? ` · hidden parts: ${off.join(', ')}` : ''}\n${bandHelp()}`,
     )
   }
-  const mode = parseBandMode(rest)
-  if (mode) {
-    await saveSettings($, { ...s, band: mode })
-    return L(`띠 보기를 "${bandModeName(mode)}" 로 바꿨습니다.`, `Band view set to "${bandModeName(mode)}".`)
-  }
-  const last = words[words.length - 1]!.toLowerCase()
-  const on = ['on', 'show', '켜기', '켜', '보이기'].includes(last) ? true : ['off', 'hide', '끄기', '꺼', '빼기'].includes(last) ? false : null
+  const [first = '', ...more] = words
+  const short = await bandShortcut($, first, more.join(' '))
+  if (short !== null) return short
+  const on = parseOnOff(words[words.length - 1]!)
   const what = words.slice(0, -1).join('').toLowerCase()
   if (on !== null && ['all', '모두', '전부'].includes(what)) {
     const all = Object.fromEntries(BAND_PARTS.map(p => [p.key, on])) as Settings['bandShow']
     await saveSettings($, { ...s, bandShow: all })
-    return on ? L('전체 보기 띠의 칸을 모두 보입니다.', 'All parts of the Full band are shown.') : L('전체 보기 띠의 칸을 모두 뺐습니다.', 'All parts of the Full band are hidden.')
+    return on ? L('최대 크기의 칸을 모두 보입니다.', 'All parts are shown at Full size.') : L('최대 크기의 칸을 모두 뺐습니다.', 'All parts are hidden at Full size.')
   }
   const key = parseBandPart(what)
   if (on === null || key === null) return bandHelp()
   await saveSettings($, setBandPart(s, key, on))
   return on
-    ? L(`전체 보기 띠에 "${bandPartName(key)}" 칸을 보입니다.`, `"${bandPartName(key)}" is shown in the Full band.`)
-    : L(`전체 보기 띠에서 "${bandPartName(key)}" 칸을 뺐습니다.`, `"${bandPartName(key)}" is hidden from the Full band.`)
+    ? L(`최대 크기에 "${bandPartName(key)}" 칸을 보입니다.`, `"${bandPartName(key)}" is shown at Full size.`)
+    : L(`최대 크기에서 "${bandPartName(key)}" 칸을 뺐습니다.`, `"${bandPartName(key)}" is hidden at Full size.`)
 }
 
 /** 설정 명령(설정 화면의 버튼과 같은 함수). 설정 명령이 아니면 null */
 async function settingsCommand($: EngineInterface, verb: string, rest: string): Promise<string | null> {
   const s = await currentSettings($)
-  if (verb === 'band' || verb === '띠') return bandCommand($, rest)
+  const short = await bandShortcut($, verb, rest)
+  if (short !== null) return short
+  // 예전 이름(띠 · 툴바 · 표시줄)도 받는다
+  if (['band', 'part', 'bar', 'toolbar', '띠', '칸', '바', '툴바', '표시줄'].includes(verb)) return bandCommand($, rest)
   if (verb === 'settings' || verb === '설정') {
     // 사용량 패널을 열고 설정 탭으로
     await openUsageTab($, 'settings')
@@ -1209,44 +1391,64 @@ async function settingsCommand($: EngineInterface, verb: string, rest: string): 
 const help = () =>
   L(
     [
-      '/easy-compact            사용량 · 세션 기록(컨텍스트 흐름) 다시 읽기',
-      '/easy-compact usage      사용량 패널(컨텍스트 · 비용 · 질문별 비용) 열기 · 닫기',
+      '[이지 컴팩트 바 단축 명령] 모든 세션에 바로 적용 · 앱을 껐다 켜도 남음 — 영어도 됨: show | hide | auto on|off | min | max | panel',
+      '/easy-compact 보이기 | 안보이기         입력창 위 이지 컴팩트 바 늘 보이기(자동 숨김도 끔) · 끄기 — 끄기는 바의 ✕ 버튼',
+      `/easy-compact 자동숨김 켜기 | 끄기      컴팩트 구간 시작(노랑) 전엔 바를 접었다가 그때 보임 — 바의 ⇲ 버튼, 접힌 동안 입력창 아래 [${revealLabel(false)}] 로 펴기(켜기 · 끄기 없이 치면 번갈아)`,
+      '/easy-compact 최소 | 최대               바 크기: 한 줄 · 세 줄 — 바의 — / □ 버튼',
+      '/easy-compact 패널 [열기 | 닫기]        오른쪽 사용량 패널(바가 없을 때도, 열기 · 닫기 없이 치면 번갈아)',
+      '/easy-compact 패널 자동 켜기 | 끄기     새 세션에서 사용량 패널 자동으로 열기(기본 끔)',
+      '/easy-compact 패널 같이 켜기 | 끄기     한 세션에서 열고 닫으면 다른 데스크톱 세션도 같이(기본 켬)',
+      '',
+      '[설정]',
       '/easy-compact settings   사용량 패널의 설정 탭 열기',
       '/easy-compact set 권장 <크기|구간>   컴팩트 크기 직접 지정(예: set 권장 30만) · 구간 방식(set 권장 구간)',
       '/easy-compact set 구간 <시작> <끝>   컴팩트 구간(예: set 구간 15만 25만) — 시작부터 노랑, 끝부터 빨강',
       '/easy-compact set 캐시 <분>   캐시 남은 분이 이보다 적으면 노랑',
       '/easy-compact 문구 <일반|긴 세션 이어가기|마무리|직접|직접 쓸 글>   저장하고 컴팩트 문구',
-      '/easy-compact 띠 <전체|최소화|컴팩트할때만>   띠 보기(최소화 = 한 줄, 컴팩트할 때만 = 컴팩트 구간 시작부터)',
-      '/easy-compact 띠 <칸> <켜기|끄기>   전체 보기 띠의 칸(5시간 · 7일 · 리셋 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문)',
-      '/easy-compact hide|show  이 세션에서 띠 숨기기 · 보이기',
+      '/easy-compact 칸 <이름> <켜기|끄기>   최대 크기의 칸(5시간 · 7일 · 리셋 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문, 모두)',
       '/easy-compact lang <auto|ko|en>   화면 언어(자동 = Claude 설정 → 앱 언어 → OS 언어)',
+      '/easy-compact            사용량 · 세션 기록(컨텍스트 흐름) 다시 읽기',
     ].join('\n'),
     [
-      '/easy-compact            re-read usage · the session transcript (context flow)',
-      '/easy-compact usage      open · close the Usage pane (context · cost · per-question cost)',
+      '[Easy Compact bar shortcuts] apply to every session at once and stay after a restart',
+      '/easy-compact show | hide          always show the Easy Compact bar above the input (auto-hide off too) · turn it off — the ✕ button',
+      `/easy-compact auto on | off        auto-hide until the start of the compact range (yellow) — the ⇲ button; while folded, [${revealLabel(false)}] below the input unfolds it (without on/off it toggles)`,
+      '/easy-compact min | max            bar size: one line · three rows — the — / □ button',
+      '/easy-compact panel [open | close] the Usage pane on the right, even with no bar (without open/close it toggles)',
+      '/easy-compact panel auto on | off  open the Usage pane by itself in new sessions (off by default)',
+      '/easy-compact panel share on | off opening or closing it in one session does the same in the other desktop sessions (on by default)',
+      '',
+      '[Settings]',
       '/easy-compact settings   open the Settings tab of the Usage pane',
       '/easy-compact set compact <size|range>   set a compact size (e.g. set compact 300k) · range mode (set compact range)',
       '/easy-compact set range <start> <end>   compact range (e.g. set range 150k 250k) — yellow from start, red from end',
       '/easy-compact set cache <minutes>   yellow when fewer cache minutes remain',
       '/easy-compact prompt <Normal|Long-session handoff|Wrap-up|Custom|your own text>   Save & compact text',
-      '/easy-compact band <full|min|auto>   band view (min = one line, auto = only from the start of the compact range)',
-      '/easy-compact band <part> <on|off>   parts of the Full band (5h · 7d · reset · request · context · range · cache · question)',
-      '/easy-compact hide|show  hide · show the band in this session',
+      '/easy-compact band <part> <on|off>   parts shown at Full size (5h · 7d · reset · request · context · range · cache · question, all)',
       '/easy-compact lang <auto|ko|en>   display language (auto = Claude settings → app language → OS language)',
+      '/easy-compact            re-read usage · the session transcript (context flow)',
     ].join('\n'),
   )
+
+/** 설정 탭 저장 — 이번에 바를 껐으면(안 보이기) 다시 켜는 법을 토스트로(바의 ✕ · 명령과 같은 말) */
+async function saveFromSettings($: EngineInterface, next: Settings): Promise<void> {
+  const wasHidden = (await currentSettings($)).bandHidden
+  await saveSettings($, next)
+  if (next.bandHidden && !wasHidden) $.ui.toast(hiddenNote(), { timeoutMs: HIDDEN_NOTE_MS })
+}
 
 /** 설정 화면 버튼 동작 묶음 — $ 를 쓰는 동작은 이 파일에 있어야 한다(엔진은 $ 를 import 너머로 따라가지 않아 모듈을 안 띄운다) */
 function settingsActs($: EngineInterface): SettingsActions {
   return {
-    save: next => void saveSettings($, next),
+    save: next => void saveFromSettings($, next),
     editCmp: next => void update($, cmpDraft, () => next),
     applyCmp: () => void applyCmpDraft($),
     typeTidy: text => void update($, tidyDraft, () => text),
     saveTidy: text => void saveTidyCustom($, text),
     toggleRaw: () => void toggleTidyRaw($),
-    toggleLayout: () => void toggleLayout($),
+    toggleFold: key => void toggleFold($, key),
     setLang: choice => void saveLang($, choice),
+    setPaneOption: (key, isOn) => void setPaneOption($, key, isOn),
   }
 }
 
@@ -1256,24 +1458,27 @@ export const register: Register = on => {
     await $.command.register({
       name: 'easy-compact',
       description: L(
-        '컨텍스트 · 비용 · 컴팩트 띠와 설정: usage · settings · set 권장|구간|캐시 · 문구 · 띠 · hide/show',
-        'Context · cost · compact band and settings: usage · settings · set compact|range|cache · prompt · band · hide/show',
+        '입력창 위 바 보이기 · 안보이기 · 자동숨김 켜기|끄기 · 최소 · 최대 · 패널 열기|닫기, 그리고 컴팩트 설정(settings · set · 문구)',
+        'Bar above the input: show · hide · auto on|off (auto-hide) · min · max · panel open|close, plus compact settings (settings · set · prompt)',
       ),
       argumentHint: L(
-        '[usage | settings | set 권장 <크기|구간> | set 구간 <시작> <끝> | set 캐시 <분> | 문구 <글> | 띠 <전체|최소화|컴팩트할때만> | hide | show]',
-        '[usage | settings | set compact <size|range> | set range <start> <end> | set cache <min> | prompt <text> | band <full|min|auto> | hide | show]',
+        '[보이기 | 안보이기 | 자동숨김 켜기|끄기 | 최소 | 최대 | 패널 | settings | set … | 문구 … | 칸 <이름> 켜기|끄기 | lang]',
+        '[show | hide | auto on|off | min | max | panel | settings | set … | prompt … | band <part> on|off | lang]',
       ),
     })
     // 재로드도 session.start 다 — 여기서 턴 비용을 세면 턴이 아닌 구간이 섞인다
     await refreshUsage($, { categories: false, pushHistory: false })
     await loadSettings($)
+    // 사용량 패널: 이 세션이 시작한 때(같이 열고 닫기는 그 뒤 일만 따른다), 새 세션이면 자동으로 열기
+    paneStartAt = await $.clock.now()
+    await autoOpenPane($).catch(() => {})
     // 기록 파일(수 MB)은 시작을 막지 않게 뒤에서 읽는다. 다 읽으면 사용량을 다시 잰다 —
     // 컴팩트 뒤 첫 요청 전이면 엔진 값이 컴팩트 전 크기라 흐름의 컴팩트 기록을 보고 추정값으로 바꾼다
     // 기본 적재(/context 분류)도 이때 한 번 잰다 — 계산식 최적의 재료
     void loadFlow($)
       .then(() => refreshUsage($, { categories: true, pushHistory: false }))
       .catch(() => {})
-    // 다른 데스크톱 세션에서 열고 닫은 패널 · 바꾼 설정을 따라간다(터미널 세션의 패널은 자기 것만)
+    // 패널을 이 세션 값에 맞추고(같이 열고 닫기면 다른 데스크톱 세션이 연 · 닫은 것도), 바꾼 설정을 따라간다
     $.clock.every(1500, () => {
       void syncPane($).catch(() => {})
       void loadSettings($).catch(() => {})
@@ -1527,11 +1732,12 @@ export const register: Register = on => {
     }
   }).catch(($, e, next) => next(e)) // 다시 재기가 실패해도 컴팩트는 그대로 간다
 
-  // 사람이 패널을 닫으면 닫아 둔다 — 데스크톱이면 모든 데스크톱 세션에서, 터미널이면 이 세션만
+  // 사람이 패널을 닫으면 닫아 둔다 — 같이 열기면 모든 데스크톱 세션에서, 아니면(기본 · 터미널) 이 세션만
   on('ui.close', async ($, e, next) => {
     if (e.id === PANE && e.origin.kind === 'person') {
       await setWantedView($, null)
       await update($, paneView, () => null)
+      await update($, usageTab, () => 'main')
     }
     return next(e)
   }).catch(($, e, next) => next(e)) // 저장이 실패해도 닫기는 그대로 간다
@@ -1544,20 +1750,16 @@ export const register: Register = on => {
     const rest = args.slice(verb.length).trim()
     const settingsReply = await settingsCommand($, verb, rest)
     if (settingsReply !== null) return { text: settingsReply }
-    if (verb === 'hide' || verb === 'show') {
-      await update($, isHidden, () => verb === 'hide')
-      return { text: verb === 'hide' ? L('띠를 숨겼습니다.', 'Band hidden.') : L('띠를 다시 보입니다.', 'Band shown again.') }
-    }
-    if (verb === 'usage') {
-      // 번갈아 여닫으니 어느 쪽이 됐는지 알린다 — "열거나 닫았습니다" 로는 닫힌 게 고장처럼 보였다
-      const isOpened = (await toggleView($, 'usage')) !== null
+    // 보이기 · 안보이기 · 필요할때만 · 최소 · 최대 · 패널(usage)은 settingsCommand 의 bandShortcut 이 받는다
+    if (['?', 'help', '-h', '--help', '도움말'].includes(verb.toLowerCase())) return { text: help() }
+    // 모르는 말엔 한 줄만 — 명령 출력은 대화 기록에 남아 다음 요청이 같이 읽는다(도움말 전체는 수백 토큰)
+    if (verb !== '')
       return {
-        text: isOpened
-          ? L(`${paneTitle()} 패널을 열었습니다.`, `Opened the ${paneTitle()} pane.`)
-          : L(`${paneTitle()} 패널을 닫았습니다.`, `Closed the ${paneTitle()} pane.`),
+        text: L(
+          `모르는 명령입니다. 단축: 보이기 · 안보이기 · 자동숨김 켜기|끄기 · 최소 · 최대 · 패널 — 전체: /easy-compact ?`,
+          `Unknown command. Shortcuts: show · hide · auto on|off · min · max · panel — all: /easy-compact ?`,
+        ),
       }
-    }
-    if (verb !== '') return { text: help() }
     // 흐름 먼저 — 사용량은 컴팩트 직후인지를 흐름에서 본다
     await loadFlow($, { fromTranscript: true })
     // 다시 읽기: 기본 적재(/context 분류)도 다시 잰다 — 계산식 최적의 재료
@@ -1615,14 +1817,14 @@ export const register: Register = on => {
         (await read($, usage))?.contextTokens ?? null,
         autoLang,
         cols,
-        await read($, layoutOpen),
+        await read($, settingsOpen),
       )
     } else {
       const nowTurn = await read($, live)
       const phase = await read($, compactPhase)
       const kind = await read($, compactKind)
       // 진행 중 질문은 보내자마자(첫 요청이 끝나기 전에도) — 첫 요청이 끝나야 보이면 도구 없이 한 번에 끝나는 질문은
-      // 끝날 때까지 안 보였다(CLI)
+      // 끝날 때까지 안 보였다(2026-10-11 CLI)
       const liveEl =
         nowTurn
           ? liveBlock(ui, nowTurn, allSums[allSums.length - 1], cols - CARD_INSET, g, e.surface, phase, kind)
@@ -1664,10 +1866,41 @@ export const register: Register = on => {
     )
   })
 
+  // 바가 접혀 있으면(자동 숨김으로 노랑 전 · ✕ 로 닫음) 입력창 아래 오른쪽 모드 줄에 [🔽 이지 컴팩트 ⇱] 하나 — 누르면
+  // 늘 보이기. 바가 통째로 사라지니 다시 켜려면 명령을 쳐야 했다. 입력창 위 자리는
+  // 계속 빈다. 자동 숨김이면 강조 버튼(primary), 닫았으면 회색 + "닫힘"(revealLabel). 마우스 올리기 칩은 두지 않는다 — 이
+  // 줄은 칩을 숨기지 못해 칩 글이 "자동 …" 으로 늘 보였다. 엔진 모드 글 · 다른 mod 버튼(next — 개인용
+  // session-tree-viewer 의 🌳 등)은 앞에 그대로.
+  // 이 줄(데스크톱 SessionMode, 엔진 문서상 "흐린 모드 글" 자리)의 규칙 — 여러 mod 가 같이 써도 안 깨지게:
+  //   1) 버튼 하나만 넣는다. 버튼 밖 글자 · 상자는 줄 끝으로 모인다(파란 🗜 를 버튼 밖에 두자 🌳 뒤로 떨어졌다)
+  //   2) 색은 원래 색이 있는 그림 글자로만(🌳 초록 · 🔽 파랑) — 버튼 안 글자는 테마 색 · hex 어느 쪽을 줘도 앱 버튼 색이다
+  //   3) 폭이 좁다 — 글이 길면 뒤 버튼(🌳)이 밀린다. 강조(primary)도 흐리게 그려진다
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const inner = await next(e)
+    if (!(await isBandTucked($))) return inner
+    await ensureLang($)
+    setSurface(e.surface)
+    const { Box, Button } = $.ui.resolve(e)
+    const isClosed = (await currentSettings($)).bandHidden
+    return (
+      <Box key="ec-mode" columnGap={1} alignItems="center">
+        {inner}
+        <Button
+          key="band-reveal"
+          label={revealLabel(isClosed)}
+          {...(isClosed ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
+          onPress={async () => saveSettings($, setBandShow(await currentSettings($), 'always'))}
+        />
+      </Box>
+    )
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     await ensureLang($)
     setSurface(e.surface)
-    if (e.props.hasSurvey || (await read($, isHidden))) {
+    // 안 보이기(설정, 모든 세션) — 띠 자리를 엔진에 돌려준다
+    const sNow = await currentSettings($)
+    if (e.props.hasSurvey || sNow.bandHidden) {
       return next(e)
     }
 
@@ -1678,22 +1911,36 @@ export const register: Register = on => {
     // 버튼엔 크기를 안 붙인다 — 바로 왼쪽 줄에 컨텍스트 · 컴팩트 구간이 있다. 이름은 mod 이름 "이지 컴팩트":
     // 띠에 mod 이름이 따로 없고, 앱 기본 컴팩트(진행 글 "클로드 기본 compact")와 갈린다
     const compactCore = L('이지 컴팩트', 'Easy Compact')
-    const compactLabel = withIcon('🗜', compactCore)
+    // 바의 🗜 는 컴팩트 단계 색과 상관없이 진한 파랑(BRAND_HEX) 글자로, 버튼 · 진행 글 밖에 따로 둔다. 🗜 는 글자처럼 그려지는 기호라 감싼
+    // 글의 색을 따라가 평소 흰색 · 답 도는 중 회색 · 컴팩트 중 청록 · 저장 중 노랑 · 확인창 파랑으로 바뀌었다 — 상태에
+    // 영향 받지 않게 파랑. 상태는 깜빡이는 점 · 버튼 글 · 강조 버튼으로만 — 버튼 이름의 🟡 · 🔴 · 🧊 · 🔄 도 뺐다(🗜
+    // 와 그림 둘이 붙는다). 아이콘은 버튼 밖. 터미널은 아이콘 없이. 답 도는 중엔 누를 수 없으니 색 없이 흐리게(offIcon) —
+    // 비활성이면 색이 없어야 맞다. 저장 · 컴팩트 중은 이지 컴팩트가 하는 일이라 파랑 그대로
+    const iconBox = (look: { color: string } | { dimColor: true }) =>
+      iconOf('🗜') ? (
+        <Box key="compact-icon">
+          <Text {...look}>{iconOf('🗜')}</Text>
+        </Box>
+      ) : null
+    const brandIcon = iconBox({ color: BRAND_HEX })
+    const offIcon = iconBox({ dimColor: true })
     const isConfirming = !e.props.isWorking && (await read($, isConfirmingCompact))
     const nowMs = u ? await $.clock.now() : 0
-    // 띠 보기(설정): 전체 = 세 줄, 최소화 · 컴팩트할 때만 = 한 줄(요청당 · 컨텍스트 · 컴팩트 구간). 전체 보기의 칸은 bandShow 로 뺀다
-    const sNow = await currentSettings($)
+    // 띠 크기(설정): 최대 = 세 줄, 최소 = 한 줄(요청당 · 컨텍스트 · 컴팩트 구간). 최대의 칸은 bandShow 로 뺀다.
+    // 필요할 때만(bandAuto)은 크기와 따로 — 노랑 전엔 아래에서 띠를 안 그린다
     const mode = sNow.band
+    const isAuto = sNow.bandAuto
     const show = mode === 'full' ? sNow.bandShow : MIN_SHOW
 
     // 왼쪽 = 비용 영역(두 줄), 오른쪽 = 버튼 영역. 둘 사이에 세로줄을 둔다
     const sums = await read($, turnSummaries)
     const now = e.props.isWorking ? await read($, live) : null
     // 쉬는 동안 캐시가 식었거나 모델을 바꿨으면(다음 요청이 전체를 다시 씀) 지난 질문 줄은 숨긴다 — "캐시 만료 · 재작성"
-    // 줄과 지난 질문의 "캐시 다시 씀" 이 같이 보여 어느 게 지금 일인지 헷갈렸다. 지난 질문 값은 사용량 패널에 있다
+    // 줄과 지난 질문의 "캐시 다시 씀" 이 같이 보여 어느 게 지금 일인지 헷갈렸다. 지난 질문 값은 사용량 패널에 있다.
+    // 컴팩트 뒤 첫 요청 전도 같다 — 컴팩트 전 저장 턴의 "캐시 다시 씀" 이 지금 일처럼 읽혔다
     const lineEst = u && !e.props.isWorking ? estimate(u.contextTokens, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom)) : null
     const lastLine =
-      mode !== 'full' || !show.lastTurn || lineEst?.kind === 'cold' ? null : drawLastTurnLine(ui, sums.length > 0 ? sums[sums.length - 1]! : null, now)
+      mode !== 'full' || !show.lastTurn || lineEst?.kind === 'cold' || u?.isAfterCompact ? null : drawLastTurnLine(ui, sums.length > 0 ? sums[sums.length - 1]! : null, now)
     // 컴팩트 직후 크기 · 입력 몫 등 계산식 재료(measureOptimal) — 식은 캐시 줄 · 버튼 판단 · 확인창이 같은 값을 쓴다.
     // 모르면(직후 크기를 못 잼) 컴팩트 손익을 안 보인다
     const inputs = (await read($, optimal))?.inputs ?? null
@@ -1703,7 +1950,7 @@ export const register: Register = on => {
     // 버튼: 패널(세션 트리 · 사용량)은 맨 윗줄 오른쪽, 컴팩트는 비용 줄 오른쪽. 확인은 띠 아래 한 덩어리로 펼친다
     const level = u ? levelOf(u.contextTokens) : 'ok'
     const phase = await read($, compactPhase)
-    const look = phaseLook(phase, await read($, compactKind))
+    const look = phaseLook(phase, await read($, compactKind), false)
     const est = u ? estimate(u.contextTokens, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom)) : null
     // 캐시가 없는 까닭: 60분 지나 만료 · 모델을 바꿔 새 모델엔 없음 — 버튼 · 확인창 글만 다르고 셈은 같다
     const isSwitched = est?.kind === 'cold' && est.reason === 'model'
@@ -1713,68 +1960,109 @@ export const register: Register = on => {
     // 캐시가 식었는데 바로 컴팩트가 이어 가기보다 비싼 크기면 권장 · 강조를 띄우지 않는다(정리 후 컴팩트는 정리 질문이
     // 전체를 다시 써 더 비싸다). 줄인 만큼은 그 뒤 요청들에서 천천히 돌아올 뿐이다
     const shownLevel = est?.kind === 'cold' && !isColdWin ? 'ok' : level
-    // 컴팩트할 때만 보기: 노랑(구간 시작 · 직접 지정이면 그 80%)에 닿기 전엔 띠를 그리지 않는다 — 입력창 위 자리가 아예 빈다.
+    // 필요할 때만: 노랑(구간 시작 · 직접 지정이면 그 80%)에 닿기 전엔 띠를 그리지 않는다 — 입력창 위 자리가 아예 빈다.
     // 식은 캐시라 바로 컴팩트가 더 싼 때(권장) · 저장 · 컴팩트가 도는 중 · 확인창이 열린 동안은 그린다(진행이 사라지지 않게)
-    if (mode === 'auto' && shownLevel === 'ok' && !isColdWin && phase !== 'tidying' && phase !== 'compacting' && !isConfirming) return next(e)
+    if (isAuto && shownLevel === 'ok' && !isColdWin && phase !== 'tidying' && phase !== 'compacting' && !isConfirming) return next(e)
     const pulse = (hex: string, alt: string) => pulseDot(ui, e.surface, hex, alt)
+    // 마우스를 올리면 버튼 바로 왼쪽에 설명 칩: 엔진 문서의 꼴 그대로 — 키 있는 상자(버튼을 감싼다) 안에 display none 인
+    // absolute 칸을 두고 hover 에 display flex. 칩엔 키를 주지 않는다(키가 있으면 칩 자신이 hover 범위가 돼 안 드러난다).
+    // 처음엔 버튼 hover scope 로 다른 칸을 켜게 했는데 데스크톱에서 안 떴다. absolute 라 줄이 안 밀리고, 바탕색으로
+    // 아래 글을 가린다. key 엔 버튼 상태를 붙인다(…-open · …-on 등) — 눌러서 패널이 열리고 닫혀 바 폭이 바뀌면 마우스가
+    // 떠나도 칩이 켜진 채 남았다. 상태가 바뀌면 상자가 새것이라 hover 가 안 남는다
+    const withTip = (key: string, button: unknown, text: string) => (
+      <Box key={key}>
+        {button}
+        <Box position="absolute" top={0} right={4} display="none" hover={{ display: 'flex' }} backgroundColor="promptBorder" paddingX={1}>
+          <Text wrap="truncate-end">{text}</Text>
+        </Box>
+      </Box>
+    )
     // 컴팩트 시점(설정): 구간이면 시작부터 노랑 "컴팩트하기 좋은 때", 끝부터 빨강 "컴팩트 늦어짐" + 깜빡이는 점.
     // 직접 지정이면 그 80% 부터 노랑, 정한 크기부터 빨강 "컴팩트 권장"
     const isRange = thresholds().isRange === true
+    // 손익(확인 카드와 같은 셈): 컴팩트로 요청 · 질문마다 얼마 아끼고 몇 번이면 본전인지
+    const callsPerQ = average(sums.slice(-10).map(t => t.steps).filter(n => n > 0))
+    const pay = u && inputs && est?.kind === 'warm' ? compactPayoff(u.contextTokens, inputs, u.model, callsPerQ) : null
+    // 아낄 게 거의 없음(본전 없음 · 줄어드는 몫이 작음) — 툴팁 · 카드 · 저장 프롬프트가 같은 판정
+    const isLittle = pay !== null && u !== null && isLittleToSave(u.contextTokens, afterTokens, pay.breakEvenCalls)
+    // 컴팩트를 권하지 않는 동안(구간 전 · 방금 컴팩트함 · 식었어도 컴팩트가 더 비쌈) 🗜 는 회색, 까닭은 툴팁으로 — 대부분의
+    // 시간이 이 상태라 글을 붙이면 바가 늘 길어진다. 처음엔 버튼을 흐리게(dimColor) 했는데 데스크톱은 버튼 흐림을 안
+    // 그렸다 — 버튼 밖 아이콘은 색이 먹는다. 버튼의 dimColor 는 터미널(아이콘 없음)에서 흐리게 보여 남긴다.
+    // 눌러 확인창을 여는 건 그대로
+    const isNotNow = shownLevel === 'ok' && !isColdWin
+    const thr = thresholds()
+    const notNowTip =
+      isLittle
+        ? L('지금 컴팩트하면 손해 — 아낄 게 거의 없음(컨텍스트가 이미 작음)', 'Compacting now is a loss — little to save, the context is already small')
+        : thr.isRange
+          ? L(`아직 컴팩트할 때가 아님 · 구간 ${fmtTokens(thr.ctxWarn)}~${fmtTokens(thr.ctxCut)}`, `Not time to compact yet · range ${fmtTokens(thr.ctxWarn)}–${fmtTokens(thr.ctxCut)}`)
+          : L(`아직 컴팩트할 때가 아님 · 기준 ${fmtTokens(thr.ctxCut)}`, `Not time to compact yet · compact at ${fmtTokens(thr.ctxCut)}`)
     const compactText =
       shownLevel === 'cut'
-        ? withIcon('🔴', isRange ? L('컴팩트 늦어짐', 'Compact overdue') : L('컴팩트 권장', 'Compact advised'))
-        : shownLevel === 'warn'
-          ? isRange
-            ? withIcon('🟡', L('컴팩트하기 좋은 때', 'Good time to compact'))
-            : withIcon('🟡', compactCore)
-          : compactLabel
+        ? isRange
+          ? L('컴팩트 늦어짐', 'Compact overdue')
+          : L('컴팩트 권장', 'Compact advised')
+        : shownLevel === 'warn' && isRange
+          ? L('컴팩트하기 좋은 때', 'Good time to compact')
+          : compactCore
     // 진행 중엔 버튼 대신 글자 — 눌러도 아무 일 없다
     const compactRow =
       phase === 'compacting' && look ? (
         <Box columnGap={1} alignItems="center">
+          {brandIcon}
           {pulse(look.hex, L('컴팩트 중', 'Compacting'))}
           <Text color={look.color}>{look.text}</Text>
         </Box>
       ) : phase === 'tidying' && look ? (
         <Box columnGap={1} alignItems="center">
+          {brandIcon}
           {pulse(look.hex, L('저장 중', 'Saving'))}
           <Text color={look.color}>{look.text}</Text>
           <Button key="compact-cancel" label={L('취소', 'Cancel')} variant="secondary" onPress={() => update($, compactPhase, () => 'idle')} />
         </Box>
       ) : e.props.isWorking ? (
         // 턴이 도는 중엔 누를 수 없다(버튼이 아니라 글자) — 끝나면 버튼으로 돌아온다
-        <Text dimColor>{L(`${compactLabel} · 답이 끝나면 누를 수 있음`, `${compactLabel} · available when the answer ends`)}</Text>
+        <Box columnGap={1} alignItems="center">
+          {offIcon}
+          <Text dimColor>{L(`${compactCore} · 답이 끝나면 누를 수 있음`, `${compactCore} · available when the answer ends`)}</Text>
+        </Box>
       ) : isConfirming ? (
         // 확인창이 열린 자리를 다시 누르면 닫힌다(글자였을 땐 눌러도 반응이 없었다)
         <Box columnGap={1} alignItems="center">
-          {/* 아이콘은 버튼 밖 — 버튼 이름은 앱이 자기 색으로 그려 일부만 칠할 수 없다. 카드 제목의 파란 아이콘과 짝 */}
-          {iconOf('🗜') ? <Text color={ACCENT}>{iconOf('🗜')}</Text> : null}
+          {/* 아이콘은 버튼 밖(brandIcon) — 카드 제목의 파란 아이콘과 짝 */}
+          {brandIcon}
           {/* "컴팩트 열림" 은 컴팩트가 도는 것처럼 읽혔다 — 원래 이름에 닫기 표시만(상태는 아래 카드가 보인다) */}
           <Button key="compact-close" label={L('이지 컴팩트 ✕', 'Easy Compact ✕')} variant="secondary" onPress={() => update($, isConfirmingCompact, () => false)} />
         </Box>
       ) : (
         <Box columnGap={1} alignItems="center">
           {phase === 'held' ? <Text color="yellow">{withIcon('⏸', L('보류됨', 'On hold'))}</Text> : null}
+          {/* 권하지 않는 동안 🗜 는 회색 — 데스크톱은 버튼 흐림(dimColor)을 안 그려 버튼으론 "아직" 이 안 보였다 */}
+          {isNotNow ? offIcon : brandIcon}
+          {/* 상태는 깜빡이는 점(파랑 = 식은 캐시 · 모델 바뀜, 빨강 = 늦어짐 · 권장, 노랑 = 좋은 때 · 곧)과 강조 버튼으로 */}
           {isColdWin
             ? pulse('#4c9be8', isSwitched ? L('모델 바뀜', 'Model switched') : L('캐시 만료', 'Cache expired'))
             : shownLevel === 'cut'
               ? pulse('#e05555', isRange ? L('컴팩트 늦어짐', 'Compact overdue') : L('컴팩트 권장', 'Compact advised'))
-              : // 터미널은 버튼 이름의 🟡 를 빼서 노랑 표시가 없다 — 같은 자리 점(● 노랑)으로
-                shownLevel === 'warn' && e.surface === 'terminal'
+              : shownLevel === 'warn'
                 ? pulse('#e0b040', isRange ? L('컴팩트하기 좋은 때', 'Good time to compact') : L('곧 컴팩트할 때', 'Compact soon'))
                 : null}
-          <Button
-            key="compact"
-            label={
-              isColdWin
-                ? isSwitched
-                  ? withIcon('🔄', L('모델 바뀜 · 바로 컴팩트 권장', 'Model switched · compact now advised'))
-                  : withIcon('🧊', L('캐시 만료 · 바로 컴팩트 권장', 'Cache expired · compact now advised'))
-                : compactText
-            }
-            {...(shownLevel === 'ok' && !isColdWin ? {} : { variant: 'primary' as const })}
-            onPress={() => update($, isConfirmingCompact, () => true)}
-          />
+          {withTip(
+            `band-compact-tip-${isNotNow ? 'not-now' : shownLevel}`,
+            <Button
+              key="compact"
+              label={
+                isColdWin
+                  ? isSwitched
+                    ? L('모델 바뀜 · 바로 컴팩트 권장', 'Model switched · compact now advised')
+                    : L('캐시 만료 · 바로 컴팩트 권장', 'Cache expired · compact now advised')
+                  : compactText
+              }
+              {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
+              onPress={() => update($, isConfirmingCompact, () => true)}
+            />,
+            isNotNow ? notNowTip : L('누르면 컴팩트할까요?', 'Press to open Compact now?'),
+          )}
         </Box>
       )
 
@@ -1859,12 +2147,10 @@ export const register: Register = on => {
     )
     // 바로 컴팩트가 /compact 뒤에 붙이는 지시 — 무엇을 붙이는지 그대로 보인다
     const directNote = L(`/compact 지시 「${directKeep()}」`, `/compact instruction "${directKeep()}"`)
-    // 손익: 드는 값만으론 와닿지 않는다 — 컴팩트로 질문마다 얼마 아끼고 몇 질문이면 본전인지
-    const callsPerQ = average(sums.slice(-10).map(t => t.steps).filter(n => n > 0))
-    const pay = u && inputs && est?.kind === 'warm' ? compactPayoff(u.contextTokens, inputs, u.model, callsPerQ) : null
+    // 손익(pay — 위에서 셈): 드는 값만으론 와닿지 않는다 — 컴팩트로 질문마다 얼마 아끼고 몇 질문이면 본전인지
     const verdict = !pay
       ? null
-      : pay.breakEvenCalls === null
+      : isLittle
         ? { text: L('아낄 게 거의 없음 — 컨텍스트가 이미 작습니다', 'Little to save — the context is already small'), color: 'red' }
         : pay.breakEvenQuestions !== null
           ? {
@@ -1893,7 +2179,7 @@ export const register: Register = on => {
         : null
     // 화면엔 두 줄만: 무엇을 얻나(질문당 아끼는 값) · 얼마 드나. 본전 · 요청당 값은 투머치였다 —
     // 그 계산은 정리 프롬프트로 세션에 넘겨 "손해인가" 판단에만 쓴다
-    const saves = pay !== null && pay.saveCallUsd > 0 && pay.breakEvenCalls !== null
+    const saves = pay !== null && pay.saveCallUsd > 0 && !isLittle
     // 한 줄: 효과(컨텍스트 전 → 후 · 아끼는 값) · 드는 값 — 띠 높이가 모자라 버튼이 잘렸다
     const costLine =
       pay && u ? (
@@ -1909,7 +2195,8 @@ export const register: Register = on => {
           </Text>
           <Text dimColor>{' · '}</Text>
           {!saves ? (
-            <Text color="yellow">{L('아낄 게 거의 없음', 'little to save')}</Text>
+            // 바 툴팁과 같은 판정 · 같은 색 — 아낄 게 없으면 지금 컴팩트는 손해(빨강)
+            <Text bold color="red">{L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'little to save — compacting now is a loss')}</Text>
           ) : (
             <Text>
               <Text>{pay.saveQuestionUsd !== null ? L('질문 1개당 ', 'saves ') : L('요청 1회당 ', 'saves ')}</Text>
@@ -1926,20 +2213,27 @@ export const register: Register = on => {
           </Text>
         </Text>
       ) : est?.kind === 'cold' ? (
-        // 캐시가 식었으면 다음 요청이 전부 다시 쓴다 — 작게 줄여 두면 그 값이 준다
+        // 캐시가 식었으면 다음 요청이 전부 다시 쓴다. 바로 컴팩트의 값은 띠 줄과 같은 셈(coldCompact: 컴팩트 요청 + 요약 출력 +
+        // 줄어든 컨텍스트 다시 쓰기)과 같은 말(이득 / 손해) — 예전엔 다시 쓰기 몫만 초록으로 보여 띠의 "손해" 와 거꾸로 읽혔다
         <Text wrap="wrap">
           <Text>{isSwitched ? L('모델 바뀜', 'Model switched') : L('캐시 만료', 'Cache expired')}</Text>
           <Text dimColor>{' · '}</Text>
           <Text>{L('그냥 이어 가면 첫 요청 ', 'continuing as is, the first request costs ')}</Text>
-          <Text bold color="red">
-            ~{fmtUsd(est.rewriteUsd)}
-          </Text>
+          <Text bold>~{fmtUsd(est.rewriteUsd)}</Text>
           <Text>{L('(전체 다시 쓰기)', ' (full rewrite)')}</Text>
-          <Text dimColor>{' · '}</Text>
-          <Text>{L('컴팩트하면 ', 'compacting ')}</Text>
-          <Text bold color="green">
-            ~{fmtUsd((afterTokens * est.rates.write1h) / 1e6)}
-          </Text>
+          {cold === null ? null : (
+            <Text>
+              <Text dimColor>{' · '}</Text>
+              <Text>{L('바로 컴팩트하면 ', 'compacting now ')}</Text>
+              <Text bold>~{fmtUsd(cold.compactUsd)}</Text>
+              <Text dimColor>{' · '}</Text>
+              {cold.compactUsd < cold.continueUsd ? (
+                <Text bold color="green">{L(`${fmtUsd(cold.continueUsd - cold.compactUsd)} 이득`, `saves ${fmtUsd(cold.continueUsd - cold.compactUsd)}`)}</Text>
+              ) : (
+                <Text bold color="red">{L(`${fmtUsd(cold.compactUsd - cold.continueUsd)} 손해`, `costs ${fmtUsd(cold.compactUsd - cold.continueUsd)} more`)}</Text>
+              )}
+            </Text>
+          )}
         </Text>
       ) : null
     // 저장할 것은 여기서 바로 고른다 — 설정 탭에만 있으면 컴팩트할 때 어느 문구인지 안 보이고, 바꾸려면 탭을 오가야 했다
@@ -2008,17 +2302,16 @@ export const register: Register = on => {
                 {fmtTokens(u.contextTokens)}
               </Text>
               <Text>{L(' 전체를 다시 씀 ', ' ')}</Text>
-              <Text bold color="red">
-                ~{fmtUsd(cold.continueUsd)}
-              </Text>
+              {/* 금액엔 색 없음, 차이에만 이득 초록 · 손해 빨강 — 띠 줄 · 보통 카드와 같은 규칙 */}
+              <Text bold>~{fmtUsd(cold.continueUsd)}</Text>
               <Text dimColor>{' · '}</Text>
               <Text>{L('바로 컴팩트하면 ', 'compacting now ')}</Text>
-              <Text bold color="green">
-                ~{fmtUsd(cold.compactUsd)}
-              </Text>
+              <Text bold>~{fmtUsd(cold.compactUsd)}</Text>
               <Text dimColor> → </Text>
+              <Text bold>~{fmtTokens(Math.min(afterTokens, u.contextTokens))}</Text>
+              <Text dimColor>{' · '}</Text>
               <Text bold color="green">
-                ~{fmtTokens(Math.min(afterTokens, u.contextTokens))}
+                {L(`${fmtUsd(cold.continueUsd - cold.compactUsd)} 이득`, `saves ${fmtUsd(cold.continueUsd - cold.compactUsd)}`)}
               </Text>
             </Text>,
             [saveRow(true), directRow],
@@ -2039,28 +2332,44 @@ export const register: Register = on => {
         }}
       />
     )
-    // 띠는 세 줄 격자: 1 = 한도 | 패널 버튼, 2 = 요청당(식은 캐시) 줄, 3 = 지난 질문 | 컴팩트 버튼.
+    // 바는 세 줄 격자: 1 = 한도 | 사용량 패널 · 창 버튼 묶음(⇲ 자동 숨김 · — 최소 / □ 최대 · ✕ 닫기), 2 = 요청당(식은 캐시)
+    // 줄, 3 = 지난 질문 | 이지 컴팩트.
     // 왼쪽 글이 비어도(한도 없는 API 키 세션 · 식은 캐시라 지난 질문 숨김) 줄은 남아 버튼 자리가 늘 같다 — 버튼을 왼쪽 글
     // 덩어리의 세로 가운데에 두니 한도 줄이 넘어가거나 줄이 빠질 때마다 자리가 바뀌었고,
-    // 패널 버튼과 컴팩트 버튼이 위아래로 붙어 누를 때 간섭했다. 둘 사이엔 늘 2줄이 낀다.
-    // 다른 mod 가 이 띠를 감싸면(next) key "b-panels" 칸 끝에 자기 패널 버튼을 넣을 수 있다(세 보기 모두 이 칸이 있다).
-    // 띠를 안 그리는 때(컴팩트할 때만 보기 · hide)엔 칸도 없다 — 늘 보여야 할 버튼은 띠 밖에 둔다
-    const panels = (
-      <Box key="b-panels" columnGap={1} alignItems="center" flexShrink={0}>
-        {panelButton('usage', withIcon('📊', paneTitle()))}
-      </Box>
-    )
-    const right = (
-      <Box flexDirection="column" flexShrink={0} alignItems="flex-end">
-        {compactRow}
-      </Box>
-    )
-    // 띠 보기 버튼(맨 오른쪽 위): 전체 ↔ 최소화. 컴팩트할 때만 보기는 설정 탭 · 명령으로 고른다 — 그 보기에서 띠가 보일 땐
-    // 컴팩트할 때라 이 버튼 대신 컴팩트 버튼을 둔다. 바꾸면 열린 확인창은 닫는다(한 줄 띠엔 확인창이 없다)
-    const modeButton = (
+    // 패널 버튼과 컴팩트 버튼이 위아래로 붙어 누를 때 간섭했다. 같은 줄 가로로 붙여도 이지 컴팩트 옆이라 거슬렸다
+    // — 패널 버튼은 윗줄 창 버튼 옆으로, 아랫줄엔 이지 컴팩트 하나.
+    // 자동 숨김 · 크기 버튼은 창 제어 버튼처럼 아이콘 하나씩(⇲ · — 최소 / □ 최대) — 글 버튼 셋이 오른쪽 위에 몰려
+    // 붐볐다.
+    // 창 버튼에도 설명 칩(withTip — 위에 정의)
+    // 자동 숨김: ⇲ = 누르면 오른쪽 아래(입력창 아래 [🗜 ⇱])로 접기, 자동 숨김이 켜진 채 보일 땐(노랑 이후) ⇱ = 되돌리기.
+    // 버튼은 상태가 아니라 누르면 일어날 일을 그린다 — 📌(고정)는 누르면 사라져 이상했다. 켜면 노랑 전엔 바가
+    // 바로 접히니 다시 펴는 곳을 토스트로. 좁으면(터미널에서 패널을 연 때 등) 뺀다 — 명령 · 설정 탭으로 된다
+    const autoButton = e.props.bodyColumns < 60 ? null : withTip(`band-auto-box-${isAuto ? 'on' : 'off'}`, (
+      <Button
+        key="band-auto"
+        label={e.surface === 'terminal' ? (isAuto ? L('✓숨김', '✓hide') : L('숨김', 'hide')) : isAuto ? '⇱' : '⇲'}
+        variant="secondary"
+        dimColor
+        onPress={async () => {
+          const cur = await currentSettings($)
+          const turnOn = bandShowMode(cur) !== 'auto'
+          await saveSettings($, setBandShow(cur, turnOn ? 'auto' : 'always'))
+          if (turnOn)
+            $.ui.toast(
+              L(
+                `자동 숨김 — 컴팩트 구간(노랑) 전엔 입력창 아래 [${revealLabel(false)}] 로 접힙니다. 누르면 다시 늘 보입니다.`,
+                `Auto-hide — until the compact range (yellow) the bar folds into [${revealLabel(false)}] below the input. Press it to always show again.`,
+              ),
+            )
+        }}
+      />
+    ), isAuto ? L('자동 숨김 중 · 누르면 늘 보이기', 'Auto-hiding · press to always show') : L('자동 숨김 · 컴팩트 구간 전엔 입력창 아래로 접기', 'Auto-hide · fold below the input until the compact range'))
+    // 크기 버튼(맨 오른쪽 위): 최대 ↔ 최소. 안 보이기는 명령 · 설정 탭으로(바가 없을 때도 되게).
+    // 바꾸면 열린 확인창은 닫는다(최소 바엔 자동 숨김이 아니면 확인창이 없다)
+    const modeButton = withTip(`band-mode-box-${mode}`, (
       <Button
         key="band-mode"
-        label={mode === 'full' ? L('▾ 최소화', '▾ Minimize') : L('▴ 전체 보기', '▴ Full view')}
+        label={mode === 'full' ? '—' : '□'}
         variant="secondary"
         dimColor
         onPress={async () => {
@@ -2068,6 +2377,51 @@ export const register: Register = on => {
           await saveSettings($, { ...(await currentSettings($)), band: mode === 'full' ? 'min' : 'full' })
         }}
       />
+    ), mode === 'full' ? L('최소 · 한 줄로 줄이기', 'Minimize to one line') : L('최대 · 세 줄로 펴기', 'Maximize to three rows'))
+    // 닫기(창 버튼의 ✕): 안 보이기 — 모든 세션에서 닫고, 다시 켜는 법(입력창 아래 버튼 · 단축 명령)을 토스트로
+    const closeButton = withTip('band-close-box', (
+      <Button
+        key="band-close"
+        label="✕"
+        variant="secondary"
+        dimColor
+        onPress={async () => {
+          await update($, isConfirmingCompact, () => false)
+          await saveSettings($, setBandShow(await currentSettings($), 'never'))
+          $.ui.toast(hiddenNote(), { timeoutMs: HIDDEN_NOTE_MS })
+        }}
+      />
+    ), L(`닫기 · 다시 열기: 입력창 아래 [${revealLabel(true)}]`, `Close · reopen: [${revealLabel(true)}] below the input`))
+    // 사용량 패널 버튼: 데스크톱은 두 크기 모두 아이콘 📊 하나(열렸으면 밝게, 말은 툴팁)를 창 버튼 묶음 안 맨 앞에 —
+    // 아이콘만이면 창 버튼과 같이 묶여야 한다. "열림" 글은 옆에 패널이 보이니 겹치는 말이고, 최대에서 글 버튼
+    // (📊 사용량 패널 열림 ✕)을 두니 한도 줄이 두 줄로 밀려 꼴이 안 났다. 터미널은 마우스 올리기가 없어 글 버튼.
+    // 다른 mod 가 이 바를 감싸면(next) key "b-panels" 칸 끝에 자기 패널 버튼을 넣을 수 있다(두 크기 모두 이 칸이 있다).
+    // 바를 안 그리는 때(자동 숨김 · 안 보이기)엔 칸도 없다 — 늘 보여야 할 버튼은 바 밖에 둔다
+    const isPanelIcon = e.surface !== 'terminal'
+    const panels = (
+      <Box key="b-panels" columnGap={1} alignItems="center" flexShrink={0}>
+        {!isPanelIcon
+          ? panelButton('usage', withIcon('📊', paneTitle()))
+          : withTip(
+              `band-panel-box-${view === 'usage' ? 'open' : 'closed'}`,
+              // 열림 · 닫힘: 📊 는 색 그림이라 흐리게(dim)만으론 안 갈렸다 — 열렸으면 강조 버튼(설정 탭의 "✓ 고른 값" 과 같은 꼴)
+              <Button key="usage" label="📊" {...(view === 'usage' ? { variant: 'primary' as const } : { variant: 'secondary' as const, dimColor: true })} onPress={async () => void (await toggleView($, 'usage'))} />,
+              view === 'usage' ? L(`${paneTitle()} 패널 닫기`, `Close the ${paneTitle()} pane`) : L(`${paneTitle()} 패널 열기`, `Open the ${paneTitle()} pane`),
+            )}
+      </Box>
+    )
+    // 창 버튼은 한 칸(b-window)에 나란히 — 묶음 표시는 없다. 둥근 테두리는 데스크톱에서도 위아래 한 줄씩을 더 먹어 바가
+    // 두꺼웠고, 바탕색 띠는 버튼 바탕과 색이 겹쳤다. 이지 컴팩트와는 줄이 달라 따로 묶지 않아도 갈린다
+    const controls = (
+      <Box key="b-r1-right" columnGap={1} alignItems="center" flexShrink={0}>
+        {isPanelIcon ? null : panels}
+        <Box key="b-window" columnGap={1} alignItems="center">
+          {isPanelIcon ? panels : null}
+          {autoButton}
+          {modeButton}
+          {closeButton}
+        </Box>
+      </Box>
     )
 
     // 비용(왼쪽) · 버튼(오른쪽 끝 정렬)은 간격으로만 나눈다 — "│" 글자 세로줄은 줄 사이가 끊겨 싸 보였다
@@ -2079,23 +2433,81 @@ export const register: Register = on => {
         {rightEl}
       </Box>
     )
-    // 한 줄 띠(최소화 · 컴팩트할 때만): 왼쪽 요청당 · 컨텍스트 · 컴팩트 구간, 오른쪽 버튼. 최소화엔 이지 컴팩트 버튼이 없고
-    // (저장 · 컴팩트가 도는 동안의 진행 글만), 컴팩트할 때만 보기는 띠가 보일 때가 곧 컴팩트할 때라 컴팩트 버튼 + 확인창
-    if (mode !== 'full') {
-      const isBusy = phase === 'tidying' || phase === 'compacting'
+    // 최소(한 줄): 왼쪽 요청당 · 컨텍스트 · 컴팩트 구간, 오른쪽 이지 컴팩트 → 창 버튼 묶음(📊 · ⇲ · □ · ✕).
+    // 이지 컴팩트는 최소에서도 늘 둔다 — 처음엔 뺐는데 최소로 하면 컴팩트할 길이 안 보였다. 확인창도 그대로
+    if (mode === 'min') {
+      // 최소에선 이지 컴팩트를 파란 🗜 + 짧은 [컴팩트] 버튼으로 — 상태 글은 툴팁으로, 컴팩트할 때는 깜빡이는 점 색
+      // (노랑 · 빨강 · 파랑)과 강조 버튼으로. 처음엔 아이콘 버튼 [🗜] 하나였는데 버튼 안
+      // 글자는 앱 버튼 색이라 🗜 가 흰색이었다 — 🗜 를 버튼 밖으로 빼고 버튼엔 짧은 이름. 저장 · 컴팩트 중 글과
+      // [취소]는 그대로(보고 눌러야 한다), 터미널은 마우스 올리기가 없어 글 그대로
+      const isShort = e.surface !== 'terminal'
+      const miniName = L('컴팩트', 'Compact')
+      const compactTip = isColdWin
+        ? isSwitched
+          ? L('모델 바뀜 · 바로 컴팩트 권장', 'Model switched · compact now advised')
+          : L('캐시 만료 · 바로 컴팩트 권장', 'Cache expired · compact now advised')
+        : shownLevel === 'cut'
+          ? isRange
+            ? L('컴팩트 늦어짐', 'Compact overdue')
+            : L('컴팩트 권장', 'Compact advised')
+          : shownLevel === 'warn'
+            ? isRange
+              ? L('컴팩트하기 좋은 때', 'Good time to compact')
+              : L('곧 컴팩트할 때', 'Compact soon')
+            : L('이지 컴팩트', 'Easy Compact')
+      const compactMini =
+        !isShort || phase === 'compacting' || phase === 'tidying' ? (
+          compactRow
+        ) : e.props.isWorking ? (
+          // 못 누르는 동안은 🗜 · 이름 둘 다 색 없이 흐리게(버튼 자리 폭은 그대로)
+          <Box columnGap={1} alignItems="center">
+            {offIcon}
+            {withTip('band-compact-box-busy', <Text dimColor>{miniName}</Text>, L('이지 컴팩트 · 답이 끝나면 누를 수 있음', 'Easy Compact · available when the answer ends'))}
+          </Box>
+        ) : isConfirming ? (
+          <Box columnGap={1} alignItems="center">
+            {brandIcon}
+            {withTip(
+              'band-compact-box-open',
+              <Button key="compact-close" label={`${miniName} ✕`} variant="secondary" onPress={() => update($, isConfirmingCompact, () => false)} />,
+              L('확인창 닫기', 'Close the card'),
+            )}
+          </Box>
+        ) : (
+          <Box columnGap={1} alignItems="center">
+            {phase === 'held' ? <Text color="yellow">⏸</Text> : null}
+            {isNotNow ? offIcon : brandIcon}
+            {isColdWin
+              ? pulse('#4c9be8', compactTip)
+              : shownLevel === 'cut'
+                ? pulse('#e05555', compactTip)
+                : shownLevel === 'warn'
+                  ? pulse('#e0b040', compactTip)
+                  : null}
+            {withTip(
+              `band-compact-box-${shownLevel}${isColdWin ? '-cold' : ''}`,
+              <Button
+                key="compact"
+                label={miniName}
+                {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
+                onPress={() => update($, isConfirmingCompact, () => true)}
+              />,
+              isNotNow ? notNowTip : `${compactTip} · ${L('누르면 컴팩트할까요?', 'press to open Compact now?')}`,
+            )}
+          </Box>
+        )
       return (
         <Box flexDirection="column">
           {row(
             'b-r1',
             estimateLine,
             <Box key="b-one-right" columnGap={2} alignItems="center" flexShrink={0}>
-              {mode === 'auto' || isBusy ? compactRow : null}
-              {panels}
-              {mode === 'min' ? modeButton : null}
+              {compactMini}
+              {controls}
             </Box>,
             'center',
           )}
-          {mode === 'auto' ? confirm : null}
+          {confirm}
         </Box>
       )
     }
@@ -2108,15 +2520,12 @@ export const register: Register = on => {
         {row(
           'b-r1',
           u && u.rateLimits.length > 0 ? drawLimitsLine(ui, e.surface, u, nowMs, show) : null,
-          <Box key="b-r1-right" columnGap={1} alignItems="center" flexShrink={0}>
-            {panels}
-            {modeButton}
-          </Box>,
+          controls,
           'flex-start',
         )}
         {/* 비용 줄의 칸을 다 빼면 줄째 빠진다 */}
         {estimateLine ? row('b-r2', estimateLine, null, 'center') : null}
-        {row('b-r3', lastLine, right, 'center')}
+        {row('b-r3', lastLine, compactRow, 'center')}
         {confirm}
       </Box>
     )

@@ -1,31 +1,32 @@
 <p align="center">
-  <img src="docs/demo.gif" width="900" alt="easy-compact: the cost band above the Claude Code input, then one-click Save &amp; compact">
+  <img src="docs/demo.gif" width="900" alt="easy-compact: the Easy Compact bar above the Claude Code input, then one-click Save &amp; compact">
 </p>
 
 <h1 align="center">easy-compact</h1>
 
 <p align="center">
   <b>See what every request costs. Know when to compact. Compact in one click — without losing your place.</b><br>
-  Claude Code plugin · <b>Windows only</b> · desktop app and terminal
+  Claude Code plugin · desktop app and terminal · tested on Windows
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/version-0.3.0-4c9be8" alt="Version 0.3.0">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
-  <img src="https://img.shields.io/badge/Windows-desktop_app_+_terminal-4c9be8" alt="Windows: desktop app and terminal">
+  <img src="https://img.shields.io/badge/tested_on-Windows-4c9be8" alt="Tested on Windows">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
 </p>
 
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#commands">Commands</a>
+  <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-030">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#commands">Commands</a>
 </p>
 
 ---
 
 ## Install
 
-Windows only · Claude Code **2.1.295 or later**. The desktop app and the terminal share the same settings, so installing once works in both.
+**First time only.** Claude Code **2.1.295 or later**. The desktop app and the terminal share the same settings, so installing once works in both.
 
 In Claude Code — the desktop app's Code tab or the terminal — type these one at a time:
 
@@ -37,27 +38,46 @@ In Claude Code — the desktop app's Code tab or the terminal — type these one
 - **Desktop app:** the first line opens **Add marketplace** — click **Sync**. The red warning there is the standard notice for any marketplace Anthropic doesn't run. The second line opens easy-compact in the plugin list — install it.
 - **Terminal:** the second line opens the plugin's details — choose **Install for you**.
 
-Then quit the Claude app completely and open it again (or start a new `claude` session). The band appears above the input.
+Then quit the Claude app completely and open it again (or start a new `claude` session). The Easy Compact bar appears above the input.
 
 **Or just ask Claude:** send `Install https://github.com/JaeSeongHa5280/easy-compact` in a Code session.
 
-> **Note for Claude:** in the desktop app `claude` is usually not on PATH, so run the install with the running engine, in PowerShell: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. Check that `plugin list` shows `easy-compact@easy-compact` enabled, then ask the user to quit and reopen the app. Don't clone this repository or edit `settings.json`. To update an existing install, run `plugin marketplace update easy-compact` first, then `plugin update easy-compact@easy-compact` (same engine path) — without the first step it reports the old version as the latest.
+> **Note for Claude:** if `claude` is not on PATH (usual in the desktop app), run it with the running engine — on Windows, in PowerShell: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. To update an existing install, run `plugin marketplace update easy-compact` first, then `plugin update easy-compact@easy-compact` (same engine path) — without the first step it reports the old version as the latest. Check `plugin list` shows `easy-compact@easy-compact` enabled, then ask the user to quit and reopen the app. Don't clone this repository or edit `settings.json`.
+
+## Update
+
+**Already installed? Copy these two lines** into a terminal, then restart Claude:
+
+```
+claude plugin marketplace update easy-compact
+claude plugin update easy-compact@easy-compact
+```
+
+- Typing the install lines again only says *already installed*, and `plugin update` alone reports the old version as the latest — the first line fetches the new list.
+- **Desktop app only, no `claude` command?** Send `Update https://github.com/JaeSeongHa5280/easy-compact` to Claude in a Code session.
+- **Get new versions automatically:** in a terminal session, `/plugin` → **Marketplaces** → **easy-compact** → **Enable auto-update**. It is off for marketplaces Anthropic doesn't run ([Claude Code docs](https://code.claude.com/docs/en/plugins/install)).
+- Your version: `claude plugin list`. What changed: [CHANGELOG](CHANGELOG.md) · [releases](https://github.com/JaeSeongHa5280/easy-compact/releases).
 
 <details>
-<summary><b>Check · update · remove</b></summary>
+<summary><b>Remove</b></summary>
 
-- **Check:** `claude plugin list` shows `easy-compact@easy-compact` as **enabled**. If `claude --version` is older than 2.1.295, run `claude update` first.
-- **Update:** fetch the new list first, then update, then restart Claude:
-  ```
-  claude plugin marketplace update easy-compact
-  claude plugin update easy-compact@easy-compact
-  ```
-  Typing the install line again only says it is already installed, and `plugin update` alone reports the old version as the latest — marketplaces outside Anthropic's don't refresh on their own. In the desktop app you can also send `Update https://github.com/JaeSeongHa5280/easy-compact` to Claude in a Code session.
-- **Remove:** `claude plugin uninstall easy-compact@easy-compact`
+```
+claude plugin uninstall easy-compact@easy-compact
+```
 
-No cloning into `~/.claude` and no `settings.json` edits are needed.
+No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 0.3.0
+
+- **Window buttons on the bar** — 📊 Usage pane · ⇲ auto-hide · — / □ one line / full · ✕ off, with a hint on hover.
+- **🔽 Easy Compact ⇱ below the input** brings a folded or turned-off bar back. Turning it off tells you how to turn it on again.
+- **A grey 🗜 means "not now"** — before your range, right after a compact, or when compacting would cost more. Hover for the reason; the card still shows the numbers.
+- **Cache expiry fixed:** reopening a session no longer hides an expired cache, so *Cache expired · compact now advised* appears when it should.
+- Usage pane options: open by itself in new sessions · open and close together across sessions.
+
+Full list: [CHANGELOG](CHANGELOG.md).
 
 ## Why
 
@@ -67,7 +87,7 @@ Claude Code re-reads the whole context on every request — a session at 300k pa
 |---|---|
 | Typing `/context` again and again | Context and cost **always on screen** |
 | *"What did that cost?"* | Cost per **request, question and step** |
-| *"Compact now or later?"* | 🟡 **Good time** · 🔴 **Overdue** |
+| *"Compact now or later?"* | 🟡 **Good time** · 🔴 **Overdue** · grey 🗜 = not yet |
 | *"Where were we?"* after a compact | **Next steps kept** in the summary |
 
 ## Demo · 45 s
@@ -78,20 +98,10 @@ https://github.com/user-attachments/assets/cd8fd962-4361-4056-9372-fa321d3dda42
 
 ### 1. Live cost, right above the input
 
-<img src="docs/img/band.png" width="900" alt="The band: plan usage, per-request cost, context, compact range, cache, and this question's cost">
+<img src="docs/img/band.png" width="900" alt="The Easy Compact bar: plan usage, per-request cost, context, compact range, cache, and this question's cost">
 
 **Context, next-request cost and this question's cost — updated after every request.**
-Also on the band: your 5-hour and 7-day plan usage, minutes left on the prompt cache, and the **Easy Compact** button.
-
-**Too much on screen? Pick a view.**
-
-| View | What you see |
-|---|---|
-| **Full** | Everything above. Hide any part — 5h / 7d limits, reset times, cache, the question row — in Settings → **UI layout details** |
-| **Minimized** | One line: per request · context · compact range |
-| **Only when compacting** | Nothing above the input until the context reaches your compact range, then one line with **Easy Compact** |
-
-Switch with **▾ Minimize** on the band, in Settings, or with `/easy-compact band`.
+Also on the bar: your 5-hour and 7-day plan usage, minutes left on the prompt cache, the **Easy Compact** button, and the window buttons (top right). Too much on screen? Shrink it to one line, auto-hide it until it's time to compact, or turn it off — see [Hide, fold, bring it back](#hide-fold-bring-it-back). To hide single parts of the full bar, open Settings → **Easy Compact bar** → **UI layout details**.
 
 ### 2. Cost per question, step by step
 
@@ -107,13 +117,20 @@ Switch with **▾ Minimize** on the band, in Settings, or with `/easy-compact ba
 
 <img src="docs/img/settings.png" width="640" alt="Settings: a cost table per compact size with the best range starred">
 
-**Pick a compact range from a cost table.** Each size shows the per-request cost, the cost when the cache has gone cold, and how far it is from the cheapest size (★). Inside your range the band turns 🟡 *Good time to compact*; past it, 🔴 *Compact overdue*.
+**Pick a compact range from a cost table.** Each size shows the per-request cost, the cost when the cache has gone cold, and how far it is from the cheapest size (★).
+
+| Next to 🗜 | Means |
+|---|---|
+| Grey 🗜 · plain **Easy Compact** | Not now — before your range, right after a compact, or compacting would cost more. Hover for the reason |
+| 🟡 *Good time to compact* | Inside your range |
+| 🔴 *Compact overdue* | Past your range |
+| 🔵 *Cache expired · compact now advised* | The cache went cold, and compacting now is cheaper than re-sending everything |
 
 ### 4. Save & compact — one click
 
 <img src="docs/img/confirm.png" width="860" alt="Compact now? card: context 312k to 82k, savings per question, Save &amp; compact or Compact now">
 
-**"Compact now?" shows what you save per question and what the compact costs.** Then:
+**"Compact now?" shows what you save per question and what the compact costs** (or, with a cold cache, continuing vs compacting now). Then:
 
 ```mermaid
 flowchart LR
@@ -129,32 +146,58 @@ flowchart LR
 
 **After the compact, the next steps are in the summary — and every request costs less.** *Compact now* skips the save step.
 
-### 5. Terminal too
+### 5. Usage pane
 
-<img src="docs/img/terminal.png" width="900" alt="The same band and Usage pane in the Claude Code terminal">
+Open it with **📊** on the bar (or `/easy-compact panel`): cost per question and step, the context flow, and what each compact saved. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Usage pane**.
 
-**The same band and Usage pane in the CLI.** Open the pane with `/easy-compact usage`.
+### 6. Terminal too
+
+<img src="docs/img/terminal.png" width="900" alt="The same bar and Usage pane in the Claude Code terminal">
+
+**The same bar and Usage pane in the CLI.** Open the pane with `/easy-compact panel`.
+
+## Hide, fold, bring it back
+
+The window buttons sit at the top right of the bar. Every choice applies to all sessions and stays after a restart.
+
+| Button | What it does | How it comes back |
+|---|---|---|
+| **⇲** auto-hide | Folds the bar until the context reaches your compact range (yellow) | By itself at yellow — or press **🔽 Easy Compact ⇱** below the input |
+| **—** / **□** | One line / full | Press it again |
+| **✕** off | Turns the bar off in every session — a pause before you decide to uninstall | Press **🔽 Easy Compact closed ⇱** (grey) below the input, or type `/easy-compact show` |
+| **📊** | Opens or closes the Usage pane | Press it again |
+
+**Buttons cost nothing.** Typed commands don't call the model either, but the command and its one-line answer stay in the conversation, so they are re-sent with your next request (a few hundred tokens). Prefer the buttons when you can.
 
 ## Commands
 
-Everything is also a button in the band or the pane.
+Everything below is also a button on the bar or in Settings — Settings sections start folded, with the current value on each title.
+
+| Shortcut | What it does |
+|---|---|
+| `/easy-compact show` · `hide` | Always show the bar (turns auto-hide off too) · turn it off |
+| `/easy-compact auto on` · `auto off` | Auto-hide (without `on` / `off` it toggles) |
+| `/easy-compact min` · `max` | Bar size: one line · full |
+| `/easy-compact panel` | Open · close the Usage pane (`panel open` · `panel close`) |
+
+Korean words work too: `보이기` `안보이기` `자동숨김 켜기` `자동숨김 끄기` `최소` `최대` `패널`.
 
 <details>
 <summary><b>All commands</b></summary>
 
 | Command | What it does |
 |---|---|
-| `/easy-compact usage` | Open or close the Usage pane |
+| `/easy-compact panel auto on \| off` | Open the Usage pane by itself in new sessions (off by default). Once you close it, it stays closed |
+| `/easy-compact panel share on \| off` | Opening or closing the pane in one desktop session does the same in the other open ones (on by default) |
 | `/easy-compact settings` | Open the Settings tab |
 | `/easy-compact set range <start> <end>` | Compact range, e.g. `set range 250k 300k` |
 | `/easy-compact set compact <size>` | A fixed compact size (100k–1M) |
 | `/easy-compact set compact range` | Back to range mode |
 | `/easy-compact set cache <minutes>` | Warn when this much cache time is left |
 | `/easy-compact prompt <Normal \| Long-session handoff \| Wrap-up \| Custom \| your text>` | Save & compact text |
-| `/easy-compact band <full \| min \| auto>` | Band view: Full · Minimized · Only when compacting |
-| `/easy-compact band <part> <on \| off>` | Parts of the Full band: `5h` `7d` `reset` `request` `context` `range` `cache` `question` (`all` for every part) |
+| `/easy-compact band <part> <on \| off>` | Parts of the full bar: `5h` `7d` `reset` `request` `context` `range` `cache` `question` (`all` for every part) |
 | `/easy-compact lang <auto \| ko \| en>` | Display language |
-| `/easy-compact hide` · `show` | Hide or show the band in this session |
+| `/easy-compact help` | This list in the session |
 
 </details>
 
@@ -162,8 +205,8 @@ Everything is also a button in the band or the pane.
 
 - **Amounts are API list-price estimates.** On a subscription they show how heavy a session is, not what you are billed.
 - **Everything stays on your machine.** It reads your local session records and makes no network requests.
+- **Platforms:** built and tested on Windows. Nothing in it is Windows-specific, but macOS and Linux are untested — reports welcome.
 - **Desktop app:** right after the pane opens, the first click inside it only moves focus — click once more.
-- **Only when compacting** hides the band's buttons too — open the Usage pane with `/easy-compact usage`.
 - Records over 4 MB are read with Node.js — keep `node` on your PATH for very long sessions.
 
 ## License

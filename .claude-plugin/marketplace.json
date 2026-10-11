@@ -3,13 +3,13 @@
   "owner": {
     "name": "JaeSeongHa5280"
   },
-  "description": "easy-compact (Windows) — see what every request costs, know when to compact, and compact in one click.",
+  "description": "easy-compact — see what every request costs, know when to compact, and compact in one click.",
   "plugins": [
     {
       "name": "easy-compact",
       "source": "./plugin",
-      "description": "Windows only. A band above the input and a Usage pane for Claude Code: live context, cost and plan limits, when to compact, and one-click Save & compact.",
-      "version": "0.2.0"
+      "description": "The Easy Compact bar above the input and a Usage pane for Claude Code: live context, cost and plan limits, when to compact, and one-click Save & compact. Tested on Windows.",
+      "version": "0.3.0"
     }
   ]
 }

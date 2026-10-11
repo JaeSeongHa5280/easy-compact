@@ -7,8 +7,10 @@ import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   nudgeCache,
+  isAutoWord,
   parseBandMode,
   parseBandPart,
+  parseOnOff,
   setBandPart,
   parseMinutes,
   parseTokens,
@@ -73,18 +75,25 @@ test('저장된 값을 관대하게 읽는다: 빠진 키는 기본, 깨진 값�
   expect(fixed.compactAt).toBe(400_000)
 })
 
-test('띠 보기 · 칸: 처음엔 전체 · 다 보임, 깨진 값은 기본, 빠진 칸은 보임(새 칸이 늘어도), 이름은 영 · 한', () => {
-  expect(DEFAULT_SETTINGS.band).toBe('full')
+test('띠: 처음엔 보임 · 필요할 때만 꺼짐 · 최대 · 칸 다 보임, 0.2.0 의 auto 는 최소 + 필요할 때만, 이름은 영 · 한', () => {
+  expect(DEFAULT_SETTINGS).toMatchObject({ band: 'full', bandAuto: false, bandHidden: false })
   expect(Object.values(DEFAULT_SETTINGS.bandShow).every(Boolean)).toBe(true)
-  expect(normalizeSettings({ band: 'tiny', bandShow: 'x' })).toEqual(DEFAULT_SETTINGS)
+  expect(normalizeSettings({ band: 'tiny', bandAuto: 'y', bandHidden: 1, bandShow: 'x' })).toEqual(DEFAULT_SETTINGS)
   const s = normalizeSettings({ band: 'auto', bandShow: { resets: false, fiveHour: 'no' } })
-  expect(s.band).toBe('auto')
+  expect(s).toMatchObject({ band: 'min', bandAuto: true, bandHidden: false })
   expect(s.bandShow).toEqual({ ...DEFAULT_SETTINGS.bandShow, resets: false })
+  expect(normalizeSettings({ band: 'full', bandAuto: true, bandHidden: true })).toMatchObject({ band: 'full', bandAuto: true, bandHidden: true })
   expect(setBandPart(DEFAULT_SETTINGS, 'cache', false).bandShow.cache).toBe(false)
-  expect(parseBandMode('최소화')).toBe('min')
-  expect(parseBandMode('컴팩트할 때만')).toBe('auto')
-  expect(parseBandMode('Full')).toBe('full')
+  expect(parseBandMode('최소')).toBe('min')
+  expect(parseBandMode('최대')).toBe('full')
+  expect(parseBandMode('MAX')).toBe('full')
   expect(parseBandMode('cache')).toBe(null)
+  expect(isAutoWord('필요할 때만')).toBe(true)
+  expect(isAutoWord('auto')).toBe(true)
+  expect(parseOnOff('켜기')).toBe(true)
+  expect(parseOnOff('OFF')).toBe(false)
+  expect(parseOnOff('닫기')).toBe(false)
+  expect(parseOnOff('maybe')).toBe(null)
   expect(parseBandPart('5시간')).toBe('fiveHour')
   expect(parseBandPart('7D')).toBe('sevenDay')
   expect(parseBandPart('컴팩트 구간')).toBe('range')

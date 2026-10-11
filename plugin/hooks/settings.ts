@@ -11,6 +11,7 @@
 
 import type { BandMode, BandShow, Settings, Thresholds, TidyStyleId } from '../types'
 import { L, lang } from './i18n'
+import { onTerminal } from './glyph'
 import type { Lang } from './i18n'
 import { COMPACT_MAX, COMPACT_MIN, rangeThresholdsFor, thresholdsFor } from './optimal'
 
@@ -129,28 +130,140 @@ export const DEFAULT_SETTINGS: Settings = {
   tidyCustom: '',
   lang: 'auto',
   band: 'full',
+  bandAuto: false,
+  bandHidden: false,
   bandShow: { fiveHour: true, sevenDay: true, resets: true, perRequest: true, context: true, range: true, cache: true, lastTurn: true },
+  paneAutoOpen: false,
+  // 같이 열고 닫기는 처음부터 켬
+  paneShared: true,
 }
 
-// ── 띠 보기 · 칸 ──────────────────────────────────────────────────
+// ── 사용량 패널: 새 세션에서 자동으로 열기 · 모든 세션 같이 열고 닫기(따로 켠다) ───────────────
 
-export const BAND_MODES: readonly BandMode[] = ['full', 'min', 'auto']
+/** 새 세션에서 자동으로 열기 한 줄 풀이(설정 탭 · 명령 답) */
+export function paneAutoUse(isOn: boolean): string {
+  return isOn
+    ? L('새 세션은 사용량 패널을 연 채로 시작합니다. 그 뒤 닫으면 닫힌 채로 둡니다.', 'New sessions start with the Usage pane open. Once you close it, it stays closed.')
+    : L(
+        `새 세션은 패널이 닫힌 채로 시작합니다. 바의 ${onTerminal() ? '사용량 패널' : '📊'} 버튼 · /easy-compact 패널 로 엽니다.`,
+        `New sessions start with the pane closed. Open it with the ${onTerminal() ? 'Usage pane' : '📊'} button on the bar or /easy-compact panel.`,
+      )
+}
 
-/** 띠 보기 이름(설정 탭 버튼 · 명령 답) */
+/** 모든 세션 같이 열고 닫기 한 줄 풀이(설정 탭 · 명령 답) */
+export function paneSyncUse(isOn: boolean): string {
+  return isOn
+    ? L('한 세션에서 열거나 닫으면 떠 있는 다른 데스크톱 세션도 같이 열고 닫습니다(CLI 는 따로).', 'Opening or closing it in one session does the same in the other open desktop sessions (the CLI stays separate).')
+    : L('세션마다 따로 열고 닫습니다.', 'Each session opens and closes it on its own.')
+}
+
+/** 사용량 패널 옵션 한 줄(설정 탭 접힌 제목): "자동 열기 끔 · 같이 열고 닫기 끔" */
+export function paneStateText(s: Settings): string {
+  const onOff = (isOn: boolean) => (isOn ? L('켬', 'on') : L('끔', 'off'))
+  return L(`자동 열기 ${onOff(s.paneAutoOpen)} · 같이 열고 닫기 ${onOff(s.paneShared)}`, `Auto-open ${onOff(s.paneAutoOpen)} · Open/close together ${onOff(s.paneShared)}`)
+}
+
+// ── 띠: 보이기 · 필요할 때만 · 크기 · 칸 ──────────────────────────────
+
+export const BAND_MODES: readonly BandMode[] = ['full', 'min']
+
+/** 띠 크기 이름(설정 탭 버튼 · 명령 답) */
 export function bandModeName(m: BandMode): string {
-  return m === 'full' ? L('전체 보기', 'Full') : m === 'min' ? L('최소화', 'Minimized') : L('컴팩트할 때만', 'Only when compacting')
+  return m === 'full' ? L('최대', 'Full') : L('최소', 'Minimized')
 }
 
-/** 띠 보기 한 줄 풀이(설정 탭) */
+/** 띠 크기 한 줄 풀이(설정 탭) */
 export function bandModeUse(m: BandMode): string {
   return m === 'full'
-    ? L('한도 · 비용 · 질문 세 줄과 이지 컴팩트 버튼. 칸은 아래 상세 조정에서 뺄 수 있습니다.', 'Limits, cost and question rows with the Easy Compact button. Hide parts in the details below.')
-    : m === 'min'
-      ? L('요청당 · 컨텍스트 · 컴팩트 구간 한 줄과 사용량 패널 버튼만.', 'One line: per request, context and compact range, plus the Usage pane button.')
+    ? L('최대: 한도 · 비용 · 질문 세 줄과 이지 컴팩트 버튼. 칸은 아래 상세 조정에서 뺄 수 있습니다.', 'Full: limits, cost and question rows with the Easy Compact button. Hide parts in the details below.')
+    : L('최소: 요청당 · 컨텍스트 · 컴팩트 구간 한 줄과 사용량 패널 · 이지 컴팩트 버튼.', 'Minimized: one line of per request, context and compact range, plus the Usage pane and Easy Compact buttons.')
+}
+
+/**
+ * 접힌 바(입력창 아래 오른쪽 버튼)의 글: 이지 컴팩트 그림 + 이름 + ⇱(최소화된 창을 다시 펴는 느낌, ⇲ 접기와
+ * 짝). 작업 표시줄의 최소화된 창처럼 이름만 — 자동 숨김(노랑에 저절로 펴짐)은 강조색(파랑)으로 그려 살아 있음을 보이고
+ *, ✕ 로 닫았으면 회색 + "닫힘". 처음엔 "최소화 중" 을 붙였는데 파랑이면 말이 겹친다. 마우스 올리기 칩은 그 줄
+ * (SessionMode)이 못 숨겨 칩 글이 "자동 …" 으로 잘려 늘 보였다. 터미널은 그림 글자를 안 써 글로.
+ * 그림은 이 자리만 🔽(REVEAL_ICON) — 이 줄은 버튼만 제자리에 두고 버튼 밖 글자는 줄 끝으로 모으며(파란 🗜 를 버튼 밖에 두자
+ * 🌳 뒤로 떨어졌다), 버튼 안 글자는 어떤 색을 줘도 앱 버튼 색이다. 원래 파란 그림 글자만 버튼 안에서 파랗다(🌳 초록처럼)
+ */
+export const REVEAL_ICON = '🔽'
+
+export function revealLabel(isClosed: boolean): string {
+  const name = isClosed ? L('이지 컴팩트 닫힘', 'Easy Compact closed') : L('이지 컴팩트', 'Easy Compact')
+  return onTerminal() ? `⇱ ${name}` : `${REVEAL_ICON} ${name} ⇱`
+}
+
+/** 자동 숨김 풀이(설정 탭) */
+export function bandAutoUse(): string {
+  return L(
+    `컴팩트 구간 시작(노랑) 전엔 입력창 아래 [${revealLabel(false)}] 로 접고, 닿으면 이지 컴팩트 버튼과 함께 보입니다. [${revealLabel(false)}] 을 누르면 다시 늘 보이기.`,
+    `Until the start of the compact range (yellow) the bar folds into [${revealLabel(false)}] below the input, then shows with the Easy Compact button. Press [${revealLabel(false)}] to always show again.`,
+  )
+}
+
+/**
+ * 바 표시 셋 중 하나: 늘 보이기 · 자동 숨김 · 안 보이기(저장은 bandHidden · bandAuto 둘 — 안 보이기면 자동 숨김 값은
+ * 안 쓴다). 설정 탭 "표시" 한 줄 · 단축 명령(보이기 = 늘 보이기 — 숨김 · 자동 숨김을 다 푼다)이 이 셋으로 말한다.
+ * 보이기 · 자동 숨김을 따로 두 줄로 두니 버튼 줄이 붙어 겹쳐 보였고, "숨김" 뒤 안내가 다시 켜는 법이 아니었다
+ */
+export type BandShowMode = 'always' | 'auto' | 'never'
+export const BAND_SHOW_MODES: readonly BandShowMode[] = ['always', 'auto', 'never']
+
+export function bandShowMode(s: Settings): BandShowMode {
+  return s.bandHidden ? 'never' : s.bandAuto ? 'auto' : 'always'
+}
+
+export function setBandShow(s: Settings, m: BandShowMode): Settings {
+  return { ...s, bandHidden: m === 'never', bandAuto: m === 'never' ? s.bandAuto : m === 'auto' }
+}
+
+export function bandShowName(m: BandShowMode): string {
+  return m === 'always' ? L('늘 보이기', 'Always') : m === 'auto' ? L('자동 숨김', 'Auto-hide') : L('안 보이기', 'Hidden')
+}
+
+/** 고른 표시의 한 줄 풀이(설정 탭) */
+export function bandShowUse(m: BandShowMode): string {
+  return m === 'always'
+    ? L('늘 입력창 위에 보입니다.', 'Always shown above the input.')
+    : m === 'auto'
+      ? bandAutoUse()
       : L(
-          '컨텍스트가 컴팩트 구간 시작(노랑)에 닿기 전엔 띠가 없습니다. 닿으면 한 줄과 이지 컴팩트 버튼이 나옵니다. 그동안 사용량 패널은 /easy-compact usage 로 엽니다.',
-          'No band until the context reaches the start of the compact range (yellow), then one line with the Easy Compact button. Meanwhile open the Usage pane with /easy-compact usage.',
+          `안 쓰는 동안 모든 세션에서 이지 컴팩트 바를 끕니다. ${turnBackOn()}`,
+          `Turns the Easy Compact bar off in every session while you don't use it. ${turnBackOn()}`,
         )
+}
+
+/** 끈 바를 다시 켜는 법 두 가지(버튼 · 단축 명령) */
+function turnBackOn(): string {
+  return L(
+    `다시 켜기: 입력창 아래 [${revealLabel(true)}] 를 누르거나 /easy-compact 보이기`,
+    `Turn it back on: press [${revealLabel(true)}] below the input, or type /easy-compact show`,
+  )
+}
+
+/**
+ * 바를 끈 직후 알림 — 끄는 길 셋(바의 ✕ · 설정 탭 "안 보이기" · /easy-compact 안보이기)이 같은 말로 다시 켜는 법을 알린다.
+ * 안 보이기는 이 도구를 안 쓰는 사람이 지우기 전에 잠시 끄는 자리라, 끈 뒤 다시 켜는 길이 바로 보여야 한다
+ */
+export function hiddenNote(): string {
+  return L(`이지 컴팩트 바를 모든 세션에서 껐습니다. ${turnBackOn()}`, `Easy Compact bar is off in every session. ${turnBackOn()}`)
+}
+
+/** 끈 직후 토스트가 떠 있는 시간 — 기본 4초는 다시 켜는 법을 읽기에 짧다 */
+export const HIDDEN_NOTE_MS = 10_000
+
+/** 바 상태 한 줄(명령 답 · 설정 탭 접힌 제목): "늘 보이기 · 최대" */
+export function bandStateText(s: Settings): string {
+  return `${bandShowName(bandShowMode(s))} · ${bandModeName(s.band)}`
+}
+
+/** "켜기 · on · 끄기 · off" → true / false, 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
+export function parseOnOff(text: string): boolean | null {
+  const t = text.replace(/\s+/g, '').toLowerCase()
+  if (['on', 'show', 'open', '켜기', '켜', '켬', '보이기', '열기'].includes(t)) return true
+  if (['off', 'hide', 'close', '끄기', '꺼', '끔', '빼기', '숨기기', '닫기'].includes(t)) return false
+  return null
 }
 
 /** 띠 칸: 설정 탭 묶음(한도 · 비용 · 질문 줄) 순서와 명령 이름(영 · 한, 띄어쓰기 없이 소문자) */
@@ -180,13 +293,17 @@ export function bandPartName(key: keyof BandShow): string {
   return L(...names[key])
 }
 
-/** "최소화" · "min" · "auto" 등 → 띠 보기. 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
+/** "최소" · "min" · "최대" 등 → 띠 크기. 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
 export function parseBandMode(text: string): BandMode | null {
   const t = text.replace(/\s+/g, '').toLowerCase()
-  if (['full', '전체', '전체보기'].includes(t)) return 'full'
+  if (['full', 'max', 'maximize', '최대', '최대화', '전체', '전체보기'].includes(t)) return 'full'
   if (['min', 'minimize', 'minimized', '최소', '최소화', '한줄'].includes(t)) return 'min'
-  if (['auto', '컴팩트할때만', '필요할때만', '자동'].includes(t)) return 'auto'
   return null
+}
+
+/** "자동 숨김" 의 이름들(명령 동사) — 처음 이름 "필요할 때만" · 0.2.0 의 "컴팩트할 때만" · auto 도 받는다 */
+export function isAutoWord(text: string): boolean {
+  return ['auto', 'autohide', 'auto-hide', 'needed', 'whenneeded', 'onlywhenneeded', '자동숨김', '자동', '필요할때만', '필요시', '컴팩트할때만'].includes(text.replace(/\s+/g, '').toLowerCase())
 }
 
 /** 칸 이름 → 칸 key. 못 읽으면 null */
@@ -300,12 +417,18 @@ export function normalizeSettings(raw: unknown): Settings {
   const tidy = r.tidy === 'custom' || TIDY_IDS.includes(r.tidy as TidyStyleId) ? (r.tidy as Settings['tidy']) : 'default'
   const tidyCustom = typeof r.tidyCustom === 'string' ? r.tidyCustom : ''
   const lang = r.lang === 'ko' || r.lang === 'en' ? r.lang : 'auto'
-  const band = BAND_MODES.includes(r.band as BandMode) ? (r.band as BandMode) : DEFAULT_SETTINGS.band
+  // 0.2.0 의 band 'auto'(컴팩트할 때만 = 한 줄로 나옴)는 최소 + 필요할 때만으로
+  const rawBand = (r as { band?: unknown }).band
+  const band = rawBand === 'auto' ? 'min' : BAND_MODES.includes(rawBand as BandMode) ? (rawBand as BandMode) : DEFAULT_SETTINGS.band
+  const bandAuto = typeof r.bandAuto === 'boolean' ? r.bandAuto : rawBand === 'auto'
+  const bandHidden = typeof r.bandHidden === 'boolean' ? r.bandHidden : false
   // 칸은 하나씩: 빠졌거나 깨진 칸은 보이기(새 판에서 칸이 늘어도 켜진 채로 시작한다)
   const shown = (typeof r.bandShow === 'object' && r.bandShow !== null ? r.bandShow : {}) as Partial<Record<keyof BandShow, unknown>>
   const bandShow = { ...DEFAULT_SETTINGS.bandShow }
   for (const k of Object.keys(bandShow) as (keyof BandShow)[]) if (typeof shown[k] === 'boolean') bandShow[k] = shown[k] as boolean
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, tidy, tidyCustom, lang, band, bandShow }
+  const paneAutoOpen = typeof r.paneAutoOpen === 'boolean' ? r.paneAutoOpen : false
+  const paneShared = typeof r.paneShared === 'boolean' ? r.paneShared : DEFAULT_SETTINGS.paneShared
+  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, tidy, tidyCustom, lang, band, bandAuto, bandHidden, bandShow, paneAutoOpen, paneShared }
 }
 
 /** "30만" · "300k" · "300000" → 토큰, "10분" · "10" → 분. 못 읽으면 null */

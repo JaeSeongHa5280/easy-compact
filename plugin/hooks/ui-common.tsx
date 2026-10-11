@@ -16,6 +16,12 @@ import { cellsOf, fitCells, compactStepText } from './text'
 /** 컴팩트 확인 카드의 강조색(테두리 · 아이콘) — 테마 색 suggestion 이라 밝은 · 어두운 테마 둘 다 맞는다 */
 export const ACCENT = 'suggestion'
 
+/**
+ * 바의 🗜 색: 진한 파랑 고정값. suggestion 은 어두운 테마에서 rgb(177,185,249) 라 흰 버튼 옆에선 흰색으로 보이고 회색 글
+ * 옆(답 도는 중)에서만 파랗게 보였다. 밝은 · 어두운 바탕 둘 다에서 파랗게 읽히는 값 — 식은 캐시 점과 같은 파랑
+ */
+export const BRAND_HEX = '#4c9be8'
+
 /** 설정 비용표의 "★ 최적" · "★ 추천" 금색 — 노랑(컴팩트하기 좋은 때)과 갈리게 더 진하게 */
 export const STAR_HEX = '#f5b301'
 
@@ -269,11 +275,13 @@ const PHASE_HEX = { tidying: '#e0b040', compacting: '#4c9be8' } as const
  * 단계 표시(없으면 null) — 컴팩트 중 글엔 어떤 컴팩트인지(compactKind): "🗜 바로 컴팩트 중…". 뒤에 붙던 "요약을 만들고
  * 있습니다" 는 "컴팩트 중" 과 같은 말이고, 이름이 길어져 뺐다
  */
-export function phaseLook(phase: unknown, kind: unknown): { hex: string; color: string; text: string } | null {
-  if (phase === 'tidying') return { hex: PHASE_HEX.tidying, color: 'yellow', text: withIcon('🗜', L('저장 중 → 끝나면 컴팩트', 'Saving → then compact')) }
+export function phaseLook(phase: unknown, kind: unknown, hasIcon = true): { hex: string; color: string; text: string } | null {
+  // 바는 🗜 를 따로 파랗게 그려 글엔 빼고 받는다(hasIcon = false)
+  const icon = (text: string) => (hasIcon ? withIcon('🗜', text) : text)
+  if (phase === 'tidying') return { hex: PHASE_HEX.tidying, color: 'yellow', text: icon(L('저장 중 → 끝나면 컴팩트', 'Saving → then compact')) }
   if (phase !== 'compacting') return null
   const name = typeof kind === 'string' && kind ? kind : L('컴팩트', 'Compact')
-  return { hex: PHASE_HEX.compacting, color: 'cyan', text: withIcon('🗜', L(`${name} 중…`, `${name} in progress…`)) }
+  return { hex: PHASE_HEX.compacting, color: 'cyan', text: icon(L(`${name} 중…`, `${name} in progress…`)) }
 }
 
 /** 보통 진행 중 질문의 깜빡이는 점(ACCENT 와 비슷한 파랑) */

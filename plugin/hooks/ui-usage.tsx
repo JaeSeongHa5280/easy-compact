@@ -10,6 +10,7 @@ import {
   LEVEL_HEX,
   LEVEL_TEXT,
   levelOf,
+  LITTLE_SHRINK,
   modelKey,
   modelName,
   ratesFor,
@@ -729,8 +730,9 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
   const est = estimate(ctx, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom))
   const calls = average(sums.slice(-10).map(t => t.steps).filter(n => n > 0))
   let second: unknown = null
-  if (ratio < 1.3) {
-    second = <Text dimColor wrap="wrap">{L('지금은 컴팩트해도 줄어드는 게 거의 없습니다.', 'Compacting now would barely shrink anything.')}</Text>
+  if (ratio < LITTLE_SHRINK) {
+    // 띠 툴팁 · 확인 카드와 같은 선 · 같은 말 · 같은 색
+    second = <Text bold color="red" wrap="wrap">{L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'Little to save — compacting now is a loss')}</Text>
   } else if (est.kind === 'cold') {
     const c = coldCompact(ctx, inputs, u.model)
     if (c) {
@@ -740,7 +742,7 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
           {c.compactUsd < c.continueUsd ? (
             <Text color="green" bold>{L(`${fmtUsd(c.continueUsd - c.compactUsd)} 이득`, `saves ${fmtUsd(c.continueUsd - c.compactUsd)}`)}</Text>
           ) : (
-            <Text bold>{L(`${fmtUsd(c.compactUsd - c.continueUsd)} 손해`, `costs ${fmtUsd(c.compactUsd - c.continueUsd)} more`)}</Text>
+            <Text bold color="red">{L(`${fmtUsd(c.compactUsd - c.continueUsd)} 손해`, `costs ${fmtUsd(c.compactUsd - c.continueUsd)} more`)}</Text>
           )}
         </Text>
       )
