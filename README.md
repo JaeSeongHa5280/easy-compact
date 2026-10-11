@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
-  <img src="https://img.shields.io/badge/desktop_app_+_terminal-supported-4c9be8" alt="Desktop app and terminal">
+  <img src="https://img.shields.io/badge/Windows-desktop_app_+_terminal-4c9be8" alt="Windows: desktop app and terminal">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
 </p>
 
@@ -24,23 +24,18 @@
 
 ## Install
 
-The desktop app and the terminal share the same settings, so installing once works in both. Needs Claude Code **2.1.295 or later**.
+Windows only · Claude Code **2.1.295 or later**. The desktop app and the terminal share the same settings, so installing once works in both.
 
-**Claude desktop app (Code tab).** In the app, `/plugin` opens the app's own plugin browser, which only lists marketplaces you've already added — so add this one from a shell once.
-
-On Windows, paste this into PowerShell (it uses the `claude` that comes with the app):
-
-```powershell
-$c = Get-ChildItem "$env:APPDATA\Claude\claude-code\*\*\claude.exe" | Sort-Object LastWriteTime | Select-Object -Last 1; & $c.FullName plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact
-```
-
-Or paste this into a Code session and let Claude do it:
+**Claude desktop app (Code tab).** Send this to Claude in a Code session — it installs the plugin for you:
 
 ```
-Install the easy-compact plugin: run `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact` in a shell. If `claude` is not on PATH, use the Claude desktop app's own copy (on Windows under %APPDATA%\Claude\claude-code\). Then tell me to restart the app.
+Install https://github.com/JaeSeongHa5280/easy-compact
 ```
 
 Then quit the Claude app completely and open it again. The band appears above the input.
+(Typing `/plugin install …` in the desktop app opens the app's own plugin browser, which only shows marketplaces you've already added — so it can't find easy-compact the first time.)
+
+> **Note for Claude:** in the desktop app `claude` is usually not on PATH, so run the install with the running engine, in PowerShell: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. Check that `plugin list` shows `easy-compact@easy-compact` enabled, then ask the user to quit and reopen the app. Don't clone this repository or edit `settings.json`.
 
 **Terminal (`claude` CLI).** In a session, one line at a time:
 

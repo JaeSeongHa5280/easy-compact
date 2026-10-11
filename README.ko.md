@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code 플러그인">
-  <img src="https://img.shields.io/badge/desktop_app_+_terminal-supported-4c9be8" alt="데스크톱 앱과 터미널">
+  <img src="https://img.shields.io/badge/Windows-desktop_app_+_terminal-4c9be8" alt="Windows 데스크톱 앱과 터미널">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스">
 </p>
 
@@ -24,23 +24,18 @@
 
 ## 설치
 
-데스크톱 앱과 터미널은 같은 설정을 써서, 한 곳에서 설치하면 둘 다 됩니다. Claude Code **2.1.295 이상**이 필요합니다.
+Windows 전용 · Claude Code **2.1.295 이상**. 데스크톱 앱과 터미널은 같은 설정을 써서, 한 곳에서 설치하면 둘 다 됩니다.
 
-**Claude 데스크톱 앱(Code 탭).** 앱에서 `/plugin` 을 치면 앱 자체의 플러그인 창이 열리는데, 이미 추가한 마켓만 보여 줍니다 — 그래서 처음 한 번은 셸에서 추가합니다.
-
-Windows 라면 PowerShell 에 붙여 넣으세요(앱에 든 `claude` 를 씁니다).
-
-```powershell
-$c = Get-ChildItem "$env:APPDATA\Claude\claude-code\*\*\claude.exe" | Sort-Object LastWriteTime | Select-Object -Last 1; & $c.FullName plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact
-```
-
-또는 Code 세션에 이 문장을 붙여 넣어 Claude 에게 맡깁니다.
+**Claude 데스크톱 앱(Code 탭).** Code 세션의 Claude 에게 이렇게 보내세요 — 알아서 설치합니다.
 
 ```
-easy-compact 플러그인을 설치해 줘: 셸에서 `claude plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact` 를 실행하고, `claude` 가 PATH 에 없으면 Claude 데스크톱 앱에 든 것을 써(Windows 는 %APPDATA%\Claude\claude-code\ 아래). 끝나면 앱을 다시 켜라고 알려 줘.
+https://github.com/JaeSeongHa5280/easy-compact 설치해줘
 ```
 
 그다음 Claude 앱을 완전히 껐다 켭니다. 입력창 위에 띠가 뜹니다.
+(데스크톱 앱에서 `/plugin install …` 을 치면 앱 자체의 플러그인 창이 열리는데, 이미 추가한 마켓만 보여 줘서 처음엔 easy-compact 를 못 찾습니다.)
+
+> **Claude 에게:** 데스크톱 앱에선 보통 `claude` 가 PATH 에 없으니, PowerShell 에서 지금 도는 엔진으로 설치하세요: `& (Get-Process -Id $env:CLAUDE_PID).Path plugin install easy-compact --marketplace JaeSeongHa5280/easy-compact`. `plugin list` 에서 `easy-compact@easy-compact` 가 enabled 인지 보고, 앱을 완전히 껐다 켜 달라고 안내하세요. 이 저장소를 clone 하거나 `settings.json` 을 고치지 마세요.
 
 **터미널(`claude` CLI).** 세션 안에서 한 줄씩:
 
