@@ -5,7 +5,8 @@
 <h1 align="center">easy-compact</h1>
 
 <p align="center">
-  <b>요청마다 얼마 드는지 보고, 언제 컴팩트할지 알고, 클릭 한 번으로 컴팩트합니다 — 하던 일을 잃지 않고.</b>
+  <b>요청마다 얼마 드는지 보고, 언제 컴팩트할지 알고, 클릭 한 번으로 컴팩트합니다 — 하던 일을 잃지 않고.</b><br>
+  Claude Code 플러그인 · <b>Windows 전용</b> · 데스크톱 앱과 터미널
 </p>
 
 <p align="center">

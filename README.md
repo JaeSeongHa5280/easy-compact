@@ -5,7 +5,8 @@
 <h1 align="center">easy-compact</h1>
 
 <p align="center">
-  <b>See what every request costs. Know when to compact. Compact in one click — without losing your place.</b>
+  <b>See what every request costs. Know when to compact. Compact in one click — without losing your place.</b><br>
+  Claude Code plugin · <b>Windows only</b> · desktop app and terminal
 </p>
 
 <p align="center">
