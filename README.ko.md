@@ -64,7 +64,7 @@ Claude Code 는 요청마다 컨텍스트 전체를 다시 읽습니다. 300k �
 
 ## 데모 · 45초
 
-<!-- TODO: github.com 편집기에서 docs/features.mp4 를 이 줄 자리에 끌어다 놓으면 https://github.com/user-attachments/assets/… 주소가 생긴다(영어 README 와 같은 주소) -->
+https://github.com/user-attachments/assets/cd8fd962-4361-4056-9372-fa321d3dda42
 
 ## 기능
 
