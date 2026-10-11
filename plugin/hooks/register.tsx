@@ -47,12 +47,18 @@ import {
 } from './cost'
 import type { CompactMix } from './cost'
 import {
+  BAND_PARTS,
+  bandModeName,
+  bandPartName,
   chooseTidy,
   customName,
   DEFAULT_SETTINGS,
   normalizeSettings,
+  parseBandMode,
+  parseBandPart,
   parseMinutes,
   parseTokens,
+  setBandPart,
   setCompactAt,
   setFollow,
   setRange,
@@ -95,7 +101,7 @@ import { APP_MIN_USD, promptHead, isWide, fitCells, stepLabel } from './text'
 import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, directKeep, tidyVerdict } from './tidy'
 import { ACCENT, row, gridOf, phaseLook, pulseDot, CARD_INSET, emptyLine } from './ui-common'
 import type { Ui, Fold } from './ui-common'
-import { drawLimitsLine, drawEstimateLine, rewriteNote, drawLastTurnLine } from './ui-band'
+import { drawLimitsLine, drawEstimateLine, MIN_SHOW, rewriteNote, drawLastTurnLine } from './ui-band'
 import {
   liveBlock,
   compactingBlock,
@@ -324,6 +330,8 @@ const settings = atom({ plugin: 'easy-compact', key: 'settings' } as const, null
 const usageTab = atom({ plugin: 'easy-compact', key: 'usageTab' } as const, 'main')
 
 const tidyRawOpen = atom({ plugin: 'easy-compact', key: 'tidyRawOpen' } as const, false)
+
+const layoutOpen = atom({ plugin: 'easy-compact', key: 'layoutOpen' } as const, false)
 
 const cardsOpen = atom({ plugin: 'easy-compact', key: 'cardsOpen' } as const, { now: true, history: true, compact: true })
 
@@ -1062,6 +1070,13 @@ async function toggleTidyRaw($: EngineInterface): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
+/** 설정의 "UI 레이아웃 상세 조정" 펼치기 · 접기 */
+async function toggleLayout($: EngineInterface): Promise<void> {
+  const next = !(await read($, layoutOpen))
+  await update($, layoutOpen, () => next)
+  $.ui.invalidate('ui.render')
+}
+
 /** 사용량 카드(컨텍스트 · 비용 · 질문별 비용 · 컴팩트) 접기 · 펼치기 */
 async function toggleCard($: EngineInterface, which: 'now' | 'history' | 'compact'): Promise<void> {
   const cur = await read($, cardsOpen)
@@ -1075,9 +1090,48 @@ const setHelp = () =>
     'Usage: /easy-compact set compact <300k|range> · set range <start> <end> · set cache <minutes>  e.g. set compact 300k · set compact range · set range 150k 250k · set cache 10',
   )
 
+const bandHelp = () =>
+  L(
+    '쓰는 법: /easy-compact 띠 <전체|최소화|컴팩트할때만> · 띠 <칸> <켜기|끄기> · 띠 모두 켜기  칸 = 5시간 · 7일 · 리셋 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문(전체 보기 띠)',
+    'Usage: /easy-compact band <full|min|auto> · band <part> <on|off> · band all on  parts = 5h · 7d · reset · request · context · range · cache · question (Full band)',
+  )
+
+/** 띠 명령: 보기(전체 · 최소화 · 컴팩트할 때만) · 전체 보기 칸 켜고 끄기 — 설정 탭 "입력창 위 띠" 와 같은 값 */
+async function bandCommand($: EngineInterface, rest: string): Promise<string> {
+  const s = await currentSettings($)
+  const words = rest.split(/\s+/).filter(Boolean)
+  if (words.length === 0) {
+    const off = BAND_PARTS.filter(p => !s.bandShow[p.key]).map(p => bandPartName(p.key))
+    return L(
+      `띠 보기: ${bandModeName(s.band)}${off.length ? ` · 뺀 칸: ${off.join(', ')}` : ''}\n${bandHelp()}`,
+      `Band view: ${bandModeName(s.band)}${off.length ? ` · hidden parts: ${off.join(', ')}` : ''}\n${bandHelp()}`,
+    )
+  }
+  const mode = parseBandMode(rest)
+  if (mode) {
+    await saveSettings($, { ...s, band: mode })
+    return L(`띠 보기를 "${bandModeName(mode)}" 로 바꿨습니다.`, `Band view set to "${bandModeName(mode)}".`)
+  }
+  const last = words[words.length - 1]!.toLowerCase()
+  const on = ['on', 'show', '켜기', '켜', '보이기'].includes(last) ? true : ['off', 'hide', '끄기', '꺼', '빼기'].includes(last) ? false : null
+  const what = words.slice(0, -1).join('').toLowerCase()
+  if (on !== null && ['all', '모두', '전부'].includes(what)) {
+    const all = Object.fromEntries(BAND_PARTS.map(p => [p.key, on])) as Settings['bandShow']
+    await saveSettings($, { ...s, bandShow: all })
+    return on ? L('전체 보기 띠의 칸을 모두 보입니다.', 'All parts of the Full band are shown.') : L('전체 보기 띠의 칸을 모두 뺐습니다.', 'All parts of the Full band are hidden.')
+  }
+  const key = parseBandPart(what)
+  if (on === null || key === null) return bandHelp()
+  await saveSettings($, setBandPart(s, key, on))
+  return on
+    ? L(`전체 보기 띠에 "${bandPartName(key)}" 칸을 보입니다.`, `"${bandPartName(key)}" is shown in the Full band.`)
+    : L(`전체 보기 띠에서 "${bandPartName(key)}" 칸을 뺐습니다.`, `"${bandPartName(key)}" is hidden from the Full band.`)
+}
+
 /** 설정 명령(설정 화면의 버튼과 같은 함수). 설정 명령이 아니면 null */
 async function settingsCommand($: EngineInterface, verb: string, rest: string): Promise<string | null> {
   const s = await currentSettings($)
+  if (verb === 'band' || verb === '띠') return bandCommand($, rest)
   if (verb === 'settings' || verb === '설정') {
     // 사용량 패널을 열고 설정 탭으로
     await openUsageTab($, 'settings')
@@ -1162,7 +1216,9 @@ const help = () =>
       '/easy-compact set 구간 <시작> <끝>   컴팩트 구간(예: set 구간 15만 25만) — 시작부터 노랑, 끝부터 빨강',
       '/easy-compact set 캐시 <분>   캐시 남은 분이 이보다 적으면 노랑',
       '/easy-compact 문구 <일반|긴 세션 이어가기|마무리|직접|직접 쓸 글>   저장하고 컴팩트 문구',
-      '/easy-compact hide|show  띠 숨기기 · 보이기',
+      '/easy-compact 띠 <전체|최소화|컴팩트할때만>   띠 보기(최소화 = 한 줄, 컴팩트할 때만 = 컴팩트 구간 시작부터)',
+      '/easy-compact 띠 <칸> <켜기|끄기>   전체 보기 띠의 칸(5시간 · 7일 · 리셋 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문)',
+      '/easy-compact hide|show  이 세션에서 띠 숨기기 · 보이기',
       '/easy-compact lang <auto|ko|en>   화면 언어(자동 = Claude 설정 → 앱 언어 → OS 언어)',
     ].join('\n'),
     [
@@ -1173,7 +1229,9 @@ const help = () =>
       '/easy-compact set range <start> <end>   compact range (e.g. set range 150k 250k) — yellow from start, red from end',
       '/easy-compact set cache <minutes>   yellow when fewer cache minutes remain',
       '/easy-compact prompt <Normal|Long-session handoff|Wrap-up|Custom|your own text>   Save & compact text',
-      '/easy-compact hide|show  hide · show the band',
+      '/easy-compact band <full|min|auto>   band view (min = one line, auto = only from the start of the compact range)',
+      '/easy-compact band <part> <on|off>   parts of the Full band (5h · 7d · reset · request · context · range · cache · question)',
+      '/easy-compact hide|show  hide · show the band in this session',
       '/easy-compact lang <auto|ko|en>   display language (auto = Claude settings → app language → OS language)',
     ].join('\n'),
   )
@@ -1187,6 +1245,7 @@ function settingsActs($: EngineInterface): SettingsActions {
     typeTidy: text => void update($, tidyDraft, () => text),
     saveTidy: text => void saveTidyCustom($, text),
     toggleRaw: () => void toggleTidyRaw($),
+    toggleLayout: () => void toggleLayout($),
     setLang: choice => void saveLang($, choice),
   }
 }
@@ -1197,12 +1256,12 @@ export const register: Register = on => {
     await $.command.register({
       name: 'easy-compact',
       description: L(
-        '컨텍스트 · 비용 · 컴팩트 띠와 설정: usage · settings · set 권장|구간|캐시 · 문구 · hide/show',
-        'Context · cost · compact band and settings: usage · settings · set compact|range|cache · prompt · hide/show',
+        '컨텍스트 · 비용 · 컴팩트 띠와 설정: usage · settings · set 권장|구간|캐시 · 문구 · 띠 · hide/show',
+        'Context · cost · compact band and settings: usage · settings · set compact|range|cache · prompt · band · hide/show',
       ),
       argumentHint: L(
-        '[usage | settings | set 권장 <크기|구간> | set 구간 <시작> <끝> | set 캐시 <분> | 문구 <글> | hide | show]',
-        '[usage | settings | set compact <size|range> | set range <start> <end> | set cache <min> | prompt <text> | hide | show]',
+        '[usage | settings | set 권장 <크기|구간> | set 구간 <시작> <끝> | set 캐시 <분> | 문구 <글> | 띠 <전체|최소화|컴팩트할때만> | hide | show]',
+        '[usage | settings | set compact <size|range> | set range <start> <end> | set cache <min> | prompt <text> | band <full|min|auto> | hide | show]',
       ),
     })
     // 재로드도 session.start 다 — 여기서 턴 비용을 세면 턴이 아닌 구간이 섞인다
@@ -1556,6 +1615,7 @@ export const register: Register = on => {
         (await read($, usage))?.contextTokens ?? null,
         autoLang,
         cols,
+        await read($, layoutOpen),
       )
     } else {
       const nowTurn = await read($, live)
@@ -1621,6 +1681,10 @@ export const register: Register = on => {
     const compactLabel = withIcon('🗜', compactCore)
     const isConfirming = !e.props.isWorking && (await read($, isConfirmingCompact))
     const nowMs = u ? await $.clock.now() : 0
+    // 띠 보기(설정): 전체 = 세 줄, 최소화 · 컴팩트할 때만 = 한 줄(요청당 · 컨텍스트 · 컴팩트 구간). 전체 보기의 칸은 bandShow 로 뺀다
+    const sNow = await currentSettings($)
+    const mode = sNow.band
+    const show = mode === 'full' ? sNow.bandShow : MIN_SHOW
 
     // 왼쪽 = 비용 영역(두 줄), 오른쪽 = 버튼 영역. 둘 사이에 세로줄을 둔다
     const sums = await read($, turnSummaries)
@@ -1628,12 +1692,13 @@ export const register: Register = on => {
     // 쉬는 동안 캐시가 식었거나 모델을 바꿨으면(다음 요청이 전체를 다시 씀) 지난 질문 줄은 숨긴다 — "캐시 만료 · 재작성"
     // 줄과 지난 질문의 "캐시 다시 씀" 이 같이 보여 어느 게 지금 일인지 헷갈렸다. 지난 질문 값은 사용량 패널에 있다
     const lineEst = u && !e.props.isWorking ? estimate(u.contextTokens, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom)) : null
-    const lastLine = lineEst?.kind === 'cold' ? null : drawLastTurnLine(ui, sums.length > 0 ? sums[sums.length - 1]! : null, now)
+    const lastLine =
+      mode !== 'full' || !show.lastTurn || lineEst?.kind === 'cold' ? null : drawLastTurnLine(ui, sums.length > 0 ? sums[sums.length - 1]! : null, now)
     // 컴팩트 직후 크기 · 입력 몫 등 계산식 재료(measureOptimal) — 식은 캐시 줄 · 버튼 판단 · 확인창이 같은 값을 쓴다.
     // 모르면(직후 크기를 못 잼) 컴팩트 손익을 안 보인다
     const inputs = (await read($, optimal))?.inputs ?? null
     const afterTokens = inputs?.after ?? u?.contextTokens ?? 0
-    const estimateLine = u ? drawEstimateLine(ui, u, nowMs, inputs) : emptyLine(ui, 'b-none', L('질문이 한 번 끝나면 비용이 보입니다', 'Costs appear after the first question finishes'))
+    const estimateLine = u ? drawEstimateLine(ui, u, nowMs, inputs, show) : emptyLine(ui, 'b-none', L('질문이 한 번 끝나면 비용이 보입니다', 'Costs appear after the first question finishes'))
 
     // 버튼: 패널(세션 트리 · 사용량)은 맨 윗줄 오른쪽, 컴팩트는 비용 줄 오른쪽. 확인은 띠 아래 한 덩어리로 펼친다
     const level = u ? levelOf(u.contextTokens) : 'ok'
@@ -1648,6 +1713,9 @@ export const register: Register = on => {
     // 캐시가 식었는데 바로 컴팩트가 이어 가기보다 비싼 크기면 권장 · 강조를 띄우지 않는다(정리 후 컴팩트는 정리 질문이
     // 전체를 다시 써 더 비싸다). 줄인 만큼은 그 뒤 요청들에서 천천히 돌아올 뿐이다
     const shownLevel = est?.kind === 'cold' && !isColdWin ? 'ok' : level
+    // 컴팩트할 때만 보기: 노랑(구간 시작 · 직접 지정이면 그 80%)에 닿기 전엔 띠를 그리지 않는다 — 입력창 위 자리가 아예 빈다.
+    // 식은 캐시라 바로 컴팩트가 더 싼 때(권장) · 저장 · 컴팩트가 도는 중 · 확인창이 열린 동안은 그린다(진행이 사라지지 않게)
+    if (mode === 'auto' && shownLevel === 'ok' && !isColdWin && phase !== 'tidying' && phase !== 'compacting' && !isConfirming) return next(e)
     const pulse = (hex: string, alt: string) => pulseDot(ui, e.surface, hex, alt)
     // 컴팩트 시점(설정): 구간이면 시작부터 노랑 "컴팩트하기 좋은 때", 끝부터 빨강 "컴팩트 늦어짐" + 깜빡이는 점.
     // 직접 지정이면 그 80% 부터 노랑, 정한 크기부터 빨강 "컴팩트 권장"
@@ -1714,7 +1782,6 @@ export const register: Register = on => {
     // [저장하고 컴팩트] [바로 컴팩트] [✕ 취소] — 식은 캐시여도 자리는 같고 주 버튼(▶)만 바뀐다.
     // 버튼을 왼쪽에 세로로 두니 설명과 섞였고, 한 줄 왼쪽에 셋이면 탭처럼 읽혔다.
     // 띠에 여유가 있으면 줄 사이를 한 칸씩 띄운다(넘치면 띠가 스크롤된다)
-    const sNow = await currentSettings($)
     const tidyNow = tidySteps(sNow)
     // 띠 높이(maxRows)에서 남는 줄만큼 카드 안을 띄운다 — 넘치면 띠가 스크롤돼 버튼이 가려진다.
     // 기본 줄 수 = 띠 두 줄(+ 한도 줄) + 테두리 2 + 제목 + 효과 줄 + 문구 고르기 + 선택지 2 + 버튼, 좁으면 효과 줄 · 문구 고르기 ·
@@ -1976,8 +2043,8 @@ export const register: Register = on => {
     // 왼쪽 글이 비어도(한도 없는 API 키 세션 · 식은 캐시라 지난 질문 숨김) 줄은 남아 버튼 자리가 늘 같다 — 버튼을 왼쪽 글
     // 덩어리의 세로 가운데에 두니 한도 줄이 넘어가거나 줄이 빠질 때마다 자리가 바뀌었고,
     // 패널 버튼과 컴팩트 버튼이 위아래로 붙어 누를 때 간섭했다. 둘 사이엔 늘 2줄이 낀다.
-    // 다른 mod 가 이 띠를 감싸면(next) key "b-panels" 칸 끝에 자기 패널 버튼을 넣을 수 있다 — 오른쪽 끝이 컴팩트 버튼과 맞는다
-    // (session-tree-viewer 의 🌳). key 를 바꾸면 그쪽도
+    // 다른 mod 가 이 띠를 감싸면(next) key "b-panels" 칸 끝에 자기 패널 버튼을 넣을 수 있다(세 보기 모두 이 칸이 있다).
+    // 띠를 안 그리는 때(컴팩트할 때만 보기 · hide)엔 칸도 없다 — 늘 보여야 할 버튼은 띠 밖에 둔다
     const panels = (
       <Box key="b-panels" columnGap={1} alignItems="center" flexShrink={0}>
         {panelButton('usage', withIcon('📊', paneTitle()))}
@@ -1987,6 +2054,20 @@ export const register: Register = on => {
       <Box flexDirection="column" flexShrink={0} alignItems="flex-end">
         {compactRow}
       </Box>
+    )
+    // 띠 보기 버튼(맨 오른쪽 위): 전체 ↔ 최소화. 컴팩트할 때만 보기는 설정 탭 · 명령으로 고른다 — 그 보기에서 띠가 보일 땐
+    // 컴팩트할 때라 이 버튼 대신 컴팩트 버튼을 둔다. 바꾸면 열린 확인창은 닫는다(한 줄 띠엔 확인창이 없다)
+    const modeButton = (
+      <Button
+        key="band-mode"
+        label={mode === 'full' ? L('▾ 최소화', '▾ Minimize') : L('▴ 전체 보기', '▴ Full view')}
+        variant="secondary"
+        dimColor
+        onPress={async () => {
+          await update($, isConfirmingCompact, () => false)
+          await saveSettings($, { ...(await currentSettings($)), band: mode === 'full' ? 'min' : 'full' })
+        }}
+      />
     )
 
     // 비용(왼쪽) · 버튼(오른쪽 끝 정렬)은 간격으로만 나눈다 — "│" 글자 세로줄은 줄 사이가 끊겨 싸 보였다
@@ -1998,13 +2079,43 @@ export const register: Register = on => {
         {rightEl}
       </Box>
     )
+    // 한 줄 띠(최소화 · 컴팩트할 때만): 왼쪽 요청당 · 컨텍스트 · 컴팩트 구간, 오른쪽 버튼. 최소화엔 이지 컴팩트 버튼이 없고
+    // (저장 · 컴팩트가 도는 동안의 진행 글만), 컴팩트할 때만 보기는 띠가 보일 때가 곧 컴팩트할 때라 컴팩트 버튼 + 확인창
+    if (mode !== 'full') {
+      const isBusy = phase === 'tidying' || phase === 'compacting'
+      return (
+        <Box flexDirection="column">
+          {row(
+            'b-r1',
+            estimateLine,
+            <Box key="b-one-right" columnGap={2} alignItems="center" flexShrink={0}>
+              {mode === 'auto' || isBusy ? compactRow : null}
+              {panels}
+              {mode === 'min' ? modeButton : null}
+            </Box>,
+            'center',
+          )}
+          {mode === 'auto' ? confirm : null}
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column">
         {/* 세션 한도 줄은 계정에 따라 저절로: 엔진은 구독 세션에만 5시간 · 7일을 알려 준다
             ("rateLimits is empty off a subscription") — API 키 세션엔 줄이 없다. 옵션을 두지 않는다.
+            5시간 · 7일 · 리셋 시간은 설정 탭 "UI 레이아웃 상세 조정" 에서 뺀다 — 다 빼도 줄은 남는다(패널 · 보기 버튼 자리).
             좁으면 한도 줄이 두 줄로 넘어간다 — 패널 버튼은 그때도 오른쪽 위(위 정렬) */}
-        {row('b-r1', u && u.rateLimits.length > 0 ? drawLimitsLine(ui, e.surface, u, nowMs) : null, panels, 'flex-start')}
-        {row('b-r2', estimateLine, null, 'center')}
+        {row(
+          'b-r1',
+          u && u.rateLimits.length > 0 ? drawLimitsLine(ui, e.surface, u, nowMs, show) : null,
+          <Box key="b-r1-right" columnGap={1} alignItems="center" flexShrink={0}>
+            {panels}
+            {modeButton}
+          </Box>,
+          'flex-start',
+        )}
+        {/* 비용 줄의 칸을 다 빼면 줄째 빠진다 */}
+        {estimateLine ? row('b-r2', estimateLine, null, 'center') : null}
         {row('b-r3', lastLine, right, 'center')}
         {confirm}
       </Box>

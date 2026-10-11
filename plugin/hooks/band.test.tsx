@@ -1987,12 +1987,23 @@ test('영어: 띠 · 확인창 · 사용량 패널 · 설정 탭 · 도움말에
   await $.command.run({ command: 'easy-compact', args: 'settings' })
   expect(await pane.find({ key: 'lang-en' })).not.toBe(undefined)
   expect((await leftovers(pane)).filter(t => t !== '언어 · Language' && t !== '[한국어]')).toEqual([])
+  // 띠 칸 · UI 레이아웃 상세 조정(펼친 것)도
+  await pane.press({ key: 'band-detail' })
+  expect(await pane.find({ key: 'show-resets', text: '✓ Time to reset' })).not.toBe(undefined)
+  expect((await leftovers(pane)).filter(t => t !== '언어 · Language' && t !== '[한국어]')).toEqual([])
 
   // 명령 도움말 · 답
   const help = await $.command.run({ command: 'easy-compact', args: '?' })
   expect(hangul.test(String(help.text))).toBe(false)
   const set = await $.command.run({ command: 'easy-compact', args: 'set cache 10' })
   expect(hangul.test(String(set.text))).toBe(false)
+  for (const args of ['band', 'band min', 'band 5h off']) {
+    const r = await $.command.run({ command: 'easy-compact', args })
+    expect(hangul.test(String(r.text))).toBe(false)
+  }
+  // 최소화 띠
+  expect(await leftovers(band)).toEqual([])
+  expect(await band.find({ key: 'band-mode', text: '▴ Full view' })).not.toBe(undefined)
 })
 
 test('언어 감지: Claude Code 설정 language → 앱 언어(locale) → OS(LANG) → 설정 탭에서 고르면 그 언어로 고정', async ($, on) => {
@@ -2286,4 +2297,132 @@ test('영어 띠 질문 줄: 요청 한 번이면 "1 request"(단수), 두 번�
   await ask('p2', 2)
   const two = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
   expect(await two.find({ text: ' · 2 requests' })).not.toBe(undefined)
+})
+
+/** 띠 보기 시험 공통: 구독 세션(5시간 · 7일), 컨텍스트는 tokens() 로, 저장소는 store */
+function bandWorld(on: On, store: Map<string, unknown>, tokens: () => number) {
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-band' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', async () => ({
+    value: {
+      startedAt: 0,
+      context: { tokens: tokens(), window: 1_000_000, percent: tokens() / 10_000 },
+      rateLimits: [
+        { kind: 'five_hour', percentUsed: 41, resetsAt: new Date(Date.now() + 80 * 60_000).toISOString(), source: 'test' },
+        { kind: 'seven_day', percentUsed: 23, source: 'test' },
+      ],
+      cost: { usd: 1 },
+    },
+  }))
+  on('clock.now', async () => ({ value: Date.now() }))
+  on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', async (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('store.delete', async (_$, e) => {
+    store.delete(e.key)
+    return { value: undefined }
+  })
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+}
+
+test('띠 보기: 최소화(한 줄) ↔ 전체는 띠 버튼으로, 컴팩트할 때만은 구간 시작 전엔 띠가 없고 닿으면 한 줄 + 이지 컴팩트', async ($, on) => {
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const store = new Map<string, unknown>()
+  let tokens = 120_000
+  bandWorld(on, store, () => tokens)
+  // 띠를 안 그릴 땐(next) 엔진 몫 — 시험에선 빈 상자로 대신한다
+  on('ui.render', { component: 'AbovePrompt' }, async (_$, e) => {
+    const { Box } = _$.ui.resolve(e)
+    return <Box key="core" />
+  })
+  await $.command.run({ command: 'easy-compact', args: '' })
+  const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+
+  // 전체: 한도 · 캐시 · 지난 질문 자리 · 이지 컴팩트
+  expect(await band.find({ text: '41%' })).not.toBe(undefined)
+  expect(await band.find({ text: ' · 캐시 ' })).not.toBe(undefined)
+  expect(await band.find({ key: 'compact' })).not.toBe(undefined)
+  expect(await band.find({ key: 'band-mode', text: '▾ 최소화' })).not.toBe(undefined)
+
+  // 최소화: 요청당 · 컨텍스트 · 컴팩트 구간 한 줄 + 사용량 패널 버튼. 한도 · 캐시 · 이지 컴팩트는 없다
+  await band.press({ key: 'band-mode' })
+  expect(store.get('settings')).toMatchObject({ band: 'min' })
+  expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
+  expect(await band.find({ text: ' · 컴팩트 구간 ' })).not.toBe(undefined)
+  expect(await band.find({ text: '41%' })).toBe(undefined)
+  expect(await band.find({ text: ' · 캐시 ' })).toBe(undefined)
+  expect(await band.find({ key: 'compact' })).toBe(undefined)
+  expect(await band.find({ key: 'usage' })).not.toBe(undefined)
+  expect(await band.find({ key: 'b-panels' })).not.toBe(undefined)
+  await band.press({ key: 'band-mode' })
+  expect(store.get('settings')).toMatchObject({ band: 'full' })
+  expect(await band.find({ text: '41%' })).not.toBe(undefined)
+
+  // 컴팩트할 때만: 구간(25만 ~ 30만) 시작 전엔 띠를 안 그린다 — 입력창 위 자리가 빈다
+  await $.command.run({ command: 'easy-compact', args: '띠 컴팩트할 때만' })
+  expect(store.get('settings')).toMatchObject({ band: 'auto' })
+  expect(await band.find({ key: 'core' })).not.toBe(undefined)
+  expect(await band.find({ text: '요청당 ' })).toBe(undefined)
+  expect(await band.find({ key: 'usage' })).toBe(undefined)
+  // 구간에 닿으면: 한 줄 + 🟡 이지 컴팩트(보기 버튼은 없다), 누르면 확인창
+  tokens = 260_000
+  await $.command.run({ command: 'easy-compact', args: '' })
+  expect(await band.find({ text: /^🟡 컴팩트하기 좋은 때$/ })).not.toBe(undefined)
+  expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
+  expect(await band.find({ text: '41%' })).toBe(undefined)
+  expect(await band.find({ key: 'band-mode' })).toBe(undefined)
+  await band.press({ key: 'compact' })
+  expect(await band.find({ key: 'compact-yes' })).not.toBe(undefined)
+})
+
+test('UI 레이아웃 상세 조정: 전체 보기 띠의 칸을 설정 탭(접힌 테두리 묶음) · 명령으로 켜고 끈다', async ($, on) => {
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const store = new Map<string, unknown>()
+  bandWorld(on, store, () => 120_000)
+  await $.command.run({ command: 'easy-compact', args: 'settings' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
+  const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+
+  // 설정 탭: 보기 셋, 상세 조정은 접혀 있다
+  expect(await pane.find({ key: 'band-full', text: '✓ 전체 보기' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'band-min' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'band-auto' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'show-resets' })).toBe(undefined)
+  await pane.press({ key: 'band-detail' })
+  expect(await pane.find({ key: 'band-detail-box' })).not.toBe(undefined)
+
+  // 리셋 시간 → 5시간 순으로 끈다
+  expect(await band.find({ text: /후 리셋/ })).not.toBe(undefined)
+  await pane.press({ key: 'show-resets' })
+  expect(store.get('settings')).toMatchObject({ bandShow: { resets: false, fiveHour: true } })
+  expect(await band.find({ text: /후 리셋/ })).toBe(undefined)
+  expect(await band.find({ text: '5시간' })).not.toBe(undefined)
+  await pane.press({ key: 'show-fiveHour' })
+  expect(await band.find({ text: '5시간' })).toBe(undefined)
+  expect(await band.find({ text: '7일' })).not.toBe(undefined)
+
+  // 명령(영 · 한 이름 다): 캐시를 끄고, 비용 줄 칸을 다 끄면 줄째 빠진다 — 이지 컴팩트 버튼은 그대로
+  await $.command.run({ command: 'easy-compact', args: 'band cache off' })
+  expect(store.get('settings')).toMatchObject({ bandShow: { cache: false } })
+  expect(await band.find({ text: ' · 캐시 ' })).toBe(undefined)
+  for (const p of ['요청당', 'context', '구간']) await $.command.run({ command: 'easy-compact', args: `띠 ${p} 끄기` })
+  expect(await band.find({ text: /요청당|컨텍스트|컴팩트 구간/ })).toBe(undefined)
+  expect(await band.find({ key: 'compact' })).not.toBe(undefined)
+  await $.command.run({ command: 'easy-compact', args: 'band question off' })
+  expect(store.get('settings')).toMatchObject({ bandShow: { lastTurn: false } })
+
+  // 모두 보이기
+  await pane.press({ key: 'band-show-all' })
+  expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
+  expect(await band.find({ text: '5시간' })).not.toBe(undefined)
+  expect(await band.find({ text: /후 리셋/ })).not.toBe(undefined)
+  // 최소화로 바꿔도 칸 설정은 남는다(전체 보기 전용)
+  await pane.press({ key: 'band-min' })
+  expect(store.get('settings')).toMatchObject({ band: 'min' })
 })

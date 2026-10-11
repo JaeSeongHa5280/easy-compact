@@ -7,6 +7,9 @@ import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   nudgeCache,
+  parseBandMode,
+  parseBandPart,
+  setBandPart,
   parseMinutes,
   parseTokens,
   RANGE_BANDS,
@@ -68,6 +71,24 @@ test('저장된 값을 관대하게 읽는다: 빠진 키는 기본, 깨진 값�
   const fixed = normalizeSettings({ auto: false, preset: 'custom', values: { ctxWarn: 100_000, ctxCut: 400_000, cacheWarnMin: 10 } })
   expect(fixed.follow).toBe(false)
   expect(fixed.compactAt).toBe(400_000)
+})
+
+test('띠 보기 · 칸: 처음엔 전체 · 다 보임, 깨진 값은 기본, 빠진 칸은 보임(새 칸이 늘어도), 이름은 영 · 한', () => {
+  expect(DEFAULT_SETTINGS.band).toBe('full')
+  expect(Object.values(DEFAULT_SETTINGS.bandShow).every(Boolean)).toBe(true)
+  expect(normalizeSettings({ band: 'tiny', bandShow: 'x' })).toEqual(DEFAULT_SETTINGS)
+  const s = normalizeSettings({ band: 'auto', bandShow: { resets: false, fiveHour: 'no' } })
+  expect(s.band).toBe('auto')
+  expect(s.bandShow).toEqual({ ...DEFAULT_SETTINGS.bandShow, resets: false })
+  expect(setBandPart(DEFAULT_SETTINGS, 'cache', false).bandShow.cache).toBe(false)
+  expect(parseBandMode('최소화')).toBe('min')
+  expect(parseBandMode('컴팩트할 때만')).toBe('auto')
+  expect(parseBandMode('Full')).toBe('full')
+  expect(parseBandMode('cache')).toBe(null)
+  expect(parseBandPart('5시간')).toBe('fiveHour')
+  expect(parseBandPart('7D')).toBe('sevenDay')
+  expect(parseBandPart('컴팩트 구간')).toBe('range')
+  expect(parseBandPart('nope')).toBe(null)
 })
 
 test('값 읽기: 30만 · 300k · 300000 · 10분', () => {

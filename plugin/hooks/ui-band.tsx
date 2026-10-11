@@ -1,36 +1,48 @@
-import type { CompactInputs, CostParts, LiveTurn, TurnSummary, Usage } from '../types'
+import type { BandShow, CompactInputs, CostParts, LiveTurn, TurnSummary, Usage } from '../types'
 import { coldCompact, estimate, fmtTokens, fmtUntil, fmtUsd, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, thresholds } from './cost'
 import { L, plural } from './i18n'
+import { DEFAULT_SETTINGS } from './settings'
 import { limitName } from './text'
 import { bar } from './ui-common'
 import type { Ui } from './ui-common'
 
-/** 입력창 위 띠의 줄들 — 한도 · 예상(요청당 · 컨텍스트 · 캐시) · 지난 질문 */
+/** 입력창 위 띠의 줄들 — 한도 · 예상(요청당 · 컨텍스트 · 캐시) · 지난 질문. 칸마다 설정(bandShow)으로 뺄 수 있다 */
 
-/** 띠 윗줄: 세션 한도. 계정 전체 값이라 다른 세션이 쓴 것도 들어 있다 */
-export function drawLimitsLine(ui: Ui, surface: string, u: Usage, nowMs: number) {
+/** 최소화 · 컴팩트할 때만 보기의 한 줄 칸: 요청당 · 컨텍스트 · 컴팩트 구간(캐시 남은 분은 뺀다) */
+export const MIN_SHOW: BandShow = { ...DEFAULT_SETTINGS.bandShow, cache: false }
+
+/**
+ * 띠 윗줄: 세션 한도. 계정 전체 값이라 다른 세션이 쓴 것도 들어 있다. 5시간 · 7일 · 리셋 시간은 칸마다 뺄 수 있고(그 밖의
+ * 한도 — 지출 한도 등 — 는 늘 보인다), 다 빠지면 null
+ */
+export function drawLimitsLine(ui: Ui, surface: string, u: Usage, nowMs: number, show: BandShow = DEFAULT_SETTINGS.bandShow) {
   const { Box, Text } = ui
+  const shown = u.rateLimits.filter(r => (r.kind === 'five_hour' ? show.fiveHour : r.kind === 'seven_day' ? show.sevenDay : true))
+  if (shown.length === 0) return null
   return (
     <Box columnGap={3} flexWrap="wrap">
-      {u.rateLimits.map(r => (
+      {shown.map(r => (
         <Box key={`bl-${r.kind}`} columnGap={1} alignItems="center">
           <Text dimColor>{limitName(r.kind)}</Text>
           {bar(ui, surface, r.percentUsed, limitHex(r.percentUsed), 64, L(`${limitName(r.kind)} 한도 ${r.percentUsed}%`, `${limitName(r.kind)} limit ${r.percentUsed}%`))}
           <Text {...(r.percentUsed >= 90 ? { color: 'red' } : r.percentUsed >= 70 ? { color: 'yellow' } : {})}>
             {Math.round(r.percentUsed)}%
           </Text>
-          {r.resetsAt ? <Text dimColor>{L(`· ${fmtUntil(r.resetsAt, nowMs)} 후 리셋`, `· resets in ${fmtUntil(r.resetsAt, nowMs)}`)}</Text> : null}
+          {r.resetsAt && show.resets ? <Text dimColor>{L(`· ${fmtUntil(r.resetsAt, nowMs)} 후 리셋`, `· resets in ${fmtUntil(r.resetsAt, nowMs)}`)}</Text> : null}
         </Box>
       ))}
     </Box>
   )
 }
 
-/** 띠 아랫줄 왼쪽: 지금 입력하면 드는 값. 한 줄을 넘으면 끝을 자른다 */
-export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: CompactInputs | null) {
+/**
+ * 띠 아랫줄 왼쪽: 지금 입력하면 드는 값. 한 줄을 넘으면 끝을 자른다. show 로 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시 칸을
+ * 뺀다(식은 캐시 줄은 경고라 컨텍스트 칸만 따른다) — 다 빠지면 null
+ */
+export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: CompactInputs | null, show: BandShow = DEFAULT_SETTINGS.bandShow) {
   const { Text } = ui
   const level = levelOf(u.contextTokens)
-  const ctx = u.contextEstimated ? (
+  const ctx = !show.context ? null : u.contextEstimated ? (
     <Text>
       <Text color={LEVEL_TEXT[level]}>{L(`컨텍스트 ~${fmtTokens(u.contextTokens)}`, `Context ~${fmtTokens(u.contextTokens)}`)}</Text>
       <Text dimColor>{L(' 컴팩트 직후', ' just compacted')}</Text>
@@ -39,19 +51,23 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
     <Text color={LEVEL_TEXT[level]}>{L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`)}</Text>
   )
   // 지금 걸린 컴팩트 시점(설정 탭) — 컨텍스트 크기 바로 뒤에, 얼마나 남았는지 견주게
+  // 칸 사이 " · " 는 앞 칸이 있을 때만 — 앞 칸을 끄면 구간 · 캐시가 "컴팩트 구간" 으로 시작한다
   const t = thresholds()
-  const at = (
-    <Text>
-      <Text dimColor>{t.isRange ? L(' · 컴팩트 구간 ', ' · compact range ') : L(' · 컴팩트 기준 ', ' · compact at ')}</Text>
-      <Text>{t.isRange ? `${fmtTokens(t.ctxWarn)}~${fmtTokens(t.ctxCut)}` : fmtTokens(t.ctxCut)}</Text>
-    </Text>
-  )
+  const at = (isFirst: boolean) =>
+    !show.range ? null : (
+      <Text>
+        <Text dimColor>
+          {t.isRange ? L(`${isFirst ? '' : ' · '}컴팩트 구간 `, `${isFirst ? 'Compact range ' : ' · compact range '}`) : L(`${isFirst ? '' : ' · '}컴팩트 기준 `, `${isFirst ? 'Compact at ' : ' · compact at '}`)}
+        </Text>
+        <Text>{t.isRange ? `${fmtTokens(t.ctxWarn)}~${fmtTokens(t.ctxCut)}` : fmtTokens(t.ctxCut)}</Text>
+      </Text>
+    )
   const est = estimate(u.contextTokens, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom))
   if (est.kind === 'unpriced')
-    return (
+    return !ctx && !show.range ? null : (
       <Text wrap="truncate-end">
         {ctx}
-        {at}
+        {at(!ctx)}
       </Text>
     )
   if (est.kind === 'cold') {
@@ -77,25 +93,29 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
         ) : (
           <Text bold>{L(`${fmtUsd(gap)} 손해`, `costs ${fmtUsd(gap)} more`)}</Text>
         )}
-        <Text dimColor> · </Text>
+        {ctx ? <Text dimColor> · </Text> : null}
         {ctx}
       </Text>
     )
   }
+  const hasCache = show.cache && est.minsLeft !== null
+  if (!show.perRequest && !ctx && !show.range && !hasCache) return null
   return (
     <Text wrap="truncate-end">
-      <Text dimColor>{L('요청당 ', 'Per request ')}</Text>
+      {show.perRequest ? <Text dimColor>{L('요청당 ', 'Per request ')}</Text> : null}
       {/* 요청 1회 = 컨텍스트 × 읽기 요율 — 색은 컨텍스트 색과 같다 */}
-      <Text bold color={LEVEL_TEXT[level]}>
-        ~{fmtUsd(est.perCallUsd)}
-      </Text>
-      <Text dimColor> · </Text>
+      {show.perRequest ? (
+        <Text bold color={LEVEL_TEXT[level]}>
+          ~{fmtUsd(est.perCallUsd)}
+        </Text>
+      ) : null}
+      {show.perRequest && ctx ? <Text dimColor> · </Text> : null}
       {ctx}
-      {at}
-      {est.minsLeft === null ? null : <Text dimColor>{L(' · 캐시 ', ' · cache ')}</Text>}
-      {est.minsLeft === null ? null : (
-        <Text {...(est.minsLeft < thresholds().cacheWarnMin ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}분`, `${est.minsLeft}m`)}</Text>
-      )}
+      {at(!show.perRequest && !ctx)}
+      {hasCache ? <Text dimColor>{show.perRequest || ctx || show.range ? L(' · 캐시 ', ' · cache ') : L('캐시 ', 'Cache ')}</Text> : null}
+      {hasCache ? (
+        <Text {...(est.minsLeft! < thresholds().cacheWarnMin ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}분`, `${est.minsLeft}m`)}</Text>
+      ) : null}
     </Text>
   )
 }

@@ -35,6 +35,30 @@ export type Settings = {
    * 영어. ko · en 은 고정 — 감지가 빗나갈 때(CLI 만 쓰고 아무것도 안 정한 경우 등) 설정 탭 맨 위 줄에서 바꾼다
    */
   lang: 'auto' | 'ko' | 'en'
+  /** 입력창 위 띠 보기(BandMode). 띠 오른쪽 위 버튼(전체 ↔ 최소화) · 설정 탭 · /easy-compact band 로 바꾼다 */
+  band: BandMode
+  /** 전체 보기 띠에 보일 칸 — 설정 탭 "UI 레이아웃 상세 조정". 끈 칸은 빠지고, 칸이 다 빠진 비용 줄은 줄째 빠진다 */
+  bandShow: BandShow
+}
+
+/**
+ * 띠 보기. full = 전체(한도 · 비용 · 질문 세 줄 + 이지 컴팩트 버튼), min = 한 줄(요청당 · 컨텍스트 · 컴팩트 구간 + 사용량
+ * 패널 버튼 — 이지 컴팩트 버튼 · 캐시 · 한도 · 질문 줄은 뺀다), auto = 컴팩트할 때만: 컨텍스트가 컴팩트 구간 시작(노랑)에
+ * 닿기 전엔 띠를 아예 안 그려 입력창 위 자리를 비우고, 닿으면 min 한 줄 + 이지 컴팩트 버튼. 띠가 늘 떠 있어 거슬린다는
+ * 말에서 min · auto 를 더했다
+ */
+export type BandMode = 'full' | 'min' | 'auto'
+
+/** 전체 보기 띠의 칸마다 보일지. 5시간 · 7일 = 요금제 한도 막대, resets = 그 뒤 "N 후 리셋" */
+export type BandShow = {
+  fiveHour: boolean
+  sevenDay: boolean
+  resets: boolean
+  perRequest: boolean
+  context: boolean
+  range: boolean
+  cache: boolean
+  lastTurn: boolean
 }
 
 /** 컴팩트 요청이 입력을 어떻게 내는지(몫, 합 1). 엔진이 컴팩트 끝에 준 실제 토큰으로 잰다 */
@@ -235,6 +259,8 @@ declare module 'claude-code' {
       usageTab: UsageTab
       /** 설정의 컴팩트 문구 "보내는 글 전체"를 펼쳤는가(처음엔 접힘 — 단계 보기만) */
       tidyRawOpen: boolean
+      /** 설정의 "UI 레이아웃 상세 조정" 을 펼쳤는가(처음엔 접힘). 세션마다 따로 */
+      layoutOpen: boolean
       /** 사용량 카드 펼침(간략 보기): 접으면 제목 줄의 요약만. 처음엔 다 펼침 */
       cardsOpen: { now: boolean; history: boolean; compact: boolean }
       /** 설정의 직접 쓴 문구 입력칸에 치는 중인 글(Enter 전). 화면을 다시 그려도 친 글이 남게 칸 값으로 다시 준다 */

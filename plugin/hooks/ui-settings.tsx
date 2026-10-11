@@ -1,6 +1,11 @@
 import type { Optimal, Settings, Source, TidyStyleId } from '../types'
 import { fmtTokens, fmtUsd, modelName, ratesFor } from './cost'
 import {
+  BAND_MODES,
+  BAND_PARTS,
+  bandModeName,
+  bandModeUse,
+  bandPartName,
   chooseTidy,
   customName,
   customUse,
@@ -8,6 +13,7 @@ import {
   nudgeCache,
   parseTokens,
   RANGE_BANDS,
+  setBandPart,
   setCompactAt,
   thresholdsOf,
   TIDY_IDS,
@@ -62,6 +68,7 @@ export type SettingsActions = {
   typeTidy: (text: string) => void
   saveTidy: (text: string) => void
   toggleRaw: () => void
+  toggleLayout: () => void
   setLang: (choice: Settings['lang']) => void
 }
 
@@ -77,6 +84,7 @@ export function drawSettings(
   ctxNow: number | null = null,
   surface = 'desktop',
   cols: number | null = null,
+  layoutOpen = false,
 ) {
   const { Box, Button, Input, Text } = ui
   const isTerminal = surface === 'terminal'
@@ -586,12 +594,54 @@ export function drawSettings(
     ) : null,
   ], undefined, true)
 
+  // 입력창 위 띠: 보기 셋(전체 · 최소화 · 컴팩트할 때만)과, 접어 둔 "UI 레이아웃 상세 조정" — 전체 보기 띠의 칸을 줄(한도 ·
+  // 비용 · 질문)마다 묶어 켜고 끈다. 상세 조정은 테두리로 한 덩어리(띠가 늘 떠 있어 거슬린다 · 5시간 등 필요 없는 칸을 빼고
+  // 싶다는 말에서)
+  const groups = [
+    { id: 'limits', name: L('한도 줄', 'Limits row') },
+    { id: 'cost', name: L('비용 줄', 'Cost row') },
+    { id: 'turn', name: L('질문 줄', 'Question row') },
+  ] as const
+  const bandSection = section(ui, 'set-band', L('입력창 위 띠', 'Band above the input'), [
+    <Box key="band-mode-row" columnGap={1} alignItems="center" flexWrap="wrap">
+      <Text>{L('보기', 'View')}</Text>
+      {BAND_MODES.map(m => pick(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m })))}
+    </Box>,
+    <Text key="band-use" dimColor wrap="wrap">
+      {bandModeUse(s.band)}
+    </Text>,
+    <Box key="band-detail-row" marginTop={1}>
+      <Button key="band-detail" label={`${layoutOpen ? '▾' : '▸'} ${L('UI 레이아웃 상세 조정', 'UI layout details')}`} variant="secondary" onPress={act.toggleLayout} />
+    </Box>,
+    layoutOpen ? (
+      <Box key="band-detail-box" flexDirection="column" {...CARD}>
+        <Text dimColor wrap="wrap">
+          {L('전체 보기 띠에 보일 칸 — 누르면 켜고 끕니다(✓ = 보임).', 'Parts of the Full band — press to turn on or off (✓ = shown).')}
+        </Text>
+        {groups.map(g => (
+          <Box key={`band-g-${g.id}`} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'} marginTop={1}>
+            {cell('t', TERM_W, <Text>{g.name}</Text>)}
+            <Box flexShrink={1} minWidth={0} columnGap={1} rowGap={1} flexWrap="wrap">
+              {BAND_PARTS.filter(p => p.group === g.id).map(p =>
+                pick(`show-${p.key}`, bandPartName(p.key), s.bandShow[p.key], () => save(setBandPart(s, p.key, !s.bandShow[p.key]))),
+              )}
+            </Box>
+          </Box>
+        ))}
+        <Box key="band-all-row" justifyContent="flex-end" marginTop={1}>
+          <Button key="band-show-all" label={L('모두 보이기', 'Show all')} variant="secondary" onPress={() => save({ ...s, bandShow: DEFAULT_SETTINGS.bandShow })} />
+        </Box>
+      </Box>
+    ) : null,
+  ], undefined, true)
+
   // 명령 안내 줄은 뺐다 — 화면에서 다 바꿀 수 있어 사족이었다. 명령은 /easy-compact 도움말에 있다
   return (
     <Box flexDirection="column">
       {compactSection}
       {cacheSection}
       {tidy}
+      {bandSection}
     </Box>
   )
 }
@@ -620,6 +670,7 @@ export function drawSettingsView(
   ctxNow: number | null = null,
   autoLang: Lang | null = null,
   cols: number | null = null,
+  layoutOpen = false,
 ) {
   const { Box, Button, Text } = ui
   const look = phaseLook(phase, kind)
@@ -671,7 +722,7 @@ export function drawSettingsView(
           {L('바꾸면 모든 세션에 바로 적용됩니다.', 'Changes apply to all sessions right away.')}
         </Text>
       )}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols)}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, layoutOpen)}
     </Box>
   )
 }

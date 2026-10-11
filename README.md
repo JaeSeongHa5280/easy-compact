@@ -78,6 +78,16 @@ https://github.com/user-attachments/assets/cd8fd962-4361-4056-9372-fa321d3dda42
 **Context, next-request cost and this question's cost — updated after every request.**
 Also on the band: your 5-hour and 7-day plan usage, minutes left on the prompt cache, and the **Easy Compact** button.
 
+**Too much on screen? Pick a view.**
+
+| View | What you see |
+|---|---|
+| **Full** | Everything above. Hide any part — 5h / 7d limits, reset times, cache, the question row — in Settings → **UI layout details** |
+| **Minimized** | One line: per request · context · compact range |
+| **Only when compacting** | Nothing above the input until the context reaches your compact range, then one line with **Easy Compact** |
+
+Switch with **▾ Minimize** on the band, in Settings, or with `/easy-compact band`.
+
 ### 2. Cost per question, step by step
 
 <img src="docs/img/live.png" width="760" alt="A running question with one line and one price per step">
@@ -136,6 +146,8 @@ Everything is also a button in the band or the pane.
 | `/easy-compact set compact range` | Back to range mode |
 | `/easy-compact set cache <minutes>` | Warn when this much cache time is left |
 | `/easy-compact prompt <Normal \| Long-session handoff \| Wrap-up \| Custom \| your text>` | Save & compact text |
+| `/easy-compact band <full \| min \| auto>` | Band view: Full · Minimized · Only when compacting |
+| `/easy-compact band <part> <on \| off>` | Parts of the Full band: `5h` `7d` `reset` `request` `context` `range` `cache` `question` (`all` for every part) |
 | `/easy-compact lang <auto \| ko \| en>` | Display language |
 | `/easy-compact hide` · `show` | Hide or show the band in this session |
 
@@ -146,6 +158,7 @@ Everything is also a button in the band or the pane.
 - **Amounts are API list-price estimates.** On a subscription they show how heavy a session is, not what you are billed.
 - **Everything stays on your machine.** It reads your local session records and makes no network requests.
 - **Desktop app:** right after the pane opens, the first click inside it only moves focus — click once more.
+- **Only when compacting** hides the band's buttons too — open the Usage pane with `/easy-compact usage`.
 - Records over 4 MB are read with Node.js — keep `node` on your PATH for very long sessions.
 
 ## License

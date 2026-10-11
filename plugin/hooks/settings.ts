@@ -9,7 +9,7 @@
 // 줄을 고른다, 또는 사람이 ◀ ▶ 로 정한 한 크기 — 두 방식 중 하나. 처음엔 최적에서 폭(5 · 10 · 20%)만큼으로 했는데,
 // 원한 구간은 요금표처럼 0~100만 크기마다 값이 붙은 표에서 고르는 것이었다. 고르는 값은 [적용] 을 눌러야 저장.
 
-import type { Settings, Thresholds, TidyStyleId } from '../types'
+import type { BandMode, BandShow, Settings, Thresholds, TidyStyleId } from '../types'
 import { L, lang } from './i18n'
 import type { Lang } from './i18n'
 import { COMPACT_MAX, COMPACT_MIN, rangeThresholdsFor, thresholdsFor } from './optimal'
@@ -128,6 +128,76 @@ export const DEFAULT_SETTINGS: Settings = {
   tidy: 'default',
   tidyCustom: '',
   lang: 'auto',
+  band: 'full',
+  bandShow: { fiveHour: true, sevenDay: true, resets: true, perRequest: true, context: true, range: true, cache: true, lastTurn: true },
+}
+
+// ── 띠 보기 · 칸 ──────────────────────────────────────────────────
+
+export const BAND_MODES: readonly BandMode[] = ['full', 'min', 'auto']
+
+/** 띠 보기 이름(설정 탭 버튼 · 명령 답) */
+export function bandModeName(m: BandMode): string {
+  return m === 'full' ? L('전체 보기', 'Full') : m === 'min' ? L('최소화', 'Minimized') : L('컴팩트할 때만', 'Only when compacting')
+}
+
+/** 띠 보기 한 줄 풀이(설정 탭) */
+export function bandModeUse(m: BandMode): string {
+  return m === 'full'
+    ? L('한도 · 비용 · 질문 세 줄과 이지 컴팩트 버튼. 칸은 아래 상세 조정에서 뺄 수 있습니다.', 'Limits, cost and question rows with the Easy Compact button. Hide parts in the details below.')
+    : m === 'min'
+      ? L('요청당 · 컨텍스트 · 컴팩트 구간 한 줄과 사용량 패널 버튼만.', 'One line: per request, context and compact range, plus the Usage pane button.')
+      : L(
+          '컨텍스트가 컴팩트 구간 시작(노랑)에 닿기 전엔 띠가 없습니다. 닿으면 한 줄과 이지 컴팩트 버튼이 나옵니다. 그동안 사용량 패널은 /easy-compact usage 로 엽니다.',
+          'No band until the context reaches the start of the compact range (yellow), then one line with the Easy Compact button. Meanwhile open the Usage pane with /easy-compact usage.',
+        )
+}
+
+/** 띠 칸: 설정 탭 묶음(한도 · 비용 · 질문 줄) 순서와 명령 이름(영 · 한, 띄어쓰기 없이 소문자) */
+export const BAND_PARTS: readonly { key: keyof BandShow; group: 'limits' | 'cost' | 'turn'; names: readonly string[] }[] = [
+  { key: 'fiveHour', group: 'limits', names: ['5h', '5시간'] },
+  { key: 'sevenDay', group: 'limits', names: ['7d', '7일'] },
+  { key: 'resets', group: 'limits', names: ['reset', 'resets', '리셋'] },
+  { key: 'perRequest', group: 'cost', names: ['request', '요청당', '요청'] },
+  { key: 'context', group: 'cost', names: ['context', '컨텍스트'] },
+  { key: 'range', group: 'cost', names: ['range', '구간', '컴팩트구간'] },
+  { key: 'cache', group: 'cost', names: ['cache', '캐시'] },
+  { key: 'lastTurn', group: 'turn', names: ['question', '질문'] },
+]
+
+/** 칸 이름(설정 탭 버튼) */
+export function bandPartName(key: keyof BandShow): string {
+  const names: Record<keyof BandShow, [string, string]> = {
+    fiveHour: ['5시간', '5h'],
+    sevenDay: ['7일', '7d'],
+    resets: ['리셋까지 남은 시간', 'Time to reset'],
+    perRequest: ['요청당', 'Per request'],
+    context: ['컨텍스트', 'Context'],
+    range: ['컴팩트 구간', 'Compact range'],
+    cache: ['캐시 남은 분', 'Cache minutes'],
+    lastTurn: ['지난 · 진행 중 질문', 'Last · running question'],
+  }
+  return L(...names[key])
+}
+
+/** "최소화" · "min" · "auto" 등 → 띠 보기. 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
+export function parseBandMode(text: string): BandMode | null {
+  const t = text.replace(/\s+/g, '').toLowerCase()
+  if (['full', '전체', '전체보기'].includes(t)) return 'full'
+  if (['min', 'minimize', 'minimized', '최소', '최소화', '한줄'].includes(t)) return 'min'
+  if (['auto', '컴팩트할때만', '필요할때만', '자동'].includes(t)) return 'auto'
+  return null
+}
+
+/** 칸 이름 → 칸 key. 못 읽으면 null */
+export function parseBandPart(text: string): keyof BandShow | null {
+  const t = text.replace(/\s+/g, '').toLowerCase()
+  return BAND_PARTS.find(p => p.names.includes(t))?.key ?? null
+}
+
+/** 칸 하나 켜고 끄기 */
+export function setBandPart(s: Settings, key: keyof BandShow, on: boolean): Settings {
+  return { ...s, bandShow: { ...s.bandShow, [key]: on } }
 }
 
 // ── 컴팩트 시점 ──────────────────────────────────────────────────
@@ -230,7 +300,12 @@ export function normalizeSettings(raw: unknown): Settings {
   const tidy = r.tidy === 'custom' || TIDY_IDS.includes(r.tidy as TidyStyleId) ? (r.tidy as Settings['tidy']) : 'default'
   const tidyCustom = typeof r.tidyCustom === 'string' ? r.tidyCustom : ''
   const lang = r.lang === 'ko' || r.lang === 'en' ? r.lang : 'auto'
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, tidy, tidyCustom, lang }
+  const band = BAND_MODES.includes(r.band as BandMode) ? (r.band as BandMode) : DEFAULT_SETTINGS.band
+  // 칸은 하나씩: 빠졌거나 깨진 칸은 보이기(새 판에서 칸이 늘어도 켜진 채로 시작한다)
+  const shown = (typeof r.bandShow === 'object' && r.bandShow !== null ? r.bandShow : {}) as Partial<Record<keyof BandShow, unknown>>
+  const bandShow = { ...DEFAULT_SETTINGS.bandShow }
+  for (const k of Object.keys(bandShow) as (keyof BandShow)[]) if (typeof shown[k] === 'boolean') bandShow[k] = shown[k] as boolean
+  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, tidy, tidyCustom, lang, band, bandShow }
 }
 
 /** "30만" · "300k" · "300000" → 토큰, "10분" · "10" → 분. 못 읽으면 null */
