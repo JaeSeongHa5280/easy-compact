@@ -59,50 +59,40 @@ export function isTidyPrompt(text: string): boolean {
 
 /**
  * 정리 턴에 보내는 글. 모델이 읽는 프롬프트라 이 턴은 토큰이 든다.
- * 턴이 도는 중엔 버튼이 막혀 있으니, 세션이 볼 것은 "지금 컴팩트하면 손해인가" 다 — 손익 숫자를 같이 준다
+ * 돈 판단은 mod 가 숫자로 한다 — 손해면 이 버튼이 막혀 이 글이 안 간다. 세션은 잃을 정보만 본다: 예전엔 손익 숫자를 주고
+ * "손해인지" 를 맡겼는데, 세션은 정보 쪽만 보고("메모리에 저장해 둬 잃을 게 없다") 손해인 컴팩트를 진행했다
  */
-export function tidyPrompt(payoff: string | null, body: readonly string[]): string {
-  // 앞(손익 · 손해 판단)과 뒤([컴팩트 진행] 표시)는 고정, 가운데만 설정의 문구(프리셋 또는 사용자 글)
+export function tidyPrompt(body: readonly string[]): string {
+  // 앞(잃을 정보 판단 — 비용은 mod 가 버튼에서 이미 봄)과 뒤([컴팩트 진행] 표시)는 고정, 가운데만 설정의 문구(프리셋 또는 사용자 글)
   return [
     L(
       `${tidyTag()} 사용자가 "저장하고 컴팩트" 를 눌렀습니다. 이 답이 끝나면 대화를 컴팩트합니다(세부 내용은 요약만 남습니다).`,
       `${tidyTag()} The user pressed "Save & compact". When this answer ends, the conversation will be compacted (details survive only as a summary).`,
     ),
-    payoff ? L(`손익(mod 계산, API 정가): ${payoff}`, `Payoff (computed by the mod, API list prices): ${payoff}`) : null,
-    L('0) 먼저 지금 컴팩트하면 손해인지 판단하세요. 손해인 경우:', '0) First decide whether compacting now would be a loss. It is a loss when:'),
+    L('0) 먼저 컴팩트하면 잃는 정보가 있는지만 보세요. 보류할 때:', '0) First check only whether compacting would lose information you need. Hold when:'),
     L(
       '   - 다음 단계에 지금 맥락의 세부(오류 원문 · 비교 중인 값 · 고치다 만 파일 상태)가 꼭 필요한데 파일로 남기기 어렵다',
       '   - the next step needs details of the current context (raw errors, values being compared, half-edited file state) that are hard to save to files',
     ),
-    L('   - 남은 일이 곧 끝나서 위 손익으로는 본전을 못 뽑는다', '   - the remaining work ends soon, so the payoff above will not break even'),
+    L('   - 이 세션의 일이 거의 끝나 컴팩트한 뒤 이어 갈 것이 없다', '   - the work in this session is essentially done, with nothing left to continue after compacting'),
     L(
-      `   손해면: 저장하지 말고 이유와 언제 컴팩트하면 좋을지 사용자에게 짧게 알리고, 답 맨 끝 줄에 ${markHold()} 만 쓰세요.`,
-      `   If it is a loss: do not save; briefly tell the user why and when to compact instead, and write only ${markHold()} on the last line.`,
+      `   보류면: 저장하지 말고 이유를 사용자에게 짧게 알리고, 답 맨 끝 줄에 ${markHold()} 만 쓰세요.`,
+      `   If holding: do not save; briefly tell the user why, and write only ${markHold()} on the last line.`,
     ),
-    L('손해가 아니면 아래대로 하세요:', 'Otherwise, do the following:'),
+    L('보류가 아니면 아래대로 하세요:', 'Otherwise, do the following:'),
     ...body,
     L(
       `다 했으면 답 맨 끝 줄에 ${markGo()} 만 쓰세요. 새 작업은 시작하지 마세요.`,
       `When done, write only ${markGo()} on the last line. Do not start new work.`,
     ),
-  ]
-    .filter((line): line is string => line !== null)
-    .join('\n')
-}
-
-/** 설정 화면 "보내는 글 전체" 의 손익 줄 자리 — 숫자는 누를 때 띠 확인창의 값이 들어간다 */
-export function payoffSample(): string {
-  return L(
-    '(누를 때의 숫자: 컨텍스트 전 → 후 · 요청 1회 값 · 질문 1개당 아낌 · 저장 + 컴팩트 값 · 본전)',
-    '(numbers at the time you press: context before → after · cost per request · saving per question · save + compact cost · break-even)',
-  )
+  ].join('\n')
 }
 
 /** 설정 화면 "보내는 글 전체": 저장 턴에 보내는 글 줄마다(고른 문구 줄 표시) + 그 턴이 끝난 뒤 /compact 지시 */
 export function tidyScript(s: Settings): { text: string; isBody: boolean }[] {
   const body = tidyBody(s)
   return [
-    ...tidyPrompt(payoffSample(), body)
+    ...tidyPrompt(body)
       .split('\n')
       .map(text => ({ text, isBody: body.includes(text) })),
     { text: L(`답이 ${markGo()}으로 끝나면: /compact ${compactKeep()}`, `If the answer ends with ${markGo()}: /compact ${compactKeep()}`), isBody: false },

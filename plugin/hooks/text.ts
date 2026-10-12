@@ -139,45 +139,94 @@ export function agentHead(): string {
 }
 
 /**
- * 진행 중 · 끝난 질문 값 뒤에 붙는 에이전트 몫: " · 🤖 $1.93 · 요청 6회 · 도는 중". 질문 값은 에이전트까지 더한 합이라 그중
- * 얼마가 에이전트인지 따로. 끝났으면 "도는 중" 없이. 없으면 빈 글
+ * 질문별 비용 펼친 줄(자세히)의 요금 분해 — 줄마다: 메인(요청 수 · 금액 · 읽기 · 쓰기 · 출력) / 🤖 에이전트(개수 · 요청 수 · 금액 ·
+ * 읽기 · 쓰기 · 출력) / ⚙ 앱 자체 요청. 예전엔 읽기 · 쓰기 · 출력이 메인 + 에이전트 합이라 에이전트가 얼마인지 안 보였다.
+ * 요청 수도 줄마다 — 질문 값과 에이전트 값의 관계가 헷갈렸다. 에이전트가 없으면 한 줄(예전 꼴).
+ * 에이전트 몫을 나눠 적기 전 기록(hasParts 아님)은 에이전트 합만. steps = 메인 요청 수(모르면 빼고)
  */
-export function agentNote(details: readonly StepDetail[] | undefined): string {
-  const a = agentSum(details)
-  if (!a) return ''
-  return L(
-    ` · ${agentHead()} ${fmtUsd(a.usd)} · 요청 ${a.steps}회${a.running ? ' · 도는 중' : ''}`,
-    ` · ${agentHead()} ${fmtUsd(a.usd)} · ${plural(a.steps, 'request')}${a.running ? ' · running' : ''}`,
-  )
-}
-
-/**
- * 질문별 비용 펼친 줄의 요금 분해 — 줄마다: 메인(읽기 · 쓰기 · 출력) / 🤖 에이전트(합 · 읽기 · 쓰기 · 출력) / ⚙ 앱 자체 요청.
- * 예전엔 읽기 · 쓰기 · 출력이 메인 + 에이전트 합이라 에이전트가 얼마인지 안 보였다. 에이전트가 없으면 한 줄(예전 꼴).
- * 에이전트 몫을 나눠 적기 전 기록(hasParts 아님)은 에이전트 합만
- */
-export function costBreakdown(cost: CostParts, appUsd?: number, details?: readonly StepDetail[]): string[] {
+export function costBreakdown(cost: CostParts, appUsd?: number, details?: readonly StepDetail[], steps?: number): string[] {
   const parts = (read: number, write: number, output: number) =>
     L(`읽기 ${fmtUsd(read)} · 쓰기 ${fmtUsd(write)} · 출력 ${fmtUsd(output)}`, `read ${fmtUsd(read)} · write ${fmtUsd(write)} · output ${fmtUsd(output)}`)
+  const reqs = steps === undefined ? '' : L(`요청 ${steps}회 `, `${plural(steps, 'request')} `)
   const hasApp = appUsd !== undefined && appUsd >= APP_MIN_USD
   const app = hasApp ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd!)}`, `app's own requests ${fmtUsd(appUsd!)}`)) : null
   const a = agentSum(details)
   // 이 질문 뒤 컴팩트(🗜 줄)도 질문 값에 들어 있다 — 메인으로 세지 않게 따로(읽기 · 쓰기 · 출력으로는 못 나눠 금액만)
   const compactUsd = (details ?? []).reduce((s, d) => s + (d.compact ? d.usd : 0), 0)
   const compact = compactUsd >= APP_MIN_USD ? withIcon('🗜', L(`컴팩트 ${fmtUsd(compactUsd)}`, `Compact ${fmtUsd(compactUsd)}`)) : null
-  if (!a && !compact) return [`${parts(cost.read, cost.write, cost.output)}${app ? ` · ${app}` : ''}`]
+  if (!a && !compact) return [`${steps === undefined ? '' : L(`요청 ${steps}회 · `, `${plural(steps, 'request')} · `)}${parts(cost.read, cost.write, cost.output)}${app ? ` · ${app}` : ''}`]
   const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - compactUsd)
   // 메인의 읽기 · 쓰기 · 출력은 에이전트 몫을 나눠 적었고(0.4.0 기록) 컴팩트가 없을 때만 — 그 밖엔 금액만
   const main =
     (!a || a.hasParts) && !compact
-      ? `${L('메인', 'Main')} ${fmtUsd(mainUsd)} · ${parts(Math.max(0, cost.read - (a?.read ?? 0)), Math.max(0, cost.write - (a?.write ?? 0)), Math.max(0, cost.output - (a?.output ?? 0)))}`
-      : `${L('메인', 'Main')} ${fmtUsd(mainUsd)}`
-  const agents = !a
-    ? null
-    : a.hasParts
-      ? `${withIcon('🤖', L(`에이전트 ${fmtUsd(a.usd)}`, `Agents ${fmtUsd(a.usd)}`))} · ${parts(a.read, a.write, a.output)}`
-      : withIcon('🤖', L(`에이전트 ${fmtUsd(a.usd)}`, `Agents ${fmtUsd(a.usd)}`))
+      ? `${L('메인', 'Main')} ${reqs}${fmtUsd(mainUsd)} · ${parts(Math.max(0, cost.read - (a?.read ?? 0)), Math.max(0, cost.write - (a?.write ?? 0)), Math.max(0, cost.output - (a?.output ?? 0)))}`
+      : `${L('메인', 'Main')} ${reqs}${fmtUsd(mainUsd)}`
+  const agentHeadText = a ? withIcon('🤖', L(`에이전트 ${a.count}개 · 요청 ${a.steps}회 ${fmtUsd(a.usd)}`, `${plural(a.count, 'agent')} · ${plural(a.steps, 'request')} ${fmtUsd(a.usd)}`)) : ''
+  const agents = !a ? null : a.hasParts ? `${agentHeadText} · ${parts(a.read, a.write, a.output)}` : agentHeadText
   return [main, ...(agents ? [agents] : []), ...(compact ? [compact] : []), ...(app ? [app] : [])]
+}
+
+/**
+ * 답변 아래 칩 상세(정보량 전부): 맨 위 줄들의 합 = 질문 값 — 메인 · 🤖 에이전트 · 🗜 컴팩트 · ⚙ 앱 자체 요청. 메인 아래에 들여
+ * 쓰는 동작 줄은 메인 금액을 나눈 것(mainSteps). 같은 깊이에 다 두니 동작 줄까지 더하는 항목으로 읽혔다. 읽기 · 쓰기 · 출력은 메인뿐일 때만, 금액 뒤 괄호로 — " · " 로 이으니 금액과 나란한 항목처럼 읽혔다.
+ * 그 밖엔 몫을 못 나눈다(사용량 패널에 있다). steps = 메인 요청 수
+ */
+export function answerBreakdown(
+  cost: CostParts,
+  appUsd: number | undefined,
+  details: readonly StepDetail[] = [],
+  steps?: number,
+): { main: string; mainSteps: StepDetail[]; others: string[] } {
+  const a = agentSum(details)
+  const hasApp = appUsd !== undefined && appUsd >= APP_MIN_USD
+  const compactUsd = details.reduce((s, d) => s + (d.compact ? d.usd : 0), 0)
+  const hasCompact = compactUsd >= APP_MIN_USD
+  const alone = !a && !hasApp && !hasCompact
+  const reqs = steps === undefined ? '' : L(`요청 ${steps}회 `, `${plural(steps, 'request')} `)
+  const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - (hasCompact ? compactUsd : 0))
+  const parts = alone
+    ? L(
+        ` (읽기 ${fmtUsd(cost.read)} · 쓰기 ${fmtUsd(cost.write)} · 출력 ${fmtUsd(cost.output)})`,
+        ` (read ${fmtUsd(cost.read)} · write ${fmtUsd(cost.write)} · output ${fmtUsd(cost.output)})`,
+      )
+    : ''
+  const others = [
+    a ? withIcon('🤖', L(`에이전트 ${a.count}개 · 요청 ${a.steps}회 ${fmtUsd(a.usd)}`, `${plural(a.count, 'agent')} · ${plural(a.steps, 'request')} ${fmtUsd(a.usd)}`)) : null,
+    hasCompact ? withIcon('🗜', L(`컴팩트 ${fmtUsd(compactUsd)}`, `Compact ${fmtUsd(compactUsd)}`)) : null,
+    hasApp ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd!)}`, `app's own requests ${fmtUsd(appUsd!)}`)) : null,
+  ].filter((x): x is string => x !== null)
+  return { main: `${L('메인 ', 'Main ')}${reqs}${fmtUsd(mainUsd)}${parts}`, mainSteps: details.filter(d => !d.agent && !d.app && !d.compact), others }
+}
+
+/**
+ * 동작별 값 줄을 줄일 때: 비싼 것 n 개만 남기고(순서는 그대로) 나머지는 개수 · 합으로 — 답변 아래(정보량 전부)가 요청 많은 질문에서
+ * 끝없이 길어지지 않게
+ */
+export function topSteps(details: readonly StepDetail[], n: number): { shown: StepDetail[]; rest: number; restUsd: number } {
+  const top = new Set([...details].sort((a, b) => b.usd - a.usd).slice(0, n))
+  const shown = details.filter(d => top.has(d))
+  return { shown, rest: details.length - shown.length, restUsd: details.reduce((sum, d) => sum + (top.has(d) ? 0 : d.usd), 0) }
+}
+
+/** 질문 하나의 요청 수 — 메인 + 에이전트(질문 값에 들어 있는 것과 맞게). steps = 메인 요청 수 */
+export function callsOf(steps: number, details?: readonly StepDetail[]): number {
+  return steps + (agentSum(details)?.steps ?? 0)
+}
+
+/**
+ * 질문 줄의 에이전트: 간략 = "🤖 에이전트 1개", 자세히 = "🤖 에이전트 1개 $3.56 포함" — 질문 값에 이미 들어 있다는 말을 붙인다.
+ * 값 옆에 "🤖 $3.56" 만 있으니 $16.43 과의 관계가 헷갈렸다. 도는 중이면 그 말도. 없으면 null
+ */
+export function agentPart(details: readonly StepDetail[] | undefined, withUsd: boolean): string | null {
+  const a = agentSum(details)
+  if (!a) return null
+  const run = a.running ? L(' · 도는 중', ' · running') : ''
+  return withIcon(
+    '🤖',
+    withUsd
+      ? L(`에이전트 ${a.count}개 ${fmtUsd(a.usd)} 포함${run}`, `${plural(a.count, 'agent')} ${fmtUsd(a.usd)} included${run}`)
+      : L(`에이전트 ${a.count}개${run}`, `${plural(a.count, 'agent')}${run}`),
+  )
 }
 
 /** 질문별 비용 동작 줄의 컴팩트 글: "🗜 컴팩트 530k → 84k" */
@@ -209,7 +258,8 @@ export function switchText(from: string | null | undefined, to: string): string 
 function toolLabel(tool: { name: string; input: unknown }): string {
   const input = (tool.input ?? {}) as Record<string, unknown>
   const text = (v: unknown) => (typeof v === 'string' ? v : '')
-  const file = (v: unknown) => text(v).split(/[\/]/).pop() ?? ''
+  // Windows 실제 경로는 역슬래시라 / 로만 자르면 전체 경로가 나왔다 — 둘 다로 자른다
+  const file = (v: unknown) => text(v).split(/[\\/]/).pop() ?? ''
   switch (tool.name) {
     case 'Bash':
     case 'PowerShell':

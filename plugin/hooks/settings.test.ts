@@ -11,6 +11,8 @@ import {
   viewOf,
   normalizeSettings,
   nudgeCache,
+  nudgeSessionColor,
+  bandShowOf,
   isAutoWord,
   parseBandMode,
   parseBandPart,
@@ -63,12 +65,13 @@ test('캐시 경고 −/+: 칸을 따라, 끝에서 멈춘다', () => {
 })
 
 test('저장된 값을 관대하게 읽는다: 빠진 키는 기본, 깨진 값은 버림, 예전 판(프리셋 · 자동)은 옮긴다', () => {
+  // 저장값이 있는데 화면 값이 없으면(0.4.0 전) 업데이트 뒤 첫 화면 = 간단. 저장소를 못 읽으면 DEFAULT(자세히 — 보던 그대로)
   expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS)
   const s = normalizeSettings({ compactAt: 'x', follow: 'y', rangeStart: 300_000, rangeEnd: 200_000, cacheWarnMin: -1, tidy: 'nope' })
-  expect(s).toEqual(DEFAULT_SETTINGS)
+  expect(s).toEqual({ ...DEFAULT_SETTINGS, screen: 'simple' })
   expect(normalizeSettings({ rangeStart: 200_000, rangeEnd: 400_000 })).toMatchObject({ rangeStart: 200_000, rangeEnd: 400_000 })
   // 예전 판의 폭(rangePct)은 버리고 기본 구간
-  expect(normalizeSettings({ rangePct: 20 })).toEqual(DEFAULT_SETTINGS)
+  expect(normalizeSettings({ rangePct: 20 })).toEqual({ ...DEFAULT_SETTINGS, screen: 'simple' })
   // 예전 판 자동(auto 없음 · true) → 최적 따라감, 캐시 경고는 그 값 그대로
   const auto = normalizeSettings({ preset: 'tight', values: { usdWarn: 0.1, usdCut: 0.5, ctxWarn: 100_000, ctxCut: 200_000, cacheWarnMin: 15 } })
   expect(auto.follow).toBe(true)
@@ -82,30 +85,52 @@ test('저장된 값을 관대하게 읽는다: 빠진 키는 기본, 깨진 값�
 test('바 접기 · 화면: 처음엔 펼침 · 컴팩트할 때 펴기 켬 · 최대 · 자세히(저장소를 못 읽을 때), 0.4.0 전 값은 옮긴다, 이름은 영 · 한', () => {
   expect(DEFAULT_SETTINGS).toMatchObject({ band: 'full', bandFolded: false, bandAutoOpen: true, screen: 'detail', custom: null })
   expect(Object.values(viewOf(DEFAULT_SETTINGS).bandShow).every(Boolean)).toBe(true)
-  expect(normalizeSettings({ band: 'tiny', bandFolded: 'y', bandAutoOpen: 1, screen: 'x', custom: 'x' })).toMatchObject({ band: 'full', bandFolded: false, bandAutoOpen: true, screen: 'detail', custom: null })
-  // 0.2.0 의 auto(컴팩트할 때만) → 최소 + 접고 컴팩트할 때 펴기. 칸을 하나라도 껐으면 그 칸 그대로 커스텀
+  expect(normalizeSettings({ band: 'tiny', bandFolded: 'y', bandAutoOpen: 1, screen: 'x', custom: 'x' })).toMatchObject({ band: 'full', bandFolded: false, bandAutoOpen: true, screen: 'simple', custom: null })
+  // 0.2.0 의 auto(컴팩트할 때만) → 최소 + 접고 컴팩트할 때 펴기. 한도 칸(5시간 · 7일 · 리셋)은 화면과 따로 한도 줄로,
+  // 비용 · 질문 줄 칸을 하나라도 껐으면 그 칸 그대로 커스텀
   const s = normalizeSettings({ band: 'auto', bandShow: { resets: false, fiveHour: 'no' } })
-  expect(s).toMatchObject({ band: 'min', bandFolded: true, bandAutoOpen: true, screen: 'custom' })
-  expect(s.custom!.bandShow).toEqual({ ...SCREEN_VIEWS.basic.bandShow, resets: false })
+  expect(s).toMatchObject({ band: 'min', bandFolded: true, bandAutoOpen: true, screen: 'simple', limitShow: { fiveHour: true, sevenDay: true, resets: false } })
+  const off = normalizeSettings({ bandShow: { cache: false, sevenDay: false } })
+  expect(off).toMatchObject({ screen: 'custom', limitShow: { fiveHour: true, sevenDay: false, resets: true } })
+  expect(off.custom!.bandShow).toEqual({ ...SCREEN_VIEWS.detail.bandShow, cache: false })
   // 0.4.0 전 안 보이기 → 접고 안 펴기, 자동 숨김 → 접고 펴기, 늘 보이기 → 펼침(✕ 와 ⇲ 를 하나로)
   expect(normalizeSettings({ bandHidden: true, bandAuto: true })).toMatchObject({ bandFolded: true, bandAutoOpen: false })
   expect(normalizeSettings({ bandAuto: true })).toMatchObject({ bandFolded: true, bandAutoOpen: true })
   expect(normalizeSettings({ bandAuto: false, bandHidden: false })).toMatchObject({ bandFolded: false, bandAutoOpen: true })
   // 칸 다 켬 + 패널 간략(0.4.0 개발판) → 기본, 패널 값 없음(0.3.x) → 자세히(보던 그대로)
-  expect(normalizeSettings({ paneMode: 'simple' }).screen).toBe('basic')
-  expect(normalizeSettings({ bandShow: { cache: true } }).screen).toBe('detail')
-  // 새 저장값은 그대로 · 깨진 커스텀 색 기준(오름차순 아님)은 처음 값
+  expect(normalizeSettings({ paneMode: 'simple' })).toMatchObject({ screen: 'simple' })
+  expect(normalizeSettings({ bandShow: { cache: true } }).screen).toBe('simple')
+  // 새 저장값은 그대로. 세션 금액 색은 화면 밖 값 — 0.4.0 커스텀 안 값은 밖으로 옮기고, 깨진 기준(오름차순 아님)은 처음 값
   expect(normalizeSettings({ screen: 'simple', bandFolded: true, bandAutoOpen: false })).toMatchObject({ screen: 'simple', bandFolded: true, bandAutoOpen: false })
-  expect(normalizeSettings({ screen: 'custom', custom: { sessionColors: [50, 10, 100] } }).custom!.sessionColors).toEqual([10, 50, 100])
-  expect(normalizeSettings({ screen: 'custom', custom: { sessionColors: [5, 20, 40], agentLine: false } }).custom).toMatchObject({ sessionColors: [5, 20, 40], agentLine: false })
-  // 칸 명령(setBandPart)은 지금 보이는 값에서 커스텀으로 옮겨 바꾼다
+  expect(normalizeSettings({ screen: 'custom', custom: { sessionColors: [50, 10, 100] } }).sessionColors).toEqual([10, 50, 100])
+  const old040 = normalizeSettings({ screen: 'custom', custom: { sessionColors: [5, 20, 40], agentLine: false, sessionAvg: true } })
+  expect(old040.sessionColors).toEqual([5, 20, 40])
+  // 0.4.0 의 답변 아래 🤖 옵션(agentLine)은 뺐다 — 화면을 따른다
+  expect(old040.custom).toEqual({ ...SCREEN_VIEWS.detail })
+  // 0.4.0 의 기본 화면은 자세히로(기본은 뺐다 — 바가 같았다)
+  expect(normalizeSettings({ screen: 'basic', sessionColors: [5, 20, 40] })).toMatchObject({ screen: 'simple', sessionColors: [5, 20, 40] })
+  // 한도 줄: 따로 저장한 값, 없으면 0.4.0 화면에서(간단 = 다 끔, 커스텀 = 그 값, 기본 · 자세히 = 다 켬)
+  expect(normalizeSettings({ screen: 'simple' }).limitShow).toEqual({ fiveHour: false, sevenDay: false, resets: false })
+  expect(normalizeSettings({ screen: 'custom', custom: { bandShow: { fiveHour: false } } }).limitShow).toEqual({ fiveHour: false, sevenDay: true, resets: true })
+  expect(normalizeSettings({ screen: 'simple', limitShow: { resets: false } }).limitShow).toEqual({ fiveHour: true, sevenDay: true, resets: false })
+  // 칸 명령(setBandPart): 비용 · 질문 줄 칸은 지금 보이는 값에서 커스텀으로 옮겨 바꾸고, 한도 칸은 화면 그대로 한도 줄만
   const c = setBandPart(DEFAULT_SETTINGS, 'cache', false)
   expect(c.screen).toBe('custom')
   expect(viewOf(c).bandShow.cache).toBe(false)
-  expect(viewOf(c).bandShow.sessionAvg).toBe(true)
+  expect(viewOf(c).bandShow.perRequest).toBe(true)
+  const r = setBandPart(DEFAULT_SETTINGS, 'resets', false)
+  expect(r).toMatchObject({ screen: 'detail', limitShow: { fiveHour: true, sevenDay: true, resets: false } })
+  expect(bandShowOf(r)).toMatchObject({ resets: false, cache: true })
+  // 간단 화면: 캐시는 보이고 패널 간략(질문은 요약)
+  expect(SCREEN_VIEWS.simple).toMatchObject({ info: 'lean', bandShow: { cache: true, lastTurn: false } })
+  // 금액 색 −/+ 는 어느 화면에서나(프리셋이어도 그대로 프리셋)
+  expect(nudgeSessionColor(DEFAULT_SETTINGS, 0, 1)).toMatchObject({ screen: 'detail', sessionColors: [15, 50, 100] })
+  expect(nudgeSessionColor(DEFAULT_SETTINGS, 1, -1).sessionColors).toEqual([10, 30, 100])
+  expect(nudgeSessionColor({ ...DEFAULT_SETTINGS, sessionColors: [10, 15, 100] }, 0, 1).sessionColors).toEqual([10, 15, 100])
   // 화면 이름(영 · 한, "전문가" 도 자세히로)
   expect(parseScreen('간단')).toBe('simple')
-  expect(parseScreen('Basic')).toBe('basic')
+  expect(parseScreen('Basic')).toBe('detail')
+  expect(parseScreen('자세히')).toBe('detail')
   expect(parseScreen('전문가')).toBe('detail')
   expect(parseScreen('커스텀')).toBe('custom')
   expect(parseScreen('nope')).toBe(null)

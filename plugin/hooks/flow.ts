@@ -10,7 +10,7 @@ import type { Tokens } from './cost'
 import { L } from './i18n'
 
 /**
- * questions = 질문(사용자 프롬프트)이 시작된 시각, 오래된 것부터 — 그래프 [최근 질문 40] 의 경계.
+ * questions = 질문이 시작된 시각, 오래된 것부터 — 그래프 [최근 질문 40] 의 경계.
  * 없으면(undefined) 질문을 적기 전 판 저장 파일 — 불러올 때 기록에서 다시 읽는다.
  * shared = 모델마다(modelKey) 캐시가 식은 뒤 첫 요청이 그래도 캐시에서 읽은 크기(공통 앞부분 — noteShared). 없으면
  * (undefined) 그 값을 적기 전 판 저장 파일 — 기록에서 다시 읽는다

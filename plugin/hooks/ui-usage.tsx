@@ -1,4 +1,4 @@
-import type { CompactInputs, LiveTurn, Optimal, TurnSummary, Usage } from '../types'
+import type { CompactInputs, LiveTurn, Optimal, QuestionDetail, TurnSummary, Usage } from '../types'
 import {
   average,
   PERM_HEX,
@@ -17,6 +17,7 @@ import {
   thresholds,
   cacheWarnFor,
   sessionColorOf,
+  ttlName,
 } from './cost'
 import { OUTPUT_GUESS, SUMMARY_GUESS } from './optimal'
 import { SESSION_COLORS_DEFAULT } from './settings'
@@ -39,7 +40,7 @@ import {
   pendingCompact,
 } from './flow'
 import type { CompactEffect, Flow } from './flow'
-import { APP_MIN_USD, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentSum, costBreakdown, modelText, switchText } from './text'
+import { APP_MIN_USD, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, callsOf, costBreakdown, modelText, switchText, topSteps } from './text'
 import {
   ACCENT,
   TALK_HEX,
@@ -71,7 +72,7 @@ import type { Ui, Grid, Fold } from './ui-common'
 import { rewriteNote } from './ui-band'
 import { L, plural } from './i18n'
 import { iconOf, withIcon } from './glyph'
-import { rasterOf } from './ui-common'
+import { questionScope, rasterOf } from './ui-common'
 import { flowCells, flowLayout, timingCells } from './cells'
 
 /** 터미널 흐름 그래프 높이(줄) — 8줄은 작은 컨텍스트일 때 거의 빈 칸이라 패널만 길게 했다(2026-10-11 CLI) */
@@ -99,7 +100,7 @@ export const LIVE_SHOWN = 8
  * 진행 중 질문: 질문별 비용 맨 위에 늘 펼쳐서. 요청이 끝날 때마다 한 줄씩 는다.
  * 아이콘 칸(끝난 질문의 ▸ 자리)에 깜빡이는 점 — 띠처럼 지금 도는 줄로 보이게. 저장 · 컴팩트 단계면 띠와 같은 색 · 글
  */
-export function liveBlock(ui: Ui, now: LiveTurn, older: TurnSummary | undefined, cols: number, g: Grid, surface: string, phase: unknown, kind: unknown) {
+export function liveBlock(ui: Ui, now: LiveTurn, older: TurnSummary | undefined, cols: number, g: Grid, surface: string, phase: unknown, kind: unknown, detail: QuestionDetail = 'steps') {
   const { Box, Text } = ui
   const { fromModel, fromEffort } = changesOf(now, older)
   // 에이전트 줄은 늘 보인다(백그라운드 에이전트가 도는 동안 메인 요청이 쌓여도 "앞 동작" 으로 접히지 않게) — 메인 요청만 최근 몇 개
@@ -141,13 +142,17 @@ export function liveBlock(ui: Ui, now: LiveTurn, older: TurnSummary | undefined,
           ) : (
             <Text wrap="wrap">
               <Text color={LEVEL_TEXT[levelOf(now.contextTokens)]}>{L(`컨텍스트 ${fmtTokens(now.contextTokens)}`, `context ${fmtTokens(now.contextTokens)}`)}</Text>
-              <Text dimColor>{L(` · 요청 ${now.steps}회`, ` · ${plural(now.steps, 'request')}`) + (model ? ` · ${model}` : '')}</Text>
+              {/* 요청 수는 에이전트 요청까지 · 에이전트는 간략이면 개수만, 자세히면 "$ 포함" 까지(끝난 질문 줄과 같은 꼴) */}
+              <Text dimColor>{L(` · 요청 ${callsOf(now.steps, now.details)}회`, ` · ${plural(callsOf(now.steps, now.details), 'request')}`)}</Text>
+              {agentPart(now.details, detail === 'steps') ? <Text>{` · ${agentPart(now.details, detail === 'steps')}`}</Text> : null}
+              {model ? <Text dimColor>{` · ${model}`}</Text> : null}
               {fromModel && now.model ? <Text>{` · ${withIcon('🔄', `${L('모델', 'model')} ${modelName(fromModel)} → ${modelName(now.model)}`)}`}</Text> : null}
               {fromEffort && now.effort ? <Text>{` · ${withIcon('🔄', `${L('노력도', 'effort')} ${fromEffort} → ${now.effort}`)}`}</Text> : null}
               {rewriteNote(ui, now.rewriteUsd)}
             </Text>
           )}
-          {now.details.length > 0 ? (
+          {/* 간략은 동작별 줄 없이 위 한 줄(요청 수 · 에이전트 개수)만 */}
+          {now.details.length > 0 && detail === 'steps' ? (
             <Box key="h-live-box" {...DETAIL_BOX}>
               {hidden > 0 ? <Text key="h-live-more" dimColor>{L(`├─ 앞 동작 ${hidden}개`, `├─ ${hidden} earlier steps`)}</Text> : null}
               {detailRows(ui, shown, 'hl', textBox - DETAIL_INSET, g)}
@@ -200,6 +205,8 @@ export function historyRow(
   older: TurnSummary | undefined,
   extra: unknown,
   g: Grid,
+  detail: QuestionDetail = 'steps',
+  isHover = false,
 ) {
   const { Box, Text } = ui
   const when = agoText(t.atMs, nowMs)
@@ -209,9 +216,12 @@ export function historyRow(
   // 아래 줄: 모델 · 노력도 · 컨텍스트(수준 색) — 모델부터 시작해 줄마다 같은 자리에 선다. 언제는 금액 밑(leadCell).
   // 읽기 · 쓰기 · 출력은 펼쳐야 보인다 — 줄에선 모델 · 컨텍스트가 더 중요하다
   const parts: unknown[] = []
-  // 접힌 줄에도 에이전트 몫(맨 앞 — 금액 칸의 값 중 얼마가 에이전트인지), 도는 중이면 그 말도
-  const agents = agentSum(t.details)
-  if (agents) parts.push(<Text key="a">{`${agentHead()} ${fmtUsd(agents.usd)}${agents.running ? L(' · 도는 중', ' · running') : ''}`}</Text>)
+  // 맨 앞에 요청 수(에이전트 요청까지)와 에이전트 — 간략은 개수만, 자세히는 "$ 포함" 까지. 값 옆에 "🤖 $3.56" 만 있으니 금액 칸
+  // ($16.43)과의 관계가 헷갈렸다. 도는 중이면 그 말도
+  const calls = callsOf(t.steps, t.details)
+  if (calls > 0) parts.push(<Text key="n">{L(`요청 ${calls}회`, plural(calls, 'request'))}</Text>)
+  const agents = agentPart(t.details, detail === 'steps')
+  if (agents) parts.push(<Text key="a">{agents}</Text>)
   if (t.model) {
     parts.push(
       fromModel ? (
@@ -244,7 +254,15 @@ export function historyRow(
   }
   const meta = parts.flatMap((p, j) => (j === 0 ? [p] : [<Text key={`s${j}`} dimColor>{' · '}</Text>, p]))
   return (
-    <Box key={key} marginTop={1} columnGap={1} alignItems={isOpen || g.iconTop ? 'flex-start' : 'center'}>
+    // 질문 강조: 답변 끝 칩 · 그 답변 위 덮개와 한 hover 묶음 — 이 줄에 올리면 줄 · 칩 · 답변이 함께 회색.
+    // 펼치지는 않는다(열기 · 닫기는 왼쪽 ▸). 시각을 모르는 옛 기록은 빼고
+    <Box
+      key={key}
+      marginTop={1}
+      columnGap={1}
+      alignItems={isOpen || g.iconTop ? 'flex-start' : 'center'}
+      {...(isHover && Number.isFinite(t.atMs) ? { hover: { scope: questionScope(t.atMs), backgroundColor: 'promptBorder' } } : {})}
+    >
       <Box width={g.iconW} flexShrink={0}>
         {icon}
       </Box>
@@ -573,6 +591,9 @@ export function permanentOf(flow: Flow, isPartial: boolean, fallback: number | n
 /** 컴팩트 효과에서 처음 보이는 수 — 넘으면 질문별 비용처럼 [최근 3] [전체 N] */
 export const EFFECTS_RECENT = 3
 
+/** "전체" 로 볼 때 줄로 그리는 컴팩트 수 — 그 앞은 "그 앞 컴팩트 N번" 한 줄. 질문별 비용(HISTORY_ALL_MAX)과 같은 까닭: 패널 크기 한도 */
+export const EFFECTS_ALL_MAX = 15
+
 /**
  * 컴팩트 효과의 총 이득(끝난 셈만). 마지막 컴팩트가 아직 본전 전(회수 중)이면 빼야 "방금 한 컴팩트 = 손해" 로 읽히지
  * 않는다. 끝난 셈이 없으면 null. 컴팩트 카드 제목 줄에 보인다
@@ -604,7 +625,8 @@ export function effectsBlock(
   const all = [...effects].reverse()
   const hasMore = all.length > EFFECTS_RECENT
   const isAll = showAll && hasMore
-  const shown = isAll ? all : all.slice(0, EFFECTS_RECENT)
+  const shown = isAll ? all.slice(0, EFFECTS_ALL_MAX) : all.slice(0, EFFECTS_RECENT)
+  const olderEffects = isAll ? all.length - shown.length : 0
   const net = effectsNet(effects)
   // 질문별 비용의 전환과 같은 꼴: 고른 쪽은 채운 버튼 + ✓
   const toggle = (key: string, text: string, isOn: boolean, toAll: boolean) =>
@@ -624,11 +646,29 @@ export function effectsBlock(
         </Text>
       ) : null}
       {hasMore ? toggle('effects-recent', L(`최근 ${EFFECTS_RECENT}`, `Last ${EFFECTS_RECENT}`), !isAll, false) : null}
-      {hasMore ? toggle('effects-all', L(`전체 ${all.length}`, `All ${all.length}`), isAll, true) : null}
+      {/* 줄로 다 못 그리면 "전체" 가 아니라 "최근 N" — 이름과 보이는 것이 맞게 */}
+      {hasMore
+        ? toggle(
+            'effects-all',
+            all.length > EFFECTS_ALL_MAX ? L(`최근 ${EFFECTS_ALL_MAX}`, `Last ${EFFECTS_ALL_MAX}`) : L(`전체 ${all.length}`, `All ${all.length}`),
+            isAll,
+            true,
+          )
+        : null}
     </Box>,
     ...(effects.length === 0
       ? [emptyLine(ui, 'f-none', L('아직 컴팩트한 적이 없습니다. 컴팩트하면 여기에 기록됩니다.', 'No compacts yet. Each compact is recorded here.'))]
       : shown.map((ef, i) => effectRow(ui, ef, `ef-${i}`, ef === latest ? nowCtx : null, u, nowMs, g, summaryOf(ef), ef === latest))),
+    ...(olderEffects > 0
+      ? [
+          <Text key="ef-older" dimColor wrap="wrap">
+            {L(
+              `그 앞 컴팩트 ${olderEffects}번 — 패널이 한 번에 그릴 수 있는 크기 때문에 최근 ${EFFECTS_ALL_MAX}번까지만 줄로 보입니다(총계엔 들어 있음)`,
+              `${plural(olderEffects, 'earlier compact')} — the pane draws only the last ${EFFECTS_ALL_MAX} as rows (size limit; the total includes them)`,
+            )}
+          </Text>,
+        ]
+      : []),
   ]
 }
 
@@ -722,6 +762,22 @@ export function promptText(t: TurnSummary): string {
 
 export const RECENT_COUNT = 5
 
+/**
+ * "전체" 로 볼 때 줄로 그리는 질문 수 — 그보다 오래된 질문은 "그 앞 질문 N개 · 합" 한 줄. 한 세션에서 전체 60줄(자세히)을 그리자 데스크톱이
+ * 패널 그리기를 통째로 받지 않았다(2026-10-13: "Nothing to show yet", 버튼 먹통). 시험으로 잰 직렬화 크기: 자세히 최근 5 = 2.4만 자,
+ * 간략 전체 60 = 8.1만 자(실물에서 그려짐), 자세히 전체 60 = 9.6만 자(실물에선 더 커서 거부) — 10만 자 남짓의 한도. 훅 패널
+ * 트리 한도는 문서에 따로 없지만 엔진이 같은 한도를 곳곳에 적는다(Client 트리 "20,000 노드 · 32 깊이 · 직렬화 100,000자").
+ * 줄 수가 아니라 크기라 ▸ 버튼만 줄여선 안 됐다. 30줄이면 자세히도 6만 자 남짓. 크기는 size.test.tsx 가 지킨다
+ */
+export const HISTORY_ALL_MAX = 30
+
+/**
+ * 펼친 질문에 줄로 그리는 동작 수 — 비싼 것부터 이만큼(순서는 그대로), 나머지는 "그 밖 동작 N개 $X" 한 줄. 질문마다 동작 기록은
+ * 60개까지 남는데, 60줄을 다 그리면 그 질문 하나가 2.7만 자라 큰 질문이 진행 중일 때 패널이 8.6만 자까지 갔다(size.test 최악 경우,
+ * 2026-10-13 — 사용자 고름: 비싼 20개). 답변 끝 칩은 10개(ANSWER_STEPS)
+ */
+export const PANE_STEPS = 20
+
 /** 바로 앞 질문 대비 컨텍스트 증감. 둘 중 하나라도 값이 없으면(기능 전 기록) null */
 export function growthOf(t: TurnSummary, older: TurnSummary | undefined): number | null {
   return t.contextTokens && older?.contextTokens ? t.contextTokens - older.contextTokens : null
@@ -812,13 +868,19 @@ export function drawHistory(
   g: Grid,
   fold: Fold = { isOpen: true, onToggle: () => {} },
   liveNote: string | null = null,
+  detail: QuestionDetail = 'steps',
+  /** 설정 "질문 강조"(데스크톱만) — 켜면 질문 줄에 칩 · 답변과 같은 hover 묶음 */
+  isHover = false,
 ) {
   const { Box, Button, Text } = ui
   const all = [...sums].reverse()
   const total = all.reduce((sum, t) => sum + t.cost.usd, 0)
   const hasMore = all.length > RECENT_COUNT
   const isAll = showAll && hasMore
-  const shown = isAll ? all : all.slice(0, RECENT_COUNT)
+  const shown = isAll ? all.slice(0, HISTORY_ALL_MAX) : all.slice(0, RECENT_COUNT)
+  // 전체여도 줄로 못 그린 오래된 질문 — 개수 · 합만 한 줄(위 HISTORY_ALL_MAX 참고)
+  const older = isAll ? all.slice(HISTORY_ALL_MAX) : []
+  const olderUsd = older.reduce((sum, t) => sum + t.cost.usd, 0)
   // 고른 쪽은 채운 버튼(primary) + ✓, 다른 쪽은 흐린 보조 버튼 — 흐림 차이만으론 지금 보는 쪽이 안 읽혔다
   const toggle = (key: string, text: string, isOn: boolean, toAll: boolean) =>
     isOn ? (
@@ -839,7 +901,15 @@ export function drawHistory(
         </Text>
         {/* 최근 · 전체 전환은 펼쳤을 때만(목록을 바꾸는 버튼). 접으면 진행 중 질문 값을 요약 앞에 붙인다 */}
         {fold.isOpen && hasMore ? toggle('history-recent', L(`최근 ${RECENT_COUNT}`, `Last ${RECENT_COUNT}`), !isAll, false) : null}
-        {fold.isOpen && hasMore ? toggle('history-all', L(`전체 ${all.length}`, `All ${all.length}`), isAll, true) : null}
+        {/* 줄로 다 못 그리면 "전체" 가 아니라 "최근 30" — 이름과 보이는 것이 맞게 */}
+        {fold.isOpen && hasMore
+          ? toggle(
+              'history-all',
+              all.length > HISTORY_ALL_MAX ? L(`최근 ${HISTORY_ALL_MAX}`, `Last ${HISTORY_ALL_MAX}`) : L(`전체 ${all.length}`, `All ${all.length}`),
+              isAll,
+              true,
+            )
+          : null}
         {/* 합은 남겨 둔 질문(최대 60개)의 합이라 세션 누적보다 작을 수 있다 — "N개 합" 으로 무엇의 합인지 */}
         {all.length === 0 && !(liveNote && !fold.isOpen) ? null : (
           <Text wrap="wrap">
@@ -847,7 +917,13 @@ export function drawHistory(
             {!fold.isOpen && liveNote && all.length > 0 ? <Text dimColor>{' · '}</Text> : null}
             {all.length > 0 ? <Text>{L(`${all.length}개 합 `, `${all.length} total `)}</Text> : null}
             {all.length > 0 ? <Text bold>{fmtUsd(total)}</Text> : null}
-            {fold.isOpen && all.length > 0 ? <Text dimColor>{L(' · 누르면 자세히 · (+N)은 그 질문이 늘린 컨텍스트', ' · tap for details · (+N) = context the question added')}</Text> : null}
+            {fold.isOpen && all.length > 0 ? (
+              <Text dimColor>
+                {detail === 'summary'
+                  ? L(' · (+N)은 그 질문이 늘린 컨텍스트', ' · (+N) = context the question added')
+                  : L(' · ▸ 로 자세히 · (+N)은 그 질문이 늘린 컨텍스트', ' · ▸ for details · (+N) = context the question added')}
+              </Text>
+            ) : null}
           </Text>
         )}
       </Box>
@@ -855,38 +931,60 @@ export function drawHistory(
       {fold.isOpen && all.length === 0 && !liveEl ? emptyLine(ui, 'h-none', L('아직 끝난 질문이 없습니다.', 'No finished questions yet.')) : null}
       {(fold.isOpen ? shown : []).map((t, i) => {
         const id = Number.isFinite(t.atMs) ? t.atMs : -i
-        const isOpen = expanded === id
+        // 간략은 펼치기 없이 한 줄씩 — 요청 수 · 에이전트 개수는 아래 줄에 늘. 자세히만 ▸ 로 펼쳐 동작별
+        const isLean = detail === 'summary'
+        const isOpen = !isLean && expanded === id
         // 열기 · 접기 아이콘(▸ / ▾)만 테두리 버튼, 금액 왼쪽에 — 글은 테두리 없이. 아이콘이 작고 테두리가 없어 안 띄었고,
         // 줄 전체를 테두리 버튼으로 하니 그건 아니었다. 접힌 글도 눌러 펼친다(아이콘과 같은 일).
         // 버튼 글은 데스크톱에서 줄을 안 바꾼다 — 길면 패널 틀을 넓혀 패널 전체 글이 오른쪽에서 잘렸다.
         // 그래서 접힌 글은 글 기둥 폭에 맞게 미리 자르고, 펼치면 그 자리에서 전체 글을 줄 바꿔 보인다(버튼 밖 Text)
         const full = promptText(t)
-        const icon = (
+        const icon = isLean ? null : (
           <Button key={`hx-${i}`} label={isOpen ? '▾' : '▸'} variant="secondary" onPress={() => act.toggle(id)} />
         )
-        const head = isOpen ? (
+        // 간략은 한 줄로 — 글자 폭 어림(textCells)보다 넓게 그려지는 글(영문 · 기호가 많은 알림 등)이 두 줄로 넘어가 줄이 안 맞았다
+        //. 1할 덜 쓰고 넘치면 끝을 자른다
+        const head = isLean ? (
+          <Text wrap="truncate-end">{fitCells(full, Math.floor(textCells(g, textBox) * 0.9))}</Text>
+        ) : isOpen ? (
           <Text wrap="wrap">{full}</Text>
         ) : (
-          <Button key={`hxt-${i}`} plain onPress={() => act.toggle(id)}>
-            <Text>{fitCells(full, textCells(g, textBox))}</Text>
-          </Button>
+          // 제목은 그냥 글 — 열기 · 닫기는 왼쪽 ▸ / ▾ 버튼만. 접힌 글은 글 기둥 폭에 맞게 미리 자른다(패널 틀이 넓어지지 않게)
+          <Text>{fitCells(full, textCells(g, textBox))}</Text>
         )
-        // 펼치면 읽기 · 쓰기 · 출력 내역, 그 아래 동작별 값 — 접힌 줄에선 뺐다
+        // 펼치면(자세히) 메인 · 에이전트 · 앱 자체 요청을 줄마다 요청 수 · 금액 · 읽기 · 쓰기 · 출력으로, 그 아래 동작별 값(비싼 PANE_STEPS 개)
+        const top = topSteps(t.details ?? [], PANE_STEPS)
         const extra = isOpen ? (
           <Box key={`hbox-${i}`} {...DETAIL_BOX}>
             {/* 메인 / 🤖 에이전트 / ⚙ 앱 자체 요청 — 줄마다(에이전트가 없으면 예전처럼 한 줄) */}
-            {costBreakdown(t.cost, t.appUsd, t.details).map((line, k) => (
+            {costBreakdown(t.cost, t.appUsd, t.details, t.steps).map((line, k) => (
               <Text key={`hb-${i}-${k}`} dimColor wrap="wrap">
                 {line}
               </Text>
             ))}
             {(t.details ?? []).length === 0
               ? emptyLine(ui, `hd-none-t-${i}`, L('동작별 기록이 없는 예전 질문입니다.', 'An earlier question without per-step records.'))
-              : detailRows(ui, t.details ?? [], `hd-${i}`, textBox - DETAIL_INSET, g)}
+              : detailRows(ui, top.shown, `hd-${i}`, textBox - DETAIL_INSET, g, top.rest > 0)}
+            {top.rest > 0 ? (
+              <Text key={`hd-${i}-rest`} dimColor wrap="wrap">
+                {L(
+                  `└─ 그 밖 동작 ${top.rest}개 ${fmtUsd(top.restUsd)} — 패널이 한 번에 그릴 수 있는 크기 때문에 비싼 ${PANE_STEPS}개까지만 줄로 보입니다`,
+                  `└─ ${plural(top.rest, 'more step')} ${fmtUsd(top.restUsd)} — the pane draws only the ${PANE_STEPS} costliest as rows (size limit)`,
+                )}
+              </Text>
+            ) : null}
           </Box>
         ) : null
-        return historyRow(ui, t, nowMs, `hr-${i}`, icon, head, isOpen, all[i + 1], extra, g)
+        return historyRow(ui, t, nowMs, `hr-${i}`, icon, head, isOpen, all[i + 1], extra, g, detail, isHover)
       })}
+      {fold.isOpen && older.length > 0 ? (
+        <Text key="h-older" dimColor wrap="wrap">
+          {L(
+            `그 앞 질문 ${older.length}개 · 합 ${fmtUsd(olderUsd)} — 패널이 한 번에 그릴 수 있는 크기 때문에 최근 ${HISTORY_ALL_MAX}개까지만 줄로 보입니다`,
+            `${plural(older.length, 'earlier question')} · ${fmtUsd(olderUsd)} total — the pane draws only the last ${HISTORY_ALL_MAX} as rows (size limit)`,
+          )}
+        </Text>
+      ) : null}
     </Box>
   )
 }
@@ -1042,8 +1140,10 @@ export function drawNow(
           <Text dimColor>{L('캐시 남은 시간 모름', 'cache time left unknown')}</Text>
         ) : (
           <Text>
-            <Text dimColor>{L('캐시 ', 'cache ')}</Text>
-            <Text {...(isLate ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}/${est.ttlMin}분 남음`, `${est.minsLeft}/${est.ttlMin}m left`)}</Text>
+            {/* "만료까지 N분 남음" — 유지 시간 종류는 뒤에 흐리게 */}
+            <Text dimColor>{L('캐시 만료까지 ', 'cache expires in ')}</Text>
+            <Text {...(isLate ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}분 남음`, `${est.minsLeft}m`)}</Text>
+            <Text dimColor>{L(` · ${ttlName(est.ttlMin)} 캐시`, ` · ${ttlName(est.ttlMin)} cache`)}</Text>
             {guessNote ? <Text dimColor>{guessNote}</Text> : null}
             <Text {...(isLate ? { color: 'red' } : { dimColor: true })}>{L(` · 넘기면 ~${fmtUsd(est.rewriteUsd)}`, ` · after that ~${fmtUsd(est.rewriteUsd)}`)}</Text>
           </Text>

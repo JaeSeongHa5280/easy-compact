@@ -22,6 +22,14 @@ export const ACCENT = 'suggestion'
  */
 export const BRAND_HEX = '#4c9be8'
 
+/**
+ * 한 질문의 hover 묶음 — 답변 끝 질문 비용 칩과 그 답변 위 숨은 테두리 덮개가 같은 이름이라 칩에 마우스를 올리면 함께
+ * 반응한다(엔진 hover scope, 사용자 2026-10-13). 이름은 끝난 시각(atMs) — 질문마다 다르다
+ */
+export function questionScope(atMs: number): string {
+  return `q-${Math.round(atMs)}`
+}
+
 /** 설정 비용표의 "★ 최적" · "★ 추천" 금색 — 노랑(컴팩트하기 좋은 때)과 갈리게 더 진하게 */
 export const STAR_HEX = '#f5b301'
 
@@ -234,27 +242,35 @@ export function textCells(g: Grid, boxCols: number): number {
  * 캐시를 크게 다시 쓴 요청(식은 캐시 · 모델을 바꾼 뒤 첫 요청)만 다시 쓴 값을 붙인다(띠 rewriteNote 와 같은 기준).
  * boxCols = 이 줄들이 들어가는 글 기둥의 폭(Box 칸) — 들여쓰기 없이 질문 글과 같은 자리에서 시작한다
  */
-export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, boxCols: number, g: Grid) {
+/**
+ * 동작 한 줄의 글(금액 빼고)과 캐시 다시 씀 경고 — 질문별 비용(detailRows)과 답변 아래 칩이 같이 쓴다.
+ * 줄 끝은 잘린다 — 요청 수 · 모델을 앞에, 작업 이름을 뒤에. 하위 에이전트 🤖 · 앱 자체 요청 ⚙ · 컴팩트 🗜 를 머리로 가른다.
+ * 에이전트는 도는 중 · 끝남도(0.4.0 전 기록엔 없다) — 작업 이름보다 앞에(줄 끝이 잘려도 보이게)
+ */
+export function stepText(d: StepDetail): { text: string; note: string } {
+  // 메인 요청만 rewrite 가 있다 — 에이전트 · 앱 자체 요청 · 컴팩트 줄엔 없다
+  const note = d.rewrite !== undefined && d.rewrite >= REWRITE_NOTE_USD ? L(` · 캐시 다시 씀 ${fmtUsd(d.rewrite)}`, ` · cache rewrite ${fmtUsd(d.rewrite)}`) : ''
+  const state = d.done === false ? L(' · 도는 중', ' · running') : d.done === true ? L(' · 끝남', ' · done') : ''
+  const text = d.agent
+    ? withIcon('🤖', `${L(`에이전트 요청 ${d.steps ?? 1}회`, `agent requests ×${d.steps ?? 1}`)}${state} · ${d.model ? `${modelName(d.model)} · ` : ''}${d.label}`)
+    : d.app
+      ? withIcon('⚙', `${L('앱 자체 요청', "app's own requests")} · ${d.label}`)
+      : d.compact
+        ? compactStepText(d.compact, d.usd)
+        : d.label
+  return { text, note }
+}
+
+export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, boxCols: number, g: Grid, hasMore = false) {
   const { Box, Text } = ui
   return details.map((d, j) => {
-    // 메인 요청만 rewrite 가 있다 — 에이전트 · 앱 자체 요청 · 컴팩트 줄엔 없다
-    const note =
-      d.rewrite !== undefined && d.rewrite >= REWRITE_NOTE_USD ? L(` · 캐시 다시 씀 ${fmtUsd(d.rewrite)}`, ` · cache rewrite ${fmtUsd(d.rewrite)}`) : ''
-    // 줄 끝은 잘린다 — 요청 수 · 모델을 앞에, 작업 이름을 뒤에. 하위 에이전트 🤖 · 앱 자체 요청 ⚙ · 컴팩트 🗜 를 머리로 가른다
-    // 에이전트는 도는 중 · 끝남도(0.4.0 전 기록엔 없다) — 작업 이름보다 앞에(줄 끝이 잘려도 보이게)
-    const state = d.done === false ? L(' · 도는 중', ' · running') : d.done === true ? L(' · 끝남', ' · done') : ''
-    const text = d.agent
-      ? withIcon('🤖', `${L(`에이전트 요청 ${d.steps ?? 1}회`, `agent requests ×${d.steps ?? 1}`)}${state} · ${d.model ? `${modelName(d.model)} · ` : ''}${d.label}`)
-      : d.app
-        ? withIcon('⚙', `${L('앱 자체 요청', "app's own requests")} · ${d.label}`)
-        : d.compact
-          ? compactStepText(d.compact, d.usd)
-          : d.label
+    const { text, note } = stepText(d)
     // "-" · 금액 칸 · 사이를 뺀 자리에 맞게 미리 자른다(줄을 안 바꾸는 글이 길면 패널 틀이 넓어진다)
     const label = fitCells(text, Math.max(8, textCells(g, boxCols - BULLET_W - g.amountW - 1) - cellsOf(note)))
     return (
       <Box key={`${key}-${j}`} columnGap={1}>
-        <Text dimColor>{j === details.length - 1 ? '└─' : '├─'}</Text>
+        {/* 아래에 "그 밖 동작" 줄이 붙으면(hasMore) 마지막도 ├─ */}
+        <Text dimColor>{j === details.length - 1 && !hasMore ? '└─' : '├─'}</Text>
         {usdCell(ui, d.usd, false, g.amountW)}
         <Box flexShrink={1} minWidth={0}>
           <Text wrap="truncate-end">

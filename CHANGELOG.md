@@ -4,6 +4,45 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.4.1] — 2026-10-13
+
+### Changed
+- **Three screens — Simple · Detailed · Custom** (0.4.0's Basic is gone: its bar matched Detailed and only the pane view differed). Settings say who each one is for.
+  - **Simple** — for newcomers, anyone for whom tokens and caching are unfamiliar, or who wants only the essentials. Less is the rule: a one-line bar (session cost · context · cache · Easy Compact; no limits row, no [—]), the simple pane (no model comparison), compact timing as size ranges and the verdict only, no cache section, and the compact prompt as a choice only.
+  - **Detailed** — for people who know how AI costs work (tokens, caching, requests). Everything easy-compact has: limits, per request, compact range, the question row, the detailed pane and the full cost table.
+  - **Custom** — pick the bar's parts and the **Detail level** (Minimal · Everything) yourself. The detail level sets the pane's starting view (Simple · Detailed) and how much Settings, the line under answers and the working line say — 0.4.0's *Pane view* detail is folded into it.
+- **New installs and updates start on Simple** — too much at first is off-putting. 0.4.0's Basic and pre-0.4.0 settings with every part on become Simple; a chosen Detailed, Custom or parts you turned off stay.
+- **The limits row and session-cost colors apply to all screens** — under Screen → Details (after a gap), changeable on any screen. If a session has finished a request and still has no plan limits, the limits row option is left out (not assumed to be an API key — it stays until the first answer).
+- **Cache shows as `cache expires in 42m`** — `42/60m` didn't read at a glance.
+- **No compacting at a loss** — when the cache is cold and continuing is cheaper (compacting now costs more), or there is little to save, the Easy Compact card shows *Keep working* and **✓ OK · keep working** with no compact buttons (save or direct). Before, Save & compact stayed available at a loss, and with a cold cache the save question carried no payoff numbers, so the session looked only at information (*everything is saved to memory, nothing to lose*) and went on to compact — continuing would only have re-warmed the cache.
+- **The save question asks only about lost information** — easy-compact makes the money call with numbers (no buttons at a loss), and the session only checks whether information would be lost. Payoff numbers are no longer passed. Step ① in Settings → compact prompt is now *Check* (lost information).
+- **Cost per question**: the simple view drops ▸ and shows `N requests · 🤖 N agents` per question (agent requests included); the detailed view says `1 agent $3.56 included` and opens into *main N requests $* and *🤖 N agents · N requests $* (a bare 🤖 $ next to the total was confusing). The line under answers, the bar's question row and the working line follow the same form.
+- **The question cost after each answer (`This question $X · N requests`) stands out** — it was dim grey and got lost between answers. On the desktop it's a rounded blue-bordered chip (🧾), all text blue with the amount in bold; in a terminal the same blue line without a border (a border adds two lines per answer). No colors by amount — a big task isn't a bad one. Only the *cache rewrite* warning stays yellow. It sits one line below the answer, and at detail level **Everything**, **▸ Details** at the end of the chip opens that question's main · 🤖 agent · app breakdown and per-step costs like an opened question in the detailed Usage pane (closed at first. The top ` - ` lines — main · 🤖 · 🗜 · ⚙ — add up to the question's cost; step lines sit further in under main and split its cost — the 10 costliest, the rest on one line). The first line keeps just the total and request count — app requests and compacts are in the opened lines (in a terminal, "… incl." on the line). The terminal keeps the one line.
+- **Question highlight** — hover the question-cost chip after an answer, or that question's row in the Usage pane, and the chip, the row and the answer in the chat turn gray together, so you see which answer a cost belongs to. Hovering the answer text itself does nothing, and the chat doesn't scroll. The chip in the Settings preview lights the same way. Desktop only; Settings → Screen → Details → All screens → **Highlight** (on by default).
+- **Tidier Settings** — Details now starts with the **Detail level** (the broad switch for the pane, Settings and the answer chip), then the bar parts, then All screens. The terminal's Settings tab leaves out the options it can't use (Highlight, Pane sync). Question titles in the Usage pane are plain text — the ▸ button on the left opens and closes them.
+- **`Question (10 req assumed)` in the cost table** — one question is fixed at 10 requests. Counting this session's average made big tasks look ever pricier, so it was no reference point. The line below shows *10 requests assumed*, this session's average request count and the 100k–1M range at that count, in color.
+- **Simple · Detailed** at the top of the pane is a quick look — closing the pane or visiting Settings returns to your detail level.
+- Settings sections: Screen and its Details start open. Switching between Usage and Settings with the pane open keeps what you opened; closing the pane resets it.
+- Language: *Auto* when unknown, *Auto (English)* when known.
+- In a narrow terminal (the CLI with the pane open) the pane button is shortened to `Usage ✕` — it squeezed the one-line bar's text.
+- The plugin description's *Tested on Windows* became *Requires Claude Code 2.1.295+*. The README gains **Requirements** (checking and updating the engine, git, where it shows, Node.js), **Bar not showing?**, and macOS · Linux install commands.
+
+### Added
+- **A preview in Settings → Screen** — the bar above the input and the question-cost chip after each answer (sample: the last question, or labelled example values in a new session), as the chosen screen and detail level draw them. Checkmarks alone didn't show what would change.
+- **Old-engine notice** — on Claude Code older than 2.1.295 (Homebrew's stable channel, for one), where it can start, easy-compact draws a one-line update notice instead of the bar and pane, and doesn't open the pane by itself. If the version can't be read, it runs as usual.
+- Without `node` to read a record over 4 MB, it says *install Node.js 14.8+ and restart the app*.
+
+### Removed
+- The bar's *question average* part — it took room, and the pane's cost summary already has *per question*.
+- The *🤖 under answers* option — it follows the screen (detail level).
+
+### Fixed
+- Text after *This session $X ·* on the cost row sat one line high on the desktop.
+- The Simple screen's bar took two lines (Easy Compact alone on an empty left) — now one. When the full bar is already one line, the minimized bar matches it (it used to just hide the cache part, acting like a cache toggle).
+- The one-line bar's hold ⏸ went to the terminal as a picture glyph.
+- Step names showed the whole path for Windows backslash paths instead of the file name.
+- In a session with many questions, choosing **All** in cost per question left the Usage pane blank ("Nothing to show yet", dead buttons) — the drawing was larger than the desktop takes at once. Past 30 questions the buttons read **Last 5 · Last 30**, with the earlier questions' count and total on one line under the 30 (the header total still covers all). Compact results likewise draw **Last 15** past 15 compacts. An opened question likewise draws its 20 costliest steps as rows (in order) and the rest as one `N more steps $X` line — opening a question with many requests came close to the limit (the answer chip's line now says "more in the Usage pane"). If drawing the pane ever fails, it shows the reason in red instead of a blank pane.
+
 ## [0.4.0] — 2026-10-13
 
 ### Added

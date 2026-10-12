@@ -63,6 +63,18 @@ export type Settings = {
   /** 커스텀의 보기 값 — 처음 커스텀을 고를 때 그때 프리셋 값을 옮겨 둔다(그 전엔 null) */
   custom: ScreenView | null
   /**
+   * 이 세션 금액 색 기준(달러, 오름차순): 넘으면 노랑 · 주황 · 빨강 — 그 아래는 기본 글색. 화면 프리셋과 따로(어느 화면에서나
+   * 바꾼다 — 보기가 아니라 사람마다 다른 예산 경고선, 사용자 2026-10-13). 0.4.0 은 커스텀 보기 값 안에 있었다(normalizeSettings 가 옮김)
+   */
+  sessionColors: [number, number, number]
+  /** 한도 줄 칸(5시간 · 7일 · 리셋까지 남은 시간) — 화면 프리셋과 따로. 0.4.0 은 보기 값 안에 있었다(normalizeSettings 가 옮김) */
+  limitShow: LimitShow
+  /**
+   * 질문 강조(기본 켬): 답변 끝 질문 비용 칩이나 사용량 패널의 그 질문 줄에 마우스를 올리면 칩 · 패널 줄 · 그 답변이 함께
+   * 회색(엔진 hover scope · reveal). 답변 글에 올려선 반응 없음. 데스크톱만 — 터미널 설정 탭엔 줄이 없다
+   */
+  questionHover: boolean
+  /**
    * 사용량 패널: 새 세션에서 자동으로 열기(기본 끔). 그 뒤 닫으면 그대로. 예전엔 다른 세션이 연 값을 따라 새 세션에 들어가
    * 채팅만 쳐도 패널이 저절로 열렸다
    */
@@ -71,25 +83,36 @@ export type Settings = {
   paneShared: boolean
 }
 
-/** 화면 프리셋: 간단(컴팩트만 아는 처음 쓰는 사람) · 기본(지향하는 화면) · 자세히(지표 최대) · 커스텀(다 고름) */
-export type ScreenPreset = 'simple' | 'basic' | 'detail' | 'custom'
+/**
+ * 화면 프리셋: 간단(처음 쓰는 분 · 정보 최소) · 자세히(AI 를 잘 아는 분 · 정보 전부) · 커스텀(다 고름). 0.4.0 의 기본('basic')은
+ * 뺐다 — 바가 자세히와 같고 차이는 패널 보기뿐이었다. 저장값 'basic' 은 자세히로 옮긴다
+ */
+export type ScreenPreset = 'simple' | 'detail' | 'custom'
 
 /** 프리셋이 정하는 보기 값 — 창 상태(바 크기 · 접기 · 패널 자동 열기 · 같이)는 넣지 않는다(창 버튼과 같은 값) */
 export type ScreenView = {
-  /** 바에 보일 칸 — 끈 칸은 빠지고, 칸이 다 빠진 줄은 줄째 빠진다 */
-  bandShow: BandShow
+  /** 바에 보일 비용 · 질문 줄 칸 — 끈 칸은 빠지고, 칸이 다 빠진 줄은 줄째 빠진다. 한도 줄은 Settings.limitShow */
+  bandShow: CostShow
   /**
-   * 사용량 패널 보기: simple = 간략(금액 요약 · 지금 한 줄 · 컴팩트 판단 · 질문별 비용), detail = 자세히(컨텍스트 막대 · 컴팩트
-   * 시점 · 흐름 그래프 · 컴팩트 효과까지). 패널 위 [간략][자세히] 는 이 세션 보기만 바꾼다
+   * 정보량 — 최소(간단) / 전부(자세히). 사용량 패널의 처음 보기도 정한다(최소 = 간략, 전부 = 자세히 — settings.ts paneModeOf).
+   * 0.4.1 작업 중 따로 있던 "패널 보기" 를 합쳤다. 패널 위 [간략][자세히] 는 이 세션만 잠깐
    */
-  paneMode: PaneMode
-  /** 이 세션 금액 색 기준(달러, 오름차순): 넘으면 노랑 · 주황 · 빨강 — 그 아래는 기본 글색 */
-  sessionColors: [number, number, number]
-  /** 답변 아래 🤖 에이전트 줄 */
-  agentLine: boolean
+  info: InfoLevel
 }
 
 export type PaneMode = 'simple' | 'detail'
+
+/**
+ * 정보량: lean = 최소 — 설정의 컴팩트 시점 · 캐시 · 컴팩트 문구 풀이를 줄이고 답변 아래 · 작업 중 줄의 에이전트는
+ * 개수만, full = 전부. 간단 = 최소, 자세히 = 전부, 커스텀은 고른다
+ */
+export type InfoLevel = 'lean' | 'full'
+
+/**
+ * 펼친 질문 · 진행 중 질문의 내역: summary = 한 줄(요청 N회 · 총 $ · 🤖 에이전트 · ⚙ 앱 자체), steps = 읽기 · 쓰기 · 출력과 동작별 줄.
+ * 패널 보기를 따른다 — 간략 = summary
+ */
+export type QuestionDetail = 'summary' | 'steps'
 
 /**
  * 바 크기. full = 최대(한도 · 비용 · 질문 세 줄 + 이지 컴팩트 버튼), min = 최소 한 줄(요청당 · 컨텍스트 · 컴팩트 구간 +
@@ -99,15 +122,26 @@ export type PaneMode = 'simple' | 'detail'
 export type BandMode = 'full' | 'min'
 
 /**
- * 띠의 칸마다 보일지. 5시간 · 7일 = 요금제 한도 막대, resets = 그 뒤 "N 후 리셋", session = 이 세션 금액(비용 줄 맨 앞,
- * 최소 바에도), sessionAvg = 그 뒤 "질문 N개 · 평균 $X"(자세히)
+ * 띠의 칸마다 보일지(그릴 때 쓰는 합친 값 — 한도 줄 LimitShow + 화면 보기 값 CostShow).
  */
-export type BandShow = {
+export type BandShow = LimitShow & CostShow
+
+/**
+ * 한도 줄의 칸: 5시간 · 7일 = 요금제 한도 막대, resets = 그 뒤 "N 후 리셋". 화면 프리셋과 따로 켜고 끈다(Settings.limitShow —
+ * 사용자, 2026-10-13: 어느 화면에서나 따로). 엔진이 구독 세션에만 한도를 줘서 API 키 세션엔 켜도 줄이 없다
+ */
+export type LimitShow = {
   fiveHour: boolean
   sevenDay: boolean
   resets: boolean
+}
+
+/**
+ * 비용 · 질문 줄의 칸(화면 보기 값): session = 이 세션 금액(비용 줄 맨 앞, 최소 바에도). 0.4.0 의 질문 평균(sessionAvg)은
+ * 뺐다 — 자리만 차지하고 패널 비용 요약에 같은 값이 있다
+ */
+export type CostShow = {
   session: boolean
-  sessionAvg: boolean
   perRequest: boolean
   context: boolean
   range: boolean
@@ -216,8 +250,6 @@ export type Usage = {
   cacheTtlMin?: number
   /** cacheTtlMin 을 기록에서 쟀나 — 아니면 설정 · 문서 기본값으로 짐작한 값(화면에 "추정") */
   cacheTtlMeasured?: boolean
-  /** 끝난 질문 수와 질문당 평균(달러) — 바의 "질문 평균" 칸. 없으면 null */
-  questionsAvg?: { count: number; avgUsd: number } | null
 }
 
 /** 질문 안의 동작 하나(= 모델 요청 하나): 무엇을 했는지와 그 요청의 값. write = 그중 캐시 쓰기 값(이전 기록엔 없다) */
@@ -363,6 +395,10 @@ declare module 'claude-code' {
       compactKind: string
       /** 질문별 비용에서 펼친 질문(atMs) */
       expandedTurn: number | null
+      /** 답변 아래 칩에서 상세(분해 · 동작별 값)를 펼친 질문들(atMs) — 처음엔 다 접힘 */
+      answerOpen: number[]
+      /** 설정 미리보기의 질문 비용 견본을 펼쳤는가(이 세션만, 패널을 닫으면 접힘) */
+      previewOpen: boolean
       /** 질문별 비용: true 면 전체, 아니면 최근 5개 */
       historyAll: boolean
       /** 컴팩트 효과: true 면 전체, 아니면 최근 3개 */
@@ -395,7 +431,7 @@ declare module 'claude-code' {
       /** 컨텍스트 흐름: 세션 시작 때 기록 파일에서 읽고, 요청 · 컴팩트마다 이어 붙인다 */
       flowPoints: CtxPoint[]
       compactions: CompactEvent[]
-      /** 질문(사용자 프롬프트)이 시작된 시각, 오래된 것부터 — 그래프 [최근 질문 40] 경계. 기록 파일 · 질문마다 */
+      /** 질문이 시작된 시각, 오래된 것부터 — 그래프 [최근 질문 40] 경계. 기록 파일 · 질문마다 */
       flowQuestions: number[]
       /** 모델마다(modelKey) 공통 앞부분 — 캐시가 식은 뒤 첫 요청이 그래도 읽은 크기(flow.ts noteShared) */
       flowShared: Record<string, number>

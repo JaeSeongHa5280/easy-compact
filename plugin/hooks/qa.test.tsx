@@ -14,9 +14,18 @@ type State = 'normal' | 'warn' | 'coldWin' | 'coldLoss' | 'switched' | 'afterCom
 const STATES: State[] = ['normal', 'warn', 'coldWin', 'coldLoss', 'switched', 'afterCompact', 'api', 'working', 'agent', 'tidying']
 const SURFACES: RenderSurface[] = ['desktop', 'terminal']
 const LANGS = ['ko', 'en'] as const
-const BANDS = ['full', 'min'] as const
-/** 바 폭(칸) — 60 아래면 자동 숨김 버튼을 빼고, 115 이상이면 확인 카드 줄을 덜 바꾼다. 패널은 그 폭에 맞춘 사이드 패널 폭 */
+/**
+ * 바 모양 — 자세히 최대(세 줄) · 자세히 최소(한 줄) · 간단(한 줄 고정, 최소가 따로 없다). 0.4.1 부터 새 설치 · 업데이트의 첫 화면이
+ * 간단인데 QA 는 저장값 없이 돌아 기본값(자세히)만 봤다 — 2026-10-13 QA 점검에서 더함
+ */
+const BANDS = ['full', 'min', 'simple'] as const
+/**
+ * 바 폭(칸) — 갈림길은 둘: 터미널은 100 아래면 좁은 터미널(창 버튼 맨 윗줄 · 짧은 패널 버튼), 115 이상이면 확인 카드 줄을 덜 바꾼다
+ * (register.tsx isNarrowTerminal · isWide). 데스크톱은 115 하나뿐이라 50 · 100 이 같은 길 — 데스크톱은 100 · 140 만(240 → 200개,
+ * 2026-10-13 시험 정리). 패널은 그 폭에 맞춘 사이드 패널 폭
+ */
 const WIDTHS = [{ band: 50, pane: 36 }, { band: 100, pane: 60 }, { band: 140, pane: 90 }]
+const widthsFor = (surface: RenderSurface) => (surface === 'terminal' ? WIDTHS : WIDTHS.filter(w => w.band >= 100))
 
 const CTX: Record<State, number> = {
   normal: 120_000,
@@ -52,6 +61,8 @@ async function shown(ui: Ui): Promise<string[]> {
 async function rules(ui: Ui, lang: 'ko' | 'en', where: string): Promise<void> {
   const list = await shown(ui)
   expect({ where, bad: list.filter(t => BAD.test(t)) }).toEqual({ where, bad: [] })
+  // 영어 캐시 글이 "cache expires in 38m left" 로 겹치지 않는다(앞말 · 값이 다른 Text 라 이어 붙여 본다 — 2026-10-13 공개 세션 발견)
+  if (lang === 'en') expect({ where, overlap: /in \d+m left/.test(list.join('')) }).toEqual({ where, overlap: false })
   if (lang === 'en') expect({ where, hangul: list.filter(t => HANGUL.test(t) && !BOTH.has(t)) }).toEqual({ where, hangul: [] })
 }
 
@@ -138,7 +149,7 @@ for (const s of STATES)
   for (const surface of SURFACES)
     for (const lang of LANGS)
       for (const band of BANDS)
-        for (const w of WIDTHS)
+        for (const w of widthsFor(surface))
           test(`QA ${s} · ${surface} · ${lang} · ${band} · ${w.band}칸`, async ($, on) => {
             const env = world(on, s, lang)
             const step = async (turnId: string, agentId?: string) => {
@@ -147,8 +158,9 @@ for (const s of STATES)
               }
             }
             await $.command.run({ command: 'easy-compact', args: '' })
-            // 바 크기는 명령으로(설정은 세션 시작 · 타이머 때 읽는다 — 저장소에만 넣으면 안 바뀐다)
-            await $.command.run({ command: 'easy-compact', args: band })
+            // 화면 · 바 크기는 명령으로(설정은 세션 시작 · 타이머 때 읽는다 — 저장소에만 넣으면 안 바뀐다)
+            await $.command.run({ command: 'easy-compact', args: band === 'simple' ? 'screen simple' : 'screen detail' })
+            if (band !== 'simple') await $.command.run({ command: 'easy-compact', args: band })
             // 끝난 질문 하나(캐시가 식은 상태는 질문을 돌리면 다시 살아나 돌리지 않는다)
             const hasTurn = s === 'normal' || s === 'warn' || s === 'api' || s === 'switched' || s === 'tidying'
             if (hasTurn) {
@@ -172,8 +184,10 @@ for (const s of STATES)
             const props = { hasSurvey: false, isWorking, maxRows: 10, bodyColumns: w.band }
             const bar = await $.ui.mount({ plugin: 'easy-compact', surface, component: 'AbovePrompt', props })
             await rules(bar, lang, 'bar')
-            // 고른 바 크기가 걸렸나 — 최소는 한 줄(b-r1)뿐, 최대는 질문 줄(b-r3)까지
-            expect((await bar.find({ key: 'b-r3' })) === undefined).toBe(band === 'min')
+            // 고른 바 모양이 걸렸나 — 최소 · 간단은 한 줄(b-r1)뿐, 자세히 최대는 질문 줄(b-r3)까지
+            expect((await bar.find({ key: 'b-r3' })) === undefined).toBe(band !== 'full')
+            // 간단이 걸렸나 — 한 줄 고정이라 [—] · [□] 바 크기 버튼이 없다(자세히는 있다)
+            expect((await bar.find({ key: 'band-mode' })) === undefined).toBe(band === 'simple')
 
             // ⑤ 한도 없으면 비용 줄이 맨 윗줄(최대 바)
             if (s === 'api' && band === 'full') {
@@ -205,7 +219,15 @@ for (const s of STATES)
                 expect(await bar.find({ key: 'confirm' })).toBe(undefined)
                 expect(rewrite).toMatch(/^\$\d+\.\d\d$/)
                 expect(JSON.stringify(card)).toContain(`~${rewrite}`)
-                expect((await bar.find({ key: 'compact-yes' }))?.props.variant).toBe('primary')
+                // 손해(그냥 이어 가는 편이 쌈)면 컴팩트 버튼 없이 이어 가라는 안내, 이득이면 ▶ 바로 컴팩트
+                const isLossCard = JSON.stringify(card).includes(lang === 'ko' ? '그냥 이어 가는 편이 쌈' : 'continuing as is is cheaper')
+                if (isLossCard) {
+                  expect(await bar.find({ key: 'compact-yes' })).toBe(undefined)
+                  expect(await bar.find({ key: 'compact-tidy' })).toBe(undefined)
+                  expect(JSON.stringify(card)).toContain(lang === 'ko' ? '작업을 이어 가세요' : 'Keep working')
+                } else {
+                  expect((await bar.find({ key: 'compact-yes' }))?.props.variant).toBe('primary')
+                }
                 // 손해면 그냥 이어 가는 편이 싸다고, 이득이면 이득을
                 if (s === 'coldLoss') expect(JSON.stringify(card)).toContain(lang === 'ko' ? '그냥 이어 가는 편이 쌈' : 'continuing as is is cheaper')
                 if (s === 'coldWin') expect(JSON.stringify(card)).toContain(lang === 'ko' ? ' 이득' : 'saves ')
@@ -237,7 +259,7 @@ for (const s of STATES)
             for (const k of ['set-screen', 'set-window', 'set-compact', 'set-tidy', 'set-cache', 'set-lang']) {
               if (await pane.find({ key: `fold-${k}`, text: '▸' })) await pane.press({ key: `fold-${k}` })
             }
-            if (!(await pane.find({ key: 'session-colors' })) && (await pane.find({ key: 'screen-more' }))) await pane.press({ key: 'screen-more' })
+            if (!(await pane.find({ key: 'info-row' })) && (await pane.find({ key: 'screen-more' }))) await pane.press({ key: 'screen-more' })
             await rules(pane, lang, 'settings')
             // 커스텀 세부(버튼 · 색 −/+ · 캐시 유지 시간 고르기)도 같은 규칙
             await pane.press({ key: 'screen-custom' })
