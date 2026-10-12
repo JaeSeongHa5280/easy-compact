@@ -23,9 +23,12 @@ import {
   recordsFromLines,
   scanTranscript,
   serializeFlow,
+  sharedFor,
+  timingNames,
   withPoint,
   withQuestion,
 } from './flow'
+import type { Flow } from './flow'
 import { DEFAULT_THRESHOLDS, setThresholds } from './cost'
 
 // 이 시험의 글 기대값은 한국어 — 화면 글은 L(한, 영) 으로 언어를 따른다
@@ -92,12 +95,26 @@ test('컴팩트 시점 막대: 회색 상주 → 지금까지 채움, 구간 시
   // 세로선 3px — 1 · 2px 은 막대 색에 묻혔다
   expect(svg).toContain('<rect x="298.5" y="0" width="3" height="16" rx="1" fill="#e0a030"/>')
   expect(svg).toContain('<rect x="398.5" y="0" width="3" height="16" rx="1" fill="#e05555"/>')
-  // 이름: 시작은 선 왼쪽, 끝은 선 오른쪽 — 가까워도 안 겹친다
-  expect(svg).toContain('text-anchor="end" font-size="10" font-family="sans-serif" fill="#e0a030">300k 좋은 때')
-  expect(svg).toContain('text-anchor="start" font-size="10" font-family="sans-serif" fill="#e05555">400k 늦어짐')
+  // 이름: 시작은 막대 왼쪽 끝에 왼쪽 정렬, 끝은 오른쪽 끝에 오른쪽 정렬 — 선과는 색으로 잇는다. 예전엔 선 옆이라 좁은
+  // 패널에서 끝 이름이 왼쪽으로 뒤집혀 "250k 좋은3때k 늦어짐" 으로 겹쳤다(동료)
+  expect(svg).toContain('<text x="0.0" y="28" text-anchor="start" font-size="10" font-family="sans-serif" fill="#e0a030">300k 좋은 때</text>')
+  expect(svg).toContain('<text x="500.0" y="28" text-anchor="end" font-size="10" font-family="sans-serif" fill="#e05555">400k 늦어짐</text>')
+  // 좁아도(250px) 둘은 양 끝이라 안 겹친다. 그보다 좁아 나란히 안 들면(120px) 크기만
+  const narrow = timingSvg(230_000, 80_000, names, '#6b8db8', 250)
+  expect(narrow).toContain('x="0.0" y="28" text-anchor="start" font-size="10" font-family="sans-serif" fill="#e0a030">300k 좋은 때<')
+  expect(narrow).toContain('x="250.0" y="28" text-anchor="end" font-size="10" font-family="sans-serif" fill="#e05555">400k 늦어짐<')
+  const tiny = timingSvg(230_000, 80_000, names, '#6b8db8', 120)
+  expect(tiny).toContain('fill="#e0a030">300k</text>')
+  expect(tiny).toContain('fill="#e05555">400k</text>')
   // 끝을 넘으면 막대가 끝 선 너머로(오른쪽 끝 = 지금의 1.04배)
   const over = timingSvg(500_000, 80_000, names, '#e05555', 520)
   expect(over).toContain('width="420.0" height="8" fill="#e05555"')
+})
+
+test('시점 막대 이름: 나란히 들면 그대로, 안 들면 앞 낱말(크기)만 — 데스크톱 px · 터미널 칸 같은 규칙', () => {
+  const px = (s: string) => s.length * 6
+  expect(timingNames('250k 좋은 때', '300k 늦어짐', 200, px)).toEqual(['250k 좋은 때', '300k 늦어짐'])
+  expect(timingNames('250k 좋은 때', '300k 늦어짐', 100, px)).toEqual(['250k', '300k'])
 })
 
 test('모델을 바꾸면 세는 값이 달라진다: 바꾼 자리 앞뒤 크기 비로 잣대를 맞추고, 처음 모델로 돌아오면 1', () => {
@@ -120,14 +137,35 @@ test('모델을 바꾸면 세는 값이 달라진다: 바꾼 자리 앞뒤 크�
   expect(afterInNowTokens({ points: pts, compactions }, 100_000)).toBe(100_000)
 })
 
-test('컴팩트가 남긴 요약: 직후 크기 − 기록의 첫 요청, 견줄 수 없으면 없음', () => {
+test('컴팩트가 남긴 요약: 컴팩트 뒤 첫 요청이 새로 낸 몫 — 못 쟀으면 직후 크기 − 기록의 첫 요청, 견줄 수 없으면 없음', () => {
+  // 작성자 세션(2026-10-12): 첫 요청 65.0k(읽기 44.2k · 씀 20.8k — 첫 질문 포함), 컴팩트 뒤 첫 요청 70.8k 중 읽기 61.1k ·
+  // 새로 씀 9.6k. 직후 − 첫 요청은 5.8k 로 요약을 첫 질문만큼 작게 셌다(동료 "요약 1k 포함")
+  const lines = [
+    `q ${Date.parse(at(0))}`,
+    `p ${Date.parse(at(1))} 0 100 44164 20808 claude-opus-5-5`,
+    `p ${Date.parse(at(2))} 0 100 247494 0 claude-opus-5-5`,
+    `c ${Date.parse(at(3))} manual 247494`,
+    `q ${Date.parse(at(3.5))}`,
+    `p ${Date.parse(at(4))} 6 100 61142 9620 claude-opus-5-5`,
+  ].join('\n')
+  const measured = flowFromRecords(recordsFromLines(lines))
+  expect(measured.compactions[0]!.summary).toBe(9_626)
+  expect(compactSummary(measured, measured.compactions[0]!, measured.points[0]!)).toBe(9_626)
+  expect(compactSummary(measured, measured.compactions[0]!, null)).toBe(9_626)
+  // 컴팩트 뒤 첫 요청이 캐시가 식은 뒤면(전부 다시 씀) 요약으로 안 적는다
+  const late = flowFromRecords(recordsFromLines(lines.replace(`p ${Date.parse(at(4))}`, `p ${Date.parse(at(90))}`)))
+  expect(late.compactions[0]!.summary).toBe(undefined)
+  // 새 질문 없이 이어진 요청(질문 도중 자동 컴팩트 — 밀린 도구 결과까지 새로 쓴다)도 안 적는다
+  const midTurn = flowFromRecords(recordsFromLines(lines.replace(`q ${Date.parse(at(3.5))}\n`, '')))
+  expect(midTurn.compactions[0]!.summary).toBe(undefined)
+  // 못 잰 컴팩트(잰 값이 없는 옛 저장 파일): 직후 크기 − 기록의 첫 요청
   const flow = scanTranscript([asst('z', 60_000, 0), TRANSCRIPT].join('\n'))
-  const c = flow.compactions[0]!
+  const c = { ...flow.compactions[0]!, summary: undefined }
   expect(compactSummary(flow, c, flow.points[0]!)).toBe(34_000)
   // 처음부터 있던 몫을 모름 · 첫 요청이 직후보다 큼(기록이 세션 처음부터가 아님) · 첫 요청과 모델이 다름
   expect(compactSummary(flow, c, null)).toBe(null)
   const partial = scanTranscript(TRANSCRIPT)
-  expect(compactSummary(partial, partial.compactions[0]!, partial.points[0]!)).toBe(null)
+  expect(compactSummary(partial, { ...partial.compactions[0]!, summary: undefined }, partial.points[0]!)).toBe(null)
   expect(compactSummary(flow, c, { ...flow.points[0]!, model: 'claude-sonnet-5-5' })).toBe(null)
   // 직후 크기를 아직 못 잼
   expect(compactSummary(flow, { ...c, after: null }, flow.points[0]!)).toBe(null)
@@ -148,16 +186,66 @@ test('기록 파일 → 흐름: 메인 요청만 한 번씩, 컴팩트 직전 ·
 // 엔진이 값을 안 준 컴팩트의 추정 재료: 요약 출력 1만 · 요약(다시 쓰는 몫) 3.13만
 const EST = { output: 10_000, summaryOf: () => 31_300 }
 
-test('컴팩트 효과: 줄인 양 × 읽기 요율 × 그 뒤 요청 수 − 든 값(못 쟀으면 정가 입력 추정)', () => {
+test('컴팩트 효과: 줄인 양 × 읽기 요율 × 그 뒤 요청 수 − 든 값(못 쟀으면 그때 캐시 상태로 추정)', () => {
   const [ef] = compactEffects(scanTranscript(TRANSCRIPT), 'claude-opus-5-5', EST)
   expect(ef!.removed).toBe(502_441)
   expect(ef!.requestsAfter).toBe(2)
   expect(ef!.isEstimated).toBe(true)
-  // 컴팩트 요청 59.6만 × $4 + 요약 출력 1만 × $20 + 요약 3.13만 다시 쓰기 × $8 ≈ $2.84
-  expect(Math.round(ef!.costUsd * 100)).toBe(284)
+  // 앞 요청 1분 뒤 컴팩트 — 캐시가 살아 있어 컴팩트 요청이 대화 캐시를 읽는다(실측 98.6%):
+  // 59.6만 × $0.20 + 요약 출력 1만 × $20 + 요약 3.13만 다시 쓰기 × $8 ≈ $0.57. 0.3.x 는 늘 정가($4)로 세 $2.84 였다
+  expect(Math.round(ef!.costUsd * 100)).toBe(57)
   // 요청마다 50.2만 × $0.20 = $0.10 아낌 × 2회
   expect(Math.round(ef!.savedUsd * 100)).toBe(20)
-  expect(ef!.breakEvenLeft).toBe(27)
+  expect(ef!.breakEvenLeft).toBe(4)
+})
+
+test('컴팩트 효과: 캐시가 식은 뒤 컴팩트면 공통 앞부분만 읽기, 나머지는 정가 입력', () => {
+  // 첫 요청(세션 시작 = 식은 캐시)이 읽은 4.8만이 공통 앞부분. 컴팩트는 앞 요청 98분 뒤(캐시 60분 지남)
+  const lines = [
+    `p ${Date.parse(at(1))} 10 100 47990 52000 claude-opus-5-5`,
+    `p ${Date.parse(at(2))} 10 100 299990 0 claude-opus-5-5`,
+    `c ${Date.parse(at(100))} manual 300000`,
+    `p ${Date.parse(at(101))} 10 100 93990 0 claude-opus-5-5`,
+    `p ${Date.parse(at(102))} 10 100 99990 0 claude-opus-5-5`,
+  ].join('\n')
+  const flow = flowFromRecords(recordsFromLines(lines))
+  expect(flow.shared).toEqual({ 'claude-opus-5-5': 47_990 })
+  const [ef] = compactEffects(flow, 'claude-opus-5-5', EST)
+  // (30만 − 4.8만) × $4 + 4.8만 × $0.20 + 요약 출력 1만 × $20 + 요약 3.13만 × $8 ≈ $1.47
+  expect(Math.round(ef!.costUsd * 100)).toBe(147)
+})
+
+test('공통 앞부분: 캐시가 식은 뒤 첫 요청(세션 첫 요청 · 65분 넘게 쉼 · 모델 바꿈)이 읽은 크기를 모델마다 — 컴팩트 뒤 첫 요청은 아님', () => {
+  const m = 'claude-opus-5-5'
+  const tk = (read: number, fresh = 0) => ({ input_tokens: 0, output_tokens: 0, cache_read_input_tokens: read, cache_creation_input_tokens: fresh })
+  let flow: Flow = { points: [], compactions: [], shared: {} }
+  flow = withPoint(flow, { atMs: 0, ctx: 60_000, usd: 0, model: m }, tk(47_594))
+  expect(sharedFor(flow, m)).toBe(47_594)
+  expect(sharedFor(flow, 'claude-opus-5-5[1m]')).toBe(47_594)
+  // 캐시 안의 요청은 대화 캐시를 다 읽는다 — 공통 앞부분이 아니다
+  flow = withPoint(flow, { atMs: 10 * 60_000, ctx: 80_000, usd: 0, model: m }, tk(79_000))
+  expect(sharedFor(flow, m)).toBe(47_594)
+  // 60분을 조금 넘긴 요청(긴 요청이 끝난 시각일 수 있다)은 안 본다, 65분 넘게 쉰 뒤면 새로 잰다
+  flow = withPoint(flow, { atMs: 72 * 60_000, ctx: 90_000, usd: 0, model: m }, tk(89_000))
+  expect(sharedFor(flow, m)).toBe(47_594)
+  flow = withPoint(flow, { atMs: 140 * 60_000, ctx: 95_000, usd: 0, model: m }, tk(46_000))
+  expect(sharedFor(flow, m)).toBe(46_000)
+  // 모델을 바꾼 첫 요청은 그 모델의 값, 처음 보는 모델은 0
+  expect(sharedFor(flow, 'claude-sonnet-5-5')).toBe(0)
+  flow = withPoint(flow, { atMs: 141 * 60_000, ctx: 98_000, usd: 0, model: 'claude-sonnet-5-5' }, tk(40_000))
+  expect(sharedFor(flow, 'claude-sonnet-5-5')).toBe(40_000)
+  // 컴팩트 뒤 첫 요청은 컴팩트가 데운 앞부분을 읽는다 — 모델이 바뀌어도 안 잰다
+  flow = { ...flow, compactions: [{ atMs: 142 * 60_000, trigger: 'manual', before: 98_000, after: null, costUsd: null, index: flow.points.length }], questions: [142.5 * 60_000] }
+  flow = withPoint(flow, { atMs: 143 * 60_000, ctx: 30_000, usd: 0, model: m }, tk(29_000, 1_000))
+  expect(sharedFor(flow, m)).toBe(46_000)
+  // 그 요청이 새로 낸 몫이 요약(새로 쓴 몫)
+  expect(flow.compactions[0]!.summary).toBe(1_000)
+  // 흐름이 다 읽히지 않았으면(기록 못 읽음 · 읽는 중) 점이 비어도 세션 첫 요청으로 보지 않는다 — 다시 연 세션의 첫 요청이 대화
+  // 전체를 읽어 그게 공통 앞부분이 됐다
+  expect(withPoint({ points: [], compactions: [], shared: {} }, { atMs: 0, ctx: 300_000, usd: 0, model: m }, tk(299_000), false).shared).toEqual({})
+  // 저장 파일에 남고 되읽힌다(v4). 그 전 판(v3) 파일은 없음(undefined) — 기록에서 다시 읽는다
+  expect(parseFlowFile(serializeFlow(flow))!.shared).toEqual({ 'claude-opus-5-5': 46_000, 'claude-sonnet-5-5': 40_000 })
+  expect(parseFlowFile(JSON.stringify({ v: 3, m: [], p: [], c: [], q: [] }))!.shared).toBe(undefined)
 })
 
 test('다시 읽어도 예전에 잰 컴팩트 값은 남고, 살아 있는 요청은 직후 크기를 채운다', () => {
@@ -220,8 +308,8 @@ test('컴팩트 효과는 그때 모델 요율 — 지금 모델을 바꿔도 �
   expect(a!.model).toBe('claude-opus-5')
   expect(a!.costUsd).toBe(b!.costUsd)
   expect(a!.savedUsd).toBe(b!.savedUsd)
-  // 든 값: Opus 5 로 30만 × $5 + 요약 출력 1만 × $25 + 요약 3.13만 다시 쓰기 × $10 ≈ $2.06
-  expect(Math.round(a!.costUsd * 100)).toBe(206)
+  // 든 값: Opus 5 로 30만 × 읽기 $0.50(캐시 살아 있음) + 요약 출력 1만 × $25 + 요약 3.13만 다시 쓰기 × $10 ≈ $0.71
+  expect(Math.round(a!.costUsd * 100)).toBe(71)
   // 아낀 값: 줄인 20.6만 × Opus 5.5 읽기 $0.20 × 2회 = $0.0824
   expect(Math.round(a!.savedUsd * 10000)).toBe(824)
 })

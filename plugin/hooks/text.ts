@@ -1,7 +1,7 @@
-import type { CostParts } from '../types'
-import { fmtTokens, fmtUsd, modelName } from './cost'
-import { L } from './i18n'
-import { withIcon } from './glyph'
+import type { CostParts, StepDetail } from '../types'
+import { fmtTokens, fmtUsd, modelKey, modelName, otherModelOf, repriceTurns } from './cost'
+import { L, plural } from './i18n'
+import { onTerminal, withIcon } from './glyph'
 import { isTidyPrompt } from './tidy'
 
 /** 글 도우미 — 칸 세기 · 자르기 · 금액 · 시간 · 모델 이름 글. 그리기 함수처럼 $ 를 받지 않는다 */
@@ -93,12 +93,91 @@ export function agoText(atMs: number, nowMs: number): string {
 }
 
 /** 앱 자체 요청은 읽기 · 쓰기 · 출력으로 못 나눠 따로 */
-export function costBreakdown(cost: CostParts, appUsd?: number): string {
-  const app = appUsd !== undefined && appUsd >= APP_MIN_USD ? L(` · 앱 자체 요청 ${fmtUsd(appUsd)}`, ` · app's own requests ${fmtUsd(appUsd)}`) : ''
+/**
+ * 질문 하나의 하위 에이전트 몫(StepDetail.agent 줄들의 합). 에이전트 줄은 에이전트마다 하나라 count = 에이전트 수.
+ * read · output · input 은 0.4.0 부터 적어(그 전 기록엔 usd · write 만) hasParts 로 가른다. running = 아직 안 끝난(done false)
+ * 에이전트가 있다
+ */
+export type AgentSum = { usd: number; steps: number; count: number; running: boolean; read: number; write: number; output: number; input: number; hasParts: boolean }
+
+export function agentSum(details: readonly StepDetail[] | undefined): AgentSum | null {
+  const agents = (details ?? []).filter(d => d.agent)
+  if (agents.length === 0) return null
+  const sum = (pick: (d: StepDetail) => number | undefined) => agents.reduce((s, d) => s + (pick(d) ?? 0), 0)
+  return {
+    usd: sum(d => d.usd),
+    steps: sum(d => d.steps ?? 1),
+    count: agents.length,
+    running: agents.some(d => d.done === false),
+    read: sum(d => d.read),
+    write: sum(d => d.write),
+    output: sum(d => d.output),
+    input: sum(d => d.input),
+    hasParts: agents.every(d => d.read !== undefined && d.output !== undefined),
+  }
+}
+
+/**
+ * 모델 견줌 한 줄(9c): "같은 질문 12개를 Sonnet 5.5 로 ~$6.20 · 지금 Opus 5.5 $12.40". 이 세션 끝난 질문의 토큰을 다른 모델 요율로
+ * 다시 센 값 — 요청 1회(읽기)만으론 두 모델 차이가 안 보였다(읽기 요율이 같다, 동료). 견줄 모델이 없거나 질문이 없으면 null
+ */
+export function modelCompareText(turns: readonly { cost: CostParts; appUsd?: number; model?: string; details?: readonly StepDetail[] }[], model: string, ttl?: number): string | null {
+  const other = otherModelOf(model)
+  const r = other ? repriceTurns(turns, other, ttl) : null
+  if (!other || !r) return null
+  // 질문들이 다 지금 모델이면 "지금 Opus 5.5 $Y", 모델을 바꿔 가며 했으면 "실제 $Y"(지금 모델 이름을 붙이면 틀린 말)
+  const isAllNow = r.models.length === 1 && r.models[0] === modelKey(model)
   return L(
-    `읽기 ${fmtUsd(cost.read)} · 쓰기 ${fmtUsd(cost.write)} · 출력 ${fmtUsd(cost.output)}${app}`,
-    `read ${fmtUsd(cost.read)} · write ${fmtUsd(cost.write)} · output ${fmtUsd(cost.output)}${app}`,
+    `같은 질문 ${r.count}개를 ${modelName(other)} 로 ~${fmtUsd(r.other)} · ${isAllNow ? `지금 ${modelName(model)}` : '실제'} ${fmtUsd(r.now)}`,
+    `The same ${plural(r.count, 'question')} on ${modelName(other)} ~${fmtUsd(r.other)} · ${isAllNow ? `now ${modelName(model)}` : 'actual'} ${fmtUsd(r.now)}`,
   )
+}
+
+/** 🤖 머리 — 터미널은 그림 글자 대신 글 */
+export function agentHead(): string {
+  return onTerminal() ? L('에이전트', 'agents') : '🤖'
+}
+
+/**
+ * 진행 중 · 끝난 질문 값 뒤에 붙는 에이전트 몫: " · 🤖 $1.93 · 요청 6회 · 도는 중". 질문 값은 에이전트까지 더한 합이라 그중
+ * 얼마가 에이전트인지 따로. 끝났으면 "도는 중" 없이. 없으면 빈 글
+ */
+export function agentNote(details: readonly StepDetail[] | undefined): string {
+  const a = agentSum(details)
+  if (!a) return ''
+  return L(
+    ` · ${agentHead()} ${fmtUsd(a.usd)} · 요청 ${a.steps}회${a.running ? ' · 도는 중' : ''}`,
+    ` · ${agentHead()} ${fmtUsd(a.usd)} · ${plural(a.steps, 'request')}${a.running ? ' · running' : ''}`,
+  )
+}
+
+/**
+ * 질문별 비용 펼친 줄의 요금 분해 — 줄마다: 메인(읽기 · 쓰기 · 출력) / 🤖 에이전트(합 · 읽기 · 쓰기 · 출력) / ⚙ 앱 자체 요청.
+ * 예전엔 읽기 · 쓰기 · 출력이 메인 + 에이전트 합이라 에이전트가 얼마인지 안 보였다. 에이전트가 없으면 한 줄(예전 꼴).
+ * 에이전트 몫을 나눠 적기 전 기록(hasParts 아님)은 에이전트 합만
+ */
+export function costBreakdown(cost: CostParts, appUsd?: number, details?: readonly StepDetail[]): string[] {
+  const parts = (read: number, write: number, output: number) =>
+    L(`읽기 ${fmtUsd(read)} · 쓰기 ${fmtUsd(write)} · 출력 ${fmtUsd(output)}`, `read ${fmtUsd(read)} · write ${fmtUsd(write)} · output ${fmtUsd(output)}`)
+  const hasApp = appUsd !== undefined && appUsd >= APP_MIN_USD
+  const app = hasApp ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd!)}`, `app's own requests ${fmtUsd(appUsd!)}`)) : null
+  const a = agentSum(details)
+  // 이 질문 뒤 컴팩트(🗜 줄)도 질문 값에 들어 있다 — 메인으로 세지 않게 따로(읽기 · 쓰기 · 출력으로는 못 나눠 금액만)
+  const compactUsd = (details ?? []).reduce((s, d) => s + (d.compact ? d.usd : 0), 0)
+  const compact = compactUsd >= APP_MIN_USD ? withIcon('🗜', L(`컴팩트 ${fmtUsd(compactUsd)}`, `Compact ${fmtUsd(compactUsd)}`)) : null
+  if (!a && !compact) return [`${parts(cost.read, cost.write, cost.output)}${app ? ` · ${app}` : ''}`]
+  const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - compactUsd)
+  // 메인의 읽기 · 쓰기 · 출력은 에이전트 몫을 나눠 적었고(0.4.0 기록) 컴팩트가 없을 때만 — 그 밖엔 금액만
+  const main =
+    (!a || a.hasParts) && !compact
+      ? `${L('메인', 'Main')} ${fmtUsd(mainUsd)} · ${parts(Math.max(0, cost.read - (a?.read ?? 0)), Math.max(0, cost.write - (a?.write ?? 0)), Math.max(0, cost.output - (a?.output ?? 0)))}`
+      : `${L('메인', 'Main')} ${fmtUsd(mainUsd)}`
+  const agents = !a
+    ? null
+    : a.hasParts
+      ? `${withIcon('🤖', L(`에이전트 ${fmtUsd(a.usd)}`, `Agents ${fmtUsd(a.usd)}`))} · ${parts(a.read, a.write, a.output)}`
+      : withIcon('🤖', L(`에이전트 ${fmtUsd(a.usd)}`, `Agents ${fmtUsd(a.usd)}`))
+  return [main, ...(agents ? [agents] : []), ...(compact ? [compact] : []), ...(app ? [app] : [])]
 }
 
 /** 질문별 비용 동작 줄의 컴팩트 글: "🗜 컴팩트 530k → 84k" */

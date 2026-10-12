@@ -241,8 +241,10 @@ export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, 
     const note =
       d.rewrite !== undefined && d.rewrite >= REWRITE_NOTE_USD ? L(` · 캐시 다시 씀 ${fmtUsd(d.rewrite)}`, ` · cache rewrite ${fmtUsd(d.rewrite)}`) : ''
     // 줄 끝은 잘린다 — 요청 수 · 모델을 앞에, 작업 이름을 뒤에. 하위 에이전트 🤖 · 앱 자체 요청 ⚙ · 컴팩트 🗜 를 머리로 가른다
+    // 에이전트는 도는 중 · 끝남도(0.4.0 전 기록엔 없다) — 작업 이름보다 앞에(줄 끝이 잘려도 보이게)
+    const state = d.done === false ? L(' · 도는 중', ' · running') : d.done === true ? L(' · 끝남', ' · done') : ''
     const text = d.agent
-      ? withIcon('🤖', `${L(`에이전트 요청 ${d.steps ?? 1}회`, `agent requests ×${d.steps ?? 1}`)} · ${d.model ? `${modelName(d.model)} · ` : ''}${d.label}`)
+      ? withIcon('🤖', `${L(`에이전트 요청 ${d.steps ?? 1}회`, `agent requests ×${d.steps ?? 1}`)}${state} · ${d.model ? `${modelName(d.model)} · ` : ''}${d.label}`)
       : d.app
         ? withIcon('⚙', `${L('앱 자체 요청', "app's own requests")} · ${d.label}`)
         : d.compact

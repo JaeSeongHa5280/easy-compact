@@ -1,20 +1,30 @@
-import type { Optimal, Settings, Source, TidyStyleId } from '../types'
-import { fmtTokens, fmtUsd, modelName, ratesFor } from './cost'
+import type { BandShow, Optimal, ScreenView, Settings, Source, TidyStyleId, TtlConfig } from '../types'
+import { cacheWarnFor, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_HEX, ttlName, writeRate } from './cost'
 import {
   BAND_MODES,
   BAND_PARTS,
-  BAND_SHOW_MODES,
   bandModeName,
-  bandShowMode,
-  bandShowName,
-  bandShowUse,
+  bandAutoUse,
   bandStateText,
-  setBandShow,
   bandModeUse,
   bandPartName,
+  chooseScreen,
+  editView,
+  foldName,
+  fmtUsd0,
+  nudgeSessionColor,
   paneAutoUse,
-  paneStateText,
+  paneModeName,
+  paneModeUse,
   paneSyncUse,
+  resetCustom,
+  SCREEN_PRESETS,
+  screenName,
+  screenUse,
+  screenStateText,
+  setFolded,
+  setLimits,
+  viewOf,
   chooseTidy,
   customName,
   customUse,
@@ -22,7 +32,6 @@ import {
   nudgeCache,
   parseTokens,
   RANGE_BANDS,
-  setBandPart,
   setCompactAt,
   thresholdsOf,
   TIDY_IDS,
@@ -83,7 +92,12 @@ export type SettingsActions = {
   setLang: (choice: Settings['lang']) => void
   /** 사용량 패널 옵션: 새 세션에서 자동으로 열기(paneAutoOpen) · 모든 세션 같이 열고 닫기(paneShared) */
   setPaneOption: (key: 'paneAutoOpen' | 'paneShared', isOn: boolean) => void
+  /** 캐시 유지 시간(커스텀만): 사용자 설정 파일의 promptCacheTtl — null = 자동(키를 지움) */
+  setTtl: (value: '5m' | '1h' | null) => void
 }
+
+/** 설정 탭 캐시 칸의 재료: 이 세션 유지 시간(분) · 기록에서 쟀나 · 무엇이 정하나 */
+export type CacheInfo = { ttl: number; measured: boolean; config: TtlConfig | null }
 
 export function drawSettings(
   act: SettingsActions,
@@ -98,8 +112,10 @@ export function drawSettings(
   surface = 'desktop',
   cols: number | null = null,
   open: Record<string, boolean> = {},
+  cache: CacheInfo | null = null,
 ) {
   const { Box, Button, Input, Text } = ui
+  const ttl = cache?.ttl ?? 60
   const isTerminal = surface === 'terminal'
   const save = act.save
   const inputs = opt?.inputs ?? null
@@ -137,15 +153,17 @@ export function drawSettings(
   // 최적 대비(이 세션 값): 그 크기에서 컴팩트하면 요청당 평균이 비용이 가장 적은 크기보다 몇 % 더 드나
   const penOf = (size: number) => (inputs && opt?.model ? (penaltyAt(size, opt.model, inputs, opt.growth)?.pct ?? null) : null)
 
-  // 비용표 칸(데스크톱은 칸 폭을 상자로 맞춘다) · 크기에서 요청 1회(캐시 읽기) · 캐시 식으면(1시간 쓰기로 전체 다시)
+  // 비용표 칸(데스크톱은 칸 폭을 상자로 맞춘다) · 크기에서 요청 1회(캐시 읽기) · 캐시 식으면(이 세션 유지 시간의 쓰기 요율로 전체 다시)
   const cell = (key: string, width: number, el: unknown) => (
     <Box key={key} width={width} flexShrink={0}>
       {el}
     </Box>
   )
+  // 캐시 식으면 = 공통 앞부분(다른 세션이 데워 둠)은 읽기, 나머지 다시 쓰기 — 띠 · 확인 카드와 같은 셈(cost.ts rewriteAllUsd)
   const usdAt = (size: number, which: 'read' | 'write1h') => {
     const r = modelId ? ratesFor(modelId, size) : null
-    return r ? (size * r[which]) / 1e6 : null
+    if (!r) return null
+    return which === 'write1h' ? rewriteAllUsd(size, r, opt?.shared ?? 0, ttl) : (size * r.read) / 1e6
   }
   const pctText = (p: number | null) => (p === null ? '—' : p < 0.5 ? '0' : `+${Math.round(p)}`)
   // 바꾼 값이 있으면 확인창처럼: 무엇으로 바뀌는지 한 줄 + 오른쪽 아래 큰 [▶ 적용] [✕ 취소] — 작은 버튼 둘이 줄 끝에 붙어
@@ -173,9 +191,9 @@ export function drawSettings(
           {fmtTokens(ctxNow)}
         </Text>
       ) : null}
-      {/* 지금 크기에서 요청 1회(캐시 읽기) — 비용표의 "요청 1회" 칸과 같은 값 */}
+      {/* 지금 크기에서 읽기 1회 — 비용표의 "읽기 1회" 칸과 같은 값. 바의 "요청당" 은 실제 값(9a)이라 이름을 갈랐다 */}
       {ctxNow !== null && ctxNow > 0 && usdAt(ctxNow, 'read') !== null ? <Text dimColor>·</Text> : null}
-      {ctxNow !== null && ctxNow > 0 && usdAt(ctxNow, 'read') !== null ? <Text>{L('요청 1회', 'Per request')}</Text> : null}
+      {ctxNow !== null && ctxNow > 0 && usdAt(ctxNow, 'read') !== null ? <Text>{L('읽기 1회', 'One read')}</Text> : null}
       {ctxNow !== null && ctxNow > 0 && usdAt(ctxNow, 'read') !== null ? (
         <Text bold {...(ctxColor ? { color: ctxColor } : {})}>
           {fmtUsd(usdAt(ctxNow, 'read')!)}
@@ -278,17 +296,29 @@ export function drawSettings(
     // "+158~+254%" 가 9칸을 넘어 뒤 "비추천" 에 붙었다. 머리 "최적보다 더 듦" 이 들어가게 14
     const PEN_W = 14
     const USD_W = 11
+    // 질문 1개(9b): 요청 수 × (그 크기 읽기 + 요청마다 읽기 말고 드는 값) — 이 세션에서 잰 꼴이 있을 때만. 값이 커 한 칸 넓게
+    const Q_W = 12
+    const perQ = opt?.perQuestion ?? null
+    const qAt = (size: number) => {
+      const read = usdAt(size, 'read')
+      return perQ && read !== null ? perQ.steps * (read + perQ.extraUsd) + perQ.agentUsd : null
+    }
     // 터미널이 좁으면 "캐시 식으면" 칸을 뺀다 — 줄이 넘어가면 표가 두 줄씩 갈라져 못 읽었다. 판정 말 · "적용 중" 까지 한 줄에
     // 드는지: 카드 안 폭(테두리 · 여백 4) − 줄 테두리 2
     const tailW = Math.max(cellsOf(L('★ 최적', '★ Best')), cellsOf(penVerdict(PEN_BAD_PCT + 1)!.word)) + 1 + cellsOf(L('적용 중', 'Applied'))
-    const showCold = !isTerminal || cols === null || cols - CARD_INSET - 2 >= BAND_W + USD_W * 2 + PEN_W + tailW + 5
+    // 터미널 폭이 모자라면 "캐시 식으면" 을 먼저, 그래도 모자라면 "질문 1개" 를 뺀다(질문 1개가 모델 차이를 더 잘 보여 남긴다)
+    const fits = (w: number) => !isTerminal || cols === null || cols - CARD_INSET - 2 >= w
+    const baseW = BAND_W + USD_W + PEN_W + tailW + 4
+    const showQ = perQ !== null && fits(baseW + Q_W + 1)
+    const showCold = fits(baseW + USD_W + 1 + (showQ ? Q_W + 1 : 0))
     const usd2 = (x: number | null, y: number | null) => (x === null || y === null ? '—' : `${fmtUsd(x)}~${fmtUsd(y).slice(1)}`)
     // 고른 줄은 둥근 테두리, 나머지는 같은 자리만큼 안쪽 여백 — 칸이 어긋나지 않게
     const rowBox = (isOn: boolean) => (isOn ? { borderStyle: 'round' as const, borderColor: ACCENT } : { paddingX: 1 })
     const head = (
       <Box key="cmp-t-head" columnGap={1} marginTop={1} paddingX={1}>
         {cell('h-band', BAND_W, <Text dimColor>{L('크기 구간', 'Size range')}</Text>)}
-        {cell('h-read', USD_W, <Text dimColor>{L('요청 1회', 'Per request')}</Text>)}
+        {cell('h-read', USD_W, <Text dimColor>{L('읽기 1회', 'One read')}</Text>)}
+        {showQ ? cell('h-q', Q_W, <Text dimColor>{L('질문 1개', 'Per question')}</Text>) : null}
         {showCold ? cell('h-cold', USD_W, <Text dimColor>{L('캐시 식으면', 'Cold cache')}</Text>) : null}
         {cell('h-pen', PEN_W, <Text dimColor>{L('최적보다 더 듦', 'Over best')}</Text>)}
       </Box>
@@ -314,6 +344,7 @@ export function drawSettings(
             />,
           )}
           {cell('read', USD_W, <Text bold={isOn} dimColor={!isOn}>{usd2(usdAt(a, 'read'), usdAt(b, 'read'))}</Text>)}
+          {showQ ? cell('q', Q_W, <Text bold={isOn} dimColor={!isOn}>{usd2(qAt(a), qAt(b))}</Text>) : null}
           {showCold ? cell('cold', USD_W, <Text bold={isOn} dimColor={!isOn}>{usd2(usdAt(a, 'write1h'), usdAt(b, 'write1h'))}</Text>) : null}
           {cell('pen', PEN_W, <Text bold={isOn} dimColor={!isOn && !penColor} {...(penColor ? { color: penColor } : {})}>{pens}</Text>)}
           {/* 최적이 든 띠엔 금색 "★ 최적" — 흐린 ★ 하나는 눈에 안 띄었다. 나머지는 판정 말(좋음 · 보통 · 비추천) */}
@@ -413,8 +444,26 @@ export function drawSettings(
             {L('넘으면 비추천', 'beyond: not advised')}
           </Text>,
         ])}
-        {term('cmp-read', L('요청 1회', 'Per request'), L('캐시 읽기 한 번', 'one cache read'))}
-        {showCold ? term('cmp-cold', L('캐시 식으면', 'Cold cache'), L('1시간 쉬어 전부 다시 쓰기', 'idle 1h, everything rewritten')) : null}
+        {term('cmp-read', L('읽기 1회', 'One read'), L('그 크기를 캐시에서 한 번 읽는 값(새로 쓰기 · 출력 빼고)', 'reading that size from cache once (no writes or output)'))}
+        {perQ
+          ? term(
+              'cmp-q',
+              L('질문 1개', 'Per question'),
+              L(
+                `이 세션 질문 평균 요청 ${perQ.steps.toFixed(1)}회 × (그 크기 읽기 + 요청마다 새로 쓰기 · 출력 ~${fmtUsd(perQ.extraUsd)})${perQ.agentUsd >= 0.005 ? ` + 에이전트 평균 ~${fmtUsd(perQ.agentUsd)}` : ''} — ${model} 요율`,
+                `this session's avg ${perQ.steps.toFixed(1)} requests per question × (read at that size + ~${fmtUsd(perQ.extraUsd)} writes · output per request)${perQ.agentUsd >= 0.005 ? ` + agents avg ~${fmtUsd(perQ.agentUsd)}` : ''} — ${model} rates`,
+              ),
+            )
+          : null}
+        {showCold
+          ? term(
+              'cmp-cold',
+              L('캐시 식으면', 'Cold cache'),
+              (opt?.shared ?? 0) > 0
+                ? L(`${ttlName(ttl)} 넘게 쉬어 다시 쓰기(공통 앞부분 ${fmtTokens(opt!.shared!)} 은 읽기)`, `idle over ${ttlName(ttl)}, rewritten (the shared ${fmtTokens(opt!.shared!)} prefix is read)`)
+                : L(`${ttlName(ttl)} 넘게 쉬어 전부 다시 쓰기`, `idle over ${ttlName(ttl)}, everything rewritten`),
+            )
+          : null}
         {starLine}
         {calcLine}
         {capLine}
@@ -532,21 +581,108 @@ export function drawSettings(
     undefined,
     fold('compact'),
   )
-  const cacheSection = section(ui, 'set-cache', L('캐시 경고', 'Cache warning'), [
-    <Box key="cache-row" columnGap={1} alignItems="center">
-      <Button key="cache-down" label="−" variant="secondary" onPress={() => save(nudgeCache(s, -1))} />
-      <Box width={5} flexShrink={0} justifyContent="center">
-        <Text bold>{L(`${s.cacheWarnMin}분`, `${s.cacheWarnMin} min`)}</Text>
+  // 캐시: 유지 시간은 엔진이 요청마다 정한다(구독 요금제 사용량 안 1시간, API 키 · 사용량 초과 5분 —
+  // 공식 문서 기본값, promptCacheTtl 설정 · 환경 변수로 바뀜). 기록에서 잰 값을 보이고, 못 쟀으면 "추정". 경고는 유지 시간마다
+  // 따로(5분 캐시에 10분 경고면 늘 노랑). 유지 시간 바꾸기는 커스텀에서만 — 잘 모르고 바꾸면 손해만 본다
+  const cfg = cache?.config ?? null
+  const srcText = !cfg
+    ? L('자동(구독 요금제 사용량 안 1시간 · API 키 · 사용량 초과 5분)', 'automatic (1 h within a subscription plan · 5 min on an API key or over the plan)')
+    : cfg.source === 'force5m'
+      ? L('환경 변수 FORCE_PROMPT_CACHING_5M(5분 고정)', 'env FORCE_PROMPT_CACHING_5M (5 min forced)')
+      : cfg.source === 'env'
+        ? L(`환경 변수 CLAUDE_CODE_PROMPT_CACHE_TTL = ${cfg.value}`, `env CLAUDE_CODE_PROMPT_CACHE_TTL = ${cfg.value}`)
+        : cfg.source === 'setting'
+          ? L(`설정 promptCacheTtl = ${cfg.value}`, `setting promptCacheTtl = ${cfg.value}`)
+          : cfg.source === 'enable1h'
+            ? L('환경 변수 ENABLE_PROMPT_CACHING_1H(1시간)', 'env ENABLE_PROMPT_CACHING_1H (1 h)')
+            : L('자동(구독 요금제 사용량 안 1시간 · API 키 · 사용량 초과 5분)', 'automatic (1 h within a subscription plan · 5 min on an API key or over the plan)')
+  // 환경 변수가 정하면 설정 파일을 바꿔도 안 먹는다(엔진 순서) — 버튼 대신 까닭
+  const isEnvFixed = cfg?.source === 'force5m' || cfg?.source === 'env'
+  const warnRow = (key: string, forTtl: number) => {
+    const v = forTtl < 60 ? s.cacheWarnMin5m : s.cacheWarnMin
+    const isNow = forTtl === (ttl < 60 ? 5 : 60)
+    return (
+      <Box key={key} columnGap={1} alignItems="center">
+        {cell('t', TERM_W, <Text {...(isNow ? { bold: true } : { dimColor: true })}>{L(`${ttlName(forTtl)} 캐시`, `${ttlName(forTtl)} cache`)}</Text>)}
+        <Button key={`${key}-down`} label="−" variant="secondary" onPress={() => save(nudgeCache(s, -1, forTtl))} />
+        <Box width={5} flexShrink={0} justifyContent="center">
+          <Text bold={isNow}>{L(`${v}분`, `${v} min`)}</Text>
+        </Box>
+        <Button key={`${key}-up`} label="+" variant="secondary" onPress={() => save(nudgeCache(s, 1, forTtl))} />
+        <Box flexShrink={1} minWidth={0}>
+          <Text dimColor wrap="wrap">
+            {L(`남으면 노랑${isNow ? ' · 지금 이 세션' : ''}`, `left turns yellow${isNow ? ' · this session' : ''}`)}
+          </Text>
+        </Box>
       </Box>
-      <Button key="cache-up" label="+" variant="secondary" onPress={() => save(nudgeCache(s, 1))} />
-      <Box flexShrink={1} minWidth={0}>
+    )
+  }
+  // 지금 크기를 다시 쓰는 값(복구 값)을 유지 시간마다 — 대가가 숫자로 보이게
+  const rNow = ctxNow !== null && ctxNow > 0 && modelId ? ratesFor(modelId, ctxNow) : null
+  const ttlPicks = (
+    <Box key="ttl-picks" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
+      {s.screen !== 'custom' ? (
         <Text dimColor wrap="wrap">
-          {L('캐시가 이만큼 남으면 노랑으로 알립니다(캐시 수명 60분).', 'Turns yellow when this much cache time is left (cache lives 60 min).')}
+          {L('바꾸기는 화면 → 커스텀에서(모르고 바꾸면 손해라 프리셋에선 막아 둠)', 'Change it under Screen → Custom (locked in presets — changing it blindly costs money)')}
         </Text>
-      </Box>
-    </Box>,
-    // 캐시 경고는 한 줄뿐이라 접지 않는다 — 테두리 카드만
-  ], undefined, true)
+      ) : isEnvFixed ? (
+        <Text color="yellow" wrap="wrap">
+          {L('환경 변수가 정해 여기서 못 바꿉니다', 'An environment variable decides it, so it cannot be changed here')}
+        </Text>
+      ) : cfg?.userFile ? (
+        [
+          pick('ttl-auto', L('자동', 'Automatic'), cfg.userSetting === null, () => act.setTtl(null)),
+          pick('ttl-1h', L('1시간', '1 hour'), cfg.userSetting === '1h', () => act.setTtl('1h')),
+          pick('ttl-5m', L('5분', '5 min'), cfg.userSetting === '5m', () => act.setTtl('5m')),
+        ]
+      ) : (
+        <Text dimColor>{L('설정 파일을 못 찾아 못 바꿉니다', 'Settings file not found, so it cannot be changed')}</Text>
+      )}
+    </Box>
+  )
+  const cacheSection = section(
+    ui,
+    'set-cache',
+    L('캐시', 'Cache'),
+    [
+      term(
+        'cache-ttl',
+        L('유지 시간', 'Lifetime'),
+        [
+          <Text key="v" bold>
+            {ttlName(ttl)}
+          </Text>,
+          <Text key="m" dimColor>
+            {cache?.measured ? L('(이 세션 기록에서 잼)', '(measured from this session)') : L('(추정 — 첫 요청 뒤 기록으로 잽니다)', '(estimated — measured after the first request)')}
+          </Text>,
+        ],
+      ),
+      term('cache-src', L('정하는 곳', 'Set by'), srcText),
+      <Box key="cache-warns" flexDirection="column" marginTop={1}>
+        {warnRow('cache', 60)}
+        {warnRow('cache5', 5)}
+      </Box>,
+      <Box key="cache-change" flexDirection="column" marginTop={1}>
+        {term('cache-pick', L('바꾸기', 'Change'), [ttlPicks])}
+        {term('cache-1h', L('1시간', '1 hour'), L('쓰기가 입력 요율의 2배 · 1시간 안에 돌아오면 다시 안 씀', 'writes cost 2× input · no rewrite if you are back within an hour'))}
+        {term('cache-5m', L('5분', '5 min'), L('쓰기 1.25배 · 5분 넘게 쉬면 컨텍스트 전체를 다시 씀', 'writes cost 1.25× · a break over 5 min rewrites the whole context'))}
+        {rNow
+          ? term(
+              'cache-now',
+              L('지금 크기', 'Now'),
+              L(
+                `${fmtTokens(ctxNow!)} 를 다시 쓰면 1시간 ${fmtUsd((ctxNow! * writeRate(rNow, 60)) / 1e6)} · 5분 ${fmtUsd((ctxNow! * writeRate(rNow, 5)) / 1e6)}`,
+                `rewriting ${fmtTokens(ctxNow!)}: 1 h ${fmtUsd((ctxNow! * writeRate(rNow, 60)) / 1e6)} · 5 min ${fmtUsd((ctxNow! * writeRate(rNow, 5)) / 1e6)}`,
+              ),
+            )
+          : null}
+      </Box>,
+    ],
+    summary('cache', L(`${ttlName(ttl)} 캐시 · ${cacheWarnFor(s, ttl)}분 남으면 노랑`, `${ttlName(ttl)} cache · yellow at ${cacheWarnFor(s, ttl)} min left`)),
+    true,
+    undefined,
+    fold('cache'),
+  )
 
   // 문구는 버튼 넷(프리셋 셋 + 직접) — 직접을 고르면 아래에 한 줄 입력칸, Enter 로 저장.
   // 아래엔 "언제 쓰나" 한 줄과, 누르면 일어나는 일을 단계로: ① 손해 판단 → ② 저장 → ③ 답 → ④ 컴팩트. ①④ 는 어느 문구든
@@ -619,94 +755,152 @@ export function drawSettings(
     ) : null,
   ], summary('tidy', isCustom ? customName() : tidyStyles()[s.tidy as TidyStyleId].name), true, undefined, fold('tidy'))
 
-  // 이지 컴팩트 바: 보이기 · 필요할 때만 · 크기와, 접어 둔 "UI 레이아웃 상세 조정" — 최대 크기의 칸을 줄(한도 · 비용 ·
-  // 질문)마다 묶어 켜고 끈다. 상세 조정은 테두리로 한 덩어리(늘 떠 있어 거슬린다 · 5시간 등 필요 없는 칸을 빼고 싶다는 말에서).
-  // 이름은 "이지 컴팩트 바" — "입력창 위 띠" · "표시줄" 은 무엇인지 안 읽혔고, 다음 이름 "입력창 툴바" 도
-  // 바꿔 달라 했다
+  // ── 화면: 프리셋 넷 — 간단(컴팩트만 아는 처음 쓰는 사람) · 기본(지향하는 화면) · 자세히(지표 최대) ·
+  // 커스텀(다 고름). 프리셋의 세부는 보기만 — 버튼 대신 글(✓ · ·)이라 눌러지지 않는다. 커스텀에선 같은 자리가 버튼.
+  // 창 상태(바 크기 · 접기 · 컴팩트할 때 펴기 · 패널 열기)는 프리셋과 따로 "바 · 패널" 칸 — 바의 창 버튼과 같은 값이라 어느
+  // 화면에서든 바꾼다. 컴팩트 기준엔 프리셋이 없다(개인 기록 기반이라 없앤 것 — 공식 계산 · 표시만)
+  const view = viewOf(s)
+  const isCustomScreen = s.screen === 'custom'
+  // 커스텀이면 고르기 버튼, 프리셋이면 같은 이름을 글로(✓ 켬 · · 끔)
+  const choose = (key: string, label: string, isOn: boolean, onPress: () => void) =>
+    isCustomScreen ? (
+      pick(key, label, isOn, onPress)
+    ) : (
+      // 글은 키로 못 찾아(시험 · 다른 mod) 상자에 키를 단다
+      <Box key={key}>
+        <Text {...(isOn ? {} : { dimColor: true })}>{`${isOn ? '✓' : '·'} ${label}`}</Text>
+      </Box>
+    )
+  const editV = (change: (v: ScreenView) => ScreenView) => save(editView(s, change))
   const groups = [
     { id: 'limits', name: L('한도 줄', 'Limits row') },
     { id: 'cost', name: L('비용 줄', 'Cost row') },
     { id: 'turn', name: L('질문 줄', 'Question row') },
   ] as const
-  // 표시(늘 보이기 · 자동 숨김 · 안 보이기 한 줄) → 크기 순(명령 도움말과 같은 순서). 이름 칸은 비용표 설명과 같은 폭.
-  // 줄마다 아래 풀이 한 줄을 두고 크기 줄은 한 칸 띄운다 — 버튼 줄이 바로 붙으니 겹쳐 보였다
-  const bandRow = (key: string, name: string, picks: unknown[], gap = 0) => (
-    <Box key={key} columnGap={1} alignItems="center" flexWrap="wrap" marginTop={gap}>
+  const detailRow = (key: string, name: string, picks: unknown, gap = 1) => (
+    <Box key={key} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'} marginTop={gap}>
       {cell('t', TERM_W, <Text>{name}</Text>)}
-      {picks}
+      <Box flexShrink={1} minWidth={0} columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
+        {picks}
+      </Box>
     </Box>
   )
-  const layoutOpen = open.layout === true
-  const showMode = bandShowMode(s)
-  const bandSection = section(ui, 'set-band', L('이지 컴팩트 바', 'Easy Compact bar'), [
-    bandRow(
-      'band-show-row',
-      L('표시', 'Show'),
-      BAND_SHOW_MODES.map(m => pick(`vis-${m}`, bandShowName(m), showMode === m, () => save(setBandShow(s, m)))),
-    ),
-    <Text key="band-show-use" dimColor wrap="wrap">
-      {bandShowUse(showMode)}
-    </Text>,
-    bandRow(
-      'band-mode-row',
-      L('크기', 'Size'),
-      BAND_MODES.map(m => pick(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m }))),
-      1,
-    ),
-    <Text key="band-use" dimColor wrap="wrap">
-      {bandModeUse(s.band)}
-    </Text>,
-
-    <Box key="band-detail-row" marginTop={1}>
-      <Button key="band-detail" label={`${layoutOpen ? '▾' : '▸'} ${L('UI 레이아웃 상세 조정', 'UI layout details')}`} variant="secondary" onPress={() => act.toggleFold('layout')} />
-    </Box>,
-    layoutOpen ? (
-      <Box key="band-detail-box" flexDirection="column" {...CARD}>
-        <Text dimColor wrap="wrap">
-          {L('최대 크기에 보일 칸 — 누르면 켜고 끕니다(✓ = 보임).', 'Parts shown at Full size — press to turn on or off (✓ = shown).')}
-        </Text>
-        {groups.map(g => (
-          <Box key={`band-g-${g.id}`} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'} marginTop={1}>
-            {cell('t', TERM_W, <Text>{g.name}</Text>)}
-            <Box flexShrink={1} minWidth={0} columnGap={1} rowGap={1} flexWrap="wrap">
-              {BAND_PARTS.filter(p => p.group === g.id).map(p =>
-                pick(`show-${p.key}`, bandPartName(p.key), s.bandShow[p.key], () => save(setBandPart(s, p.key, !s.bandShow[p.key]))),
-              )}
-            </Box>
+  const limitsOn = view.bandShow.fiveHour || view.bandShow.sevenDay
+  const partRows = groups.map(g =>
+    detailRow(`band-g-${g.id}`, g.name, [
+      g.id === 'limits' ? choose('show-limits', L('한도 전체', 'All limits'), limitsOn, () => save(setLimits(s, !limitsOn))) : null,
+      ...BAND_PARTS.filter(p => p.group === g.id).map(p => choose(`show-${p.key}`, bandPartName(p.key), view.bandShow[p.key], () => editV(v => ({ ...v, bandShow: { ...v.bandShow, [p.key]: !v.bandShow[p.key] } as BandShow })))),
+    ]),
+  )
+  // 세션 금액 색: 노랑 · 주황 · 빨강 기준(오름차순) — 커스텀은 −/+, 프리셋은 글로
+  const colorNames = [
+    { name: L('노랑', 'yellow'), hex: SESSION_HEX.yellow },
+    { name: L('주황', 'orange'), hex: SESSION_HEX.orange },
+    { name: L('빨강', 'red'), hex: SESSION_HEX.red },
+  ]
+  const colorsRow = detailRow(
+    'session-colors',
+    L('세션 금액 색', 'Session cost'),
+    isCustomScreen
+      ? colorNames.map((c, i) => (
+          <Box key={`color-${i}`} columnGap={1} alignItems="center">
+            <Text color={c.hex}>{c.name}</Text>
+            <Button key={`color-${i}-down`} label="−" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, -1))} />
+            <Text bold>{fmtUsd0(view.sessionColors[i]!)}</Text>
+            <Button key={`color-${i}-up`} label="+" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, 1))} />
           </Box>
-        ))}
-        <Box key="band-all-row" justifyContent="flex-end" marginTop={1}>
-          <Button key="band-show-all" label={L('모두 보이기', 'Show all')} variant="secondary" onPress={() => save({ ...s, bandShow: DEFAULT_SETTINGS.bandShow })} />
-        </Box>
-      </Box>
-    ) : null,
-  ], summary('band', bandStateText(s)), true, undefined, fold('band'))
+        ))
+      : colorNames.map((c, i) => (
+          <Text key={`color-${i}`}>
+            <Text color={c.hex}>{c.name}</Text>
+            <Text>{` ${fmtUsd0(view.sessionColors[i]!)}`}</Text>
+          </Text>
+        )),
+  )
+  const detailOpen = open.detail === true
+  const screenSection = section(ui, 'set-screen', L('화면', 'Screen'), [
+    <Box key="screen-row" columnGap={1} rowGap={1} alignItems="center" flexWrap="wrap">
+      {SCREEN_PRESETS.map(p => pick(`screen-${p}`, screenName(p), s.screen === p, () => save(chooseScreen(s, p))))}
+    </Box>,
+    <Text key="screen-use" dimColor wrap="wrap">
+      {screenUse(s.screen)}
+    </Text>,
+    <Box key="screen-more-row" marginTop={1}>
+      <Button key="screen-more" label={`${detailOpen ? '▾' : '▸'} ${L('세부', 'Details')}`} variant="secondary" onPress={() => act.toggleFold('detail')} />
+    </Box>,
+    ...(detailOpen
+      ? [
+          isCustomScreen ? (
+            // 커스텀을 프리셋 값으로 되돌리기 — 처음부터 다시 고를 때
+            <Box key="custom-reset-row" columnGap={1} rowGap={1} alignItems="center" flexWrap="wrap" marginTop={1}>
+              <Text dimColor>{L('가져오기', 'Start from')}</Text>
+              {(['simple', 'basic', 'detail'] as const).map(p => (
+                <Button key={`custom-from-${p}`} label={screenName(p)} variant="secondary" dimColor onPress={() => save(resetCustom(s, p))} />
+              ))}
+            </Box>
+          ) : (
+            <Text key="screen-locked" dimColor wrap="wrap">
+              {L(`${screenName(s.screen)} 화면의 값입니다 — 바꾸려면 [커스텀]`, `Values of the ${screenName(s.screen)} screen — choose [Custom] to change them`)}
+            </Text>
+          ),
+          ...partRows,
+          colorsRow,
+          detailRow(
+            'pane-mode-row',
+            L('패널 보기', 'Pane view'),
+            (['simple', 'detail'] as const).map(m => choose(`panemode-${m}`, paneModeName(m), view.paneMode === m, () => editV(v => ({ ...v, paneMode: m })))),
+          ),
+          <Text key="pane-mode-use" dimColor wrap="wrap">
+            {paneModeUse(view.paneMode)}
+          </Text>,
+          detailRow(
+            'agent-line-row',
+            // 터미널은 그림 글자를 안 쓴다(칸 폭이 어긋난다)
+            isTerminal ? L('에이전트 줄', 'Agents line') : L('답변 아래 🤖', 'Agents line 🤖'),
+            [true, false].map(on => choose(`agentline-${on ? 'on' : 'off'}`, on ? L('보이기', 'Show') : L('빼기', 'Hide'), view.agentLine === on, () => editV(v => ({ ...v, agentLine: on })))),
+          ),
+        ]
+      : []),
+  ], summary('screen', `${screenName(s.screen)} · ${screenStateText(s)}`), true, undefined, fold('screen'))
 
-  // 사용량 패널(오른쪽): 바가 아니라 패널 이야기라 바 칸 아래 따로. 두 옵션은 따로 켠다 — 처음엔 "세션마다 · 모든
-  // 세션 같이" 하나였는데 새 세션에서 열리는 것과 열고 닫기가 맞물리는 것이 한데 섞여 무엇이 다른지 안 읽혔다
+  // 바 · 패널(창 상태): 바의 창 버튼(— / □ · ✕) · 입력창 아래 버튼과 같은 값이라 어느 화면에서든 바꾼다. 컴팩트할 때 자동으로
+  // 펴기 = 옛 자동 숨김(⇲ — ✕ 와 같아 보여 뺐다, 사용자 2026-10-13)
   const paneOn = (key: 'paneAutoOpen' | 'paneShared', onName: string) =>
     [false, true].map(isOn =>
       pick(`${key === 'paneAutoOpen' ? 'pane-auto' : 'pane-sync'}-${isOn ? 'on' : 'off'}`, isOn ? onName : L('끄기', 'Off'), s[key] === isOn, () => act.setPaneOption(key, isOn)),
     )
-  const paneSection = section(ui, 'set-pane', L('사용량 패널', 'Usage pane'), [
-    bandRow('pane-auto-row', L('자동 열기', 'Auto-open'), paneOn('paneAutoOpen', L('새 세션에서 열기', 'In new sessions'))),
+  const windowSection = section(ui, 'set-window', L('바 · 패널', 'Bar · pane'), [
+    detailRow('band-mode-row', L('바 크기', 'Bar size'), BAND_MODES.map(m => pick(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m }))), 0),
+    <Text key="band-use" dimColor wrap="wrap">
+      {bandModeUse(s.band)}
+    </Text>,
+    detailRow('band-fold-row', L('바 접기', 'Bar'), [false, true].map(f => pick(`fold-${f ? 'on' : 'off'}`, foldName(f), s.bandFolded === f, () => save(setFolded(s, f))))),
+    detailRow('band-autoopen-row', L('컴팩트할 때', 'When compacting'), [
+      pick('autoopen-on', L('저절로 펴기', 'Open by itself'), s.bandAutoOpen, () => save({ ...s, bandAutoOpen: true })),
+      pick('autoopen-off', L('끄기', 'Off'), !s.bandAutoOpen, () => save({ ...s, bandAutoOpen: false })),
+    ]),
+    <Text key="band-autoopen-use" dimColor wrap="wrap">
+      {bandAutoUse(s.bandAutoOpen)}
+    </Text>,
+    // 이름 칸은 12칸(TERM_W) — "패널 자동 열기" · "패널 같이 여닫기" 는 터미널에서 두 줄로 꺾여 짧게(리뷰)
+    detailRow('pane-auto-row', L('패널 자동', 'Pane auto'), paneOn('paneAutoOpen', L('새 세션에서 열기', 'In new sessions'))),
     <Text key="pane-auto-use" dimColor wrap="wrap">
       {paneAutoUse(s.paneAutoOpen)}
     </Text>,
-    bandRow('pane-sync-row', L('같이 여닫기', 'Together'), paneOn('paneShared', L('모든 세션 같이', 'All sessions')), 1),
+    detailRow('pane-sync-row', L('패널 같이', 'Pane sync'), paneOn('paneShared', L('모든 세션 같이', 'All sessions'))),
     <Text key="pane-sync-use" dimColor wrap="wrap">
       {paneSyncUse(s.paneShared)}
     </Text>,
-  ], summary('pane', paneStateText(s)), true, undefined, fold('pane'))
+  ], summary('window', bandStateText(s)), true, undefined, fold('window'))
 
   // 명령 안내 줄은 뺐다 — 화면에서 다 바꿀 수 있어 사족이었다. 명령은 /easy-compact 도움말에 있다.
-  // 자주 바꾸는 순: 컴팩트 시점 → 컴팩트 문구 → 이지 컴팩트 바 → 사용량 패널 → 캐시 경고(언어는 맨 아래, drawSettingsView)
+  // 순서: 화면(처음엔 이것만 펼침) → 바 · 패널 → 컴팩트 시점 → 컴팩트 문구 → 캐시(언어는 맨 아래, drawSettingsView)
   return (
     <Box flexDirection="column">
+      {screenSection}
+      {windowSection}
       {compactSection}
       {tidy}
-      {bandSection}
-      {paneSection}
       {cacheSection}
     </Box>
   )
@@ -737,6 +931,7 @@ export function drawSettingsView(
   autoLang: Lang | null = null,
   cols: number | null = null,
   open: Record<string, boolean> = {},
+  cache: CacheInfo | null = null,
 ) {
   const { Box, Button, Text } = ui
   const look = phaseLook(phase, kind)
@@ -792,7 +987,7 @@ export function drawSettingsView(
           {L('바꾸면 모든 세션에 바로 적용됩니다.', 'Changes apply to all sessions right away.')}
         </Text>
       )}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open)}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache)}
       {langRow}
     </Box>
   )

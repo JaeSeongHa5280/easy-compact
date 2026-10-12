@@ -3,7 +3,8 @@
 // $.process.run 으로 돌려 작은 출력(줄마다 요청 하나 · 컴팩트 하나 · 질문 하나)만 받는다.
 //
 // 출력(공백 구분, 한 줄에 하나):
-//   p <시각ms> <input> <output> <cache_read> <cache_creation> <model>
+//   p <시각ms> <input> <output> <cache_read> <cache_creation> <model> <5분 쓰기> <1시간 쓰기>
+//                       (끝 둘 = usage.cache_creation 의 ephemeral_5m · 1h — 그 요청의 캐시 유지 시간)
 //   c <시각ms> <trigger> <preTokens>
 //   q <시각ms>                       (질문 시작 — promptId 가 처음 나온 사용자 줄)
 // 규칙은 hooks/flow.ts 의 recordsFromTranscript 와 같다: 메인 대화만(isSidechain 제외),
@@ -56,8 +57,9 @@ for await (const line of lines) {
   if (r.type !== 'assistant' || !m?.usage || !m.id || seen.has(m.id)) continue
   seen.add(m.id)
   const u = m.usage
+  const cc = u.cache_creation ?? {}
   out.push(
-    `p ${at} ${num(u.input_tokens)} ${num(u.output_tokens)} ${num(u.cache_read_input_tokens)} ${num(u.cache_creation_input_tokens)} ${m.model ?? '?'}`,
+    `p ${at} ${num(u.input_tokens)} ${num(u.output_tokens)} ${num(u.cache_read_input_tokens)} ${num(u.cache_creation_input_tokens)} ${m.model ?? '?'} ${num(cc.ephemeral_5m_input_tokens)} ${num(cc.ephemeral_1h_input_tokens)}`,
   )
 }
 process.stdout.write(out.join('\n'))

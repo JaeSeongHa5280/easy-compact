@@ -9,8 +9,10 @@ export type UsageTab = 'main' | 'settings'
 export type Thresholds = {
   ctxWarn: number
   ctxCut: number
-  /** 캐시 남은 분이 이보다 적으면 노랑 */
+  /** 캐시 남은 분이 이보다 적으면 노랑 — 1시간 캐시일 때 */
   cacheWarnMin: number
+  /** 5분 캐시일 때의 노랑 기준(분). 없으면 CACHE_WARN_5M_DEFAULT */
+  cacheWarnMin5m?: number
   /** 컴팩트 구간으로 건 기준: 노랑 = 구간 시작(비용이 가장 적은 크기), 빨강 = 구간 끝. 아니면 직접 정한 크기(노랑 = 그 80%) */
   isRange?: boolean
 }
@@ -26,7 +28,13 @@ export type Settings = {
   /** 컴팩트 구간 시작 · 끝(토큰) — 설정 탭의 0~100만 비용표(RANGE_ROWS)에서 고른다. 세션을 따라 움직이지 않는다 */
   rangeStart: number
   rangeEnd: number
+  /** 캐시 남은 분이 이보다 적으면 노랑 — 1시간 캐시(구독 요금제 기본) */
   cacheWarnMin: number
+  /**
+   * 5분 캐시(API 키 · 사용량 초과 · promptCacheTtl "5m")일 때의 노랑 기준(분). 1시간용 10분을 그대로 쓰면 늘 노랑이다
+   *
+   */
+  cacheWarnMin5m: number
   /** 정리 후 컴팩트 문구: 기본 프리셋 셋 중 하나, 또는 사용자가 쓴 글 */
   tidy: TidyStyleId | 'custom'
   tidyCustom: string
@@ -35,17 +43,25 @@ export type Settings = {
    * 영어. ko · en 은 고정 — 감지가 빗나갈 때(CLI 만 쓰고 아무것도 안 정한 경우 등) 설정 탭 맨 위 줄에서 바꾼다
    */
   lang: 'auto' | 'ko' | 'en'
-  /** 입력창 위 띠 크기(BandMode). 띠 오른쪽 위 버튼(▾ 최소 / ▴ 최대) · 설정 탭 · /easy-compact 최소|최대 로 바꾼다 */
+  /** 입력창 위 띠 크기(BandMode). 띠 오른쪽 위 버튼(— 최소 / □ 최대) · 설정 탭 · /easy-compact 최소|최대 로 바꾼다 */
   band: BandMode
   /**
-   * 필요할 때만: 켜면 컨텍스트가 컴팩트 구간 시작(노랑)에 닿기 전엔 띠를 아예 안 그린다(입력창 위 자리가 빈다). 닿으면 고른
-   * 크기로 나오고, 최소여도 이지 컴팩트 버튼이 붙는다. 크기와 따로 켜고 끈다
+   * 바를 접었다(창 버튼 ✕): 입력창 아래 [🔽 이지 컴팩트 ⇱] 로 접혀 모든 세션에서 바가 안 보인다. 그 버튼 · /easy-compact
+   * 보이기로 편다. 0.4.0 전 bandHidden(안 보이기) · bandAuto(자동 숨김)를 둘로 옮긴 값 — ✕ 와 ⇲ 가 같아 보였다
    */
-  bandAuto: boolean
-  /** 안 보이기: 모든 세션에서 띠를 끈다(보이기 전까지). 사용량 패널은 /easy-compact 패널 로 연다 */
-  bandHidden: boolean
-  /** 최대(전체) 띠에 보일 칸 — 설정 탭 "UI 레이아웃 상세 조정". 끈 칸은 빠지고, 칸이 다 빠진 비용 줄은 줄째 빠진다 */
-  bandShow: BandShow
+  bandFolded: boolean
+  /**
+   * 컴팩트할 때 자동으로 펴기(기본 켬): 접힌 바가 컴팩트 구간 시작(노랑) · 캐시 만료 · 모델 바뀜에 닿으면 저절로 펴지고, 컴팩트로
+   * 내려가면 다시 접힌다(옛 자동 숨김). 끄면 누를 때까지 접힌 채(옛 안 보이기)
+   */
+  bandAutoOpen: boolean
+  /**
+   * 화면 프리셋(설정 탭 맨 위): 간단 · 기본 · 자세히는 보기 값(ScreenView)을 정해 두고 바꾸지 못한다 — 세부는 보기만.
+   * 커스텀은 custom 값을 쓰고 다 바꾼다
+   */
+  screen: ScreenPreset
+  /** 커스텀의 보기 값 — 처음 커스텀을 고를 때 그때 프리셋 값을 옮겨 둔다(그 전엔 null) */
+  custom: ScreenView | null
   /**
    * 사용량 패널: 새 세션에서 자동으로 열기(기본 끔). 그 뒤 닫으면 그대로. 예전엔 다른 세션이 연 값을 따라 새 세션에 들어가
    * 채팅만 쳐도 패널이 저절로 열렸다
@@ -55,6 +71,26 @@ export type Settings = {
   paneShared: boolean
 }
 
+/** 화면 프리셋: 간단(컴팩트만 아는 처음 쓰는 사람) · 기본(지향하는 화면) · 자세히(지표 최대) · 커스텀(다 고름) */
+export type ScreenPreset = 'simple' | 'basic' | 'detail' | 'custom'
+
+/** 프리셋이 정하는 보기 값 — 창 상태(바 크기 · 접기 · 패널 자동 열기 · 같이)는 넣지 않는다(창 버튼과 같은 값) */
+export type ScreenView = {
+  /** 바에 보일 칸 — 끈 칸은 빠지고, 칸이 다 빠진 줄은 줄째 빠진다 */
+  bandShow: BandShow
+  /**
+   * 사용량 패널 보기: simple = 간략(금액 요약 · 지금 한 줄 · 컴팩트 판단 · 질문별 비용), detail = 자세히(컨텍스트 막대 · 컴팩트
+   * 시점 · 흐름 그래프 · 컴팩트 효과까지). 패널 위 [간략][자세히] 는 이 세션 보기만 바꾼다
+   */
+  paneMode: PaneMode
+  /** 이 세션 금액 색 기준(달러, 오름차순): 넘으면 노랑 · 주황 · 빨강 — 그 아래는 기본 글색 */
+  sessionColors: [number, number, number]
+  /** 답변 아래 🤖 에이전트 줄 */
+  agentLine: boolean
+}
+
+export type PaneMode = 'simple' | 'detail'
+
 /**
  * 바 크기. full = 최대(한도 · 비용 · 질문 세 줄 + 이지 컴팩트 버튼), min = 최소 한 줄(요청당 · 컨텍스트 · 컴팩트 구간 +
  * 사용량 패널 · 이지 컴팩트 버튼 — 캐시 · 한도 · 질문 줄은 뺀다). 늘 떠 있어 거슬린다는 말에서 min 과 자동 숨김(bandAuto) ·
@@ -62,11 +98,16 @@ export type Settings = {
  */
 export type BandMode = 'full' | 'min'
 
-/** 전체 보기 띠의 칸마다 보일지. 5시간 · 7일 = 요금제 한도 막대, resets = 그 뒤 "N 후 리셋" */
+/**
+ * 띠의 칸마다 보일지. 5시간 · 7일 = 요금제 한도 막대, resets = 그 뒤 "N 후 리셋", session = 이 세션 금액(비용 줄 맨 앞,
+ * 최소 바에도), sessionAvg = 그 뒤 "질문 N개 · 평균 $X"(자세히)
+ */
 export type BandShow = {
   fiveHour: boolean
   sevenDay: boolean
   resets: boolean
+  session: boolean
+  sessionAvg: boolean
   perRequest: boolean
   context: boolean
   range: boolean
@@ -81,7 +122,15 @@ export type CompactMix = { input: number; read: number; write: number }
  * 컴팩트 한 번의 값을 셀 재료. after = 컴팩트 직후 크기(기본 적재 + 요약), summary = 그중 새로 쓰는 요약(다시 붙는 파일
  * 포함), output = 요약 출력 토큰, mix = 컴팩트 요청의 입력 몫
  */
-export type CompactInputs = { after: number; summary: number; output: number; mix: CompactMix; save?: SaveTurn }
+export type CompactInputs = {
+  after: number
+  summary: number
+  output: number
+  mix: CompactMix
+  save?: SaveTurn
+  /** 메인 대화 캐시 유지 시간(분) — 저장 턴 · 요약 쓰기 요율(Usage.cacheTtlMin). 없으면 60 */
+  ttl?: number
+}
 
 /**
  * 저장 턴(저장하고 컴팩트의 앞 단계) 한 번의 몫: steps = 요청 수(그만큼 그때 컨텍스트를 한 번씩 읽는다), output = 출력
@@ -108,6 +157,13 @@ export type Optimal = {
   onceUsd: number | null
   /** 긴 프롬프트 요율 경계(Haiku 5.5 의 10만)로 묶였으면 그 경계 */
   capped: number | null
+  /** 이 모델의 공통 앞부분(flow.ts sharedFor) — 설정 탭 비용표 "캐시 식으면" 도 띠 · 카드와 같은 셈 */
+  shared?: number
+  /**
+   * 질문 하나의 꼴(9b — 설정 표 "질문 1개" 칸): steps = 이 세션 최근 질문의 평균 요청 수, extraUsd = 요청마다 읽기 말고 드는 값
+   * (새로 쓰기 · 출력 · 입력)의 가운데 값. 못 쟀으면 없다 — 칸을 숨긴다(가정을 지어내지 않는다)
+   */
+  perQuestion?: { steps: number; extraUsd: number; agentUsd: number } | null
 }
 
 /**
@@ -126,7 +182,7 @@ export type Usage = {
   rateLimits: { kind: string; percentUsed: number; resetsAt?: string }[]
   /** /context 의 항목별 토큰. 패널이 열려 있을 때만 잰다 */
   categories: { name: string; tokens: number; kind: 'used' | 'free' | 'buffer' }[]
-  /** 이 대화의 마지막 메인 요청 · 컴팩트 시각 — 캐시 1h 타이머의 기준. 컴팩트 뒤 첫 요청 전이면 null(캐시 없음) */
+  /** 이 대화의 마지막 메인 요청 · 컴팩트 시각 — 캐시 1h 타이머의 기준(컴팩트 뒤 첫 요청 전이면 컴팩트 시각). 모르면 null */
   lastActivityMs: number | null
   /** 최근 턴들의 컨텍스트 토큰(오래된 것부터, 최대 12) */
   history: number[]
@@ -135,13 +191,33 @@ export type Usage = {
    * 컴팩트 뒤 추정값(지난 컴팩트의 실측, 없으면 기본값)이다. 첫 요청이 재면 false
    */
   contextEstimated?: boolean
-  /** 컴팩트 뒤 아직 요청이 없다 — 캐시가 없고(lastActivityMs = null) 다음 요청이 요약을 처음 쓴다 */
+  /** 컴팩트 뒤 아직 요청이 없다 — 다음 요청이 요약을 처음 쓴다(바의 지난 질문 줄을 숨긴다) */
   isAfterCompact?: boolean
   /**
    * 마지막 요청과 다른 모델을 골랐다 — 그 요청의 모델(이 대화 캐시가 있는 모델). 새 모델엔 캐시가 없어
    * 다음 요청이 컨텍스트 전체를 다시 쓴다. 새 모델로 요청이 한 번 끝나면(또는 원래 모델로 돌아오면) 없어진다
    */
   switchedFrom?: string | null
+  /**
+   * 요청마다 읽기 말고 드는 값(9a — flow.ts extraPerCall): 이 세션 그 모델 최근 요청의 가운데 값. "요청당" = 지금 크기 × 읽기 요율 +
+   * 이 값. 모자라면 null(읽기만 어림)
+   */
+  perCallExtraUsd?: number | null
+  /**
+   * 지금 모델의 공통 앞부분(토큰): 캐시가 식은 뒤 첫 요청이 그래도 캐시에서 읽은 크기(시스템 · 도구 — 같은 모델의 다른 세션이
+   * 데워 둔다, flow.ts noteShared). 식은 캐시 셈이 이만큼은 읽기로 센다. 못 쟀으면 0
+   */
+  sharedTokens?: number
+  /**
+   * 메인 대화의 캐시 유지 시간(분, 5 · 60). 기록의 마지막 메인 요청이 쓴 종류(cache_creation 의 ephemeral_5m · 1h)로 잰다.
+   * 엔진은 요청마다 정한다 — 구독 요금제 사용량 안 = 1시간, 사용량 초과 · API 키 · 클라우드 = 5분(공식 문서 기본값),
+   * promptCacheTtl 설정 · 환경 변수로 바뀐다. 없으면 60
+   */
+  cacheTtlMin?: number
+  /** cacheTtlMin 을 기록에서 쟀나 — 아니면 설정 · 문서 기본값으로 짐작한 값(화면에 "추정") */
+  cacheTtlMeasured?: boolean
+  /** 끝난 질문 수와 질문당 평균(달러) — 바의 "질문 평균" 칸. 없으면 null */
+  questionsAvg?: { count: number; avgUsd: number } | null
 }
 
 /** 질문 안의 동작 하나(= 모델 요청 하나): 무엇을 했는지와 그 요청의 값. write = 그중 캐시 쓰기 값(이전 기록엔 없다) */
@@ -158,6 +234,14 @@ export type StepDetail = {
   agent?: string
   steps?: number
   model?: string
+  /** 에이전트 줄: 읽기 · 출력 · 정가 입력 값(달러) — 질문별 비용에서 메인 / 에이전트를 나눠 보인다(0.4.0 부터, 그 전 기록엔 없다) */
+  read?: number
+  output?: number
+  input?: number
+  /** 에이전트 줄: false = 도는 중, true = 끝남(하위 턴의 turn.complete · 엔진 목록). 0.4.0 전 기록엔 없다(표시 없음) */
+  done?: boolean
+  /** 에이전트 줄: 마지막 요청이 끝난 시각 — 엔진 목록에 없는 갈래가 조용해지면 끝남으로 친다 */
+  at?: number
   /**
    * 앱 자체 요청의 합(대화 기록에 없는 요청 — 답 뒤 다음 질문 제안 · 메모리 정리, 컴팩트 미리 계산). 엔진 집계가 는 만큼에서
    * 우리가 본 요청을 뺀 값이라 요청 수 · 모델은 모른다. label = 무엇인지(아는 만큼)
@@ -223,6 +307,8 @@ export type CtxPoint = {
   atMs: number
   ctx: number
   usd: number
+  /** 그 요청이 캐시에 쓴 종류(분): 5 · 60. 기록에서 잰 것만 — 모르면 없다(60 으로 본다) */
+  ttl?: number
   /** 이 요청에 답한 모델 id — 모델 바꾼 시점을 그린다. 모델을 적기 전 판 저장 파일엔 없다 */
   model?: string
 }
@@ -237,6 +323,25 @@ export type CompactEvent = {
   /** 컴팩트 요청의 실제 값(엔진이 준 토큰 × 요율). 기록 파일로만 안 경우는 없다 — 추정으로 보인다 */
   costUsd: number | null
   index: number
+  /**
+   * 요약(새로 쓴 몫): 컴팩트 뒤 첫 요청이 캐시에서 못 읽고 새로 낸 토큰(input + cache_creation) — 요약 · 다시 붙은 파일 · 새 질문.
+   * 나머지(시스템 · 도구 · 메모리)는 컴팩트 요청이 데워 둬 읽는다. 그 요청이 캐시가 식은 뒤였거나 못 쟀으면 없다(직후 − 첫 요청으로 어림)
+   */
+  summary?: number | null
+}
+
+/**
+ * 캐시 유지 시간을 무엇이 정하나(엔진 순서, 공식 문서 "Choose the TTL yourself"): FORCE_PROMPT_CACHING_5M → 환경 변수
+ * CLAUDE_CODE_PROMPT_CACHE_TTL → 설정 promptCacheTtl → ENABLE_PROMPT_CACHING_1H → 자동(구독 요금제 사용량 안 1시간, 그 밖 5분).
+ * userSetting = 사용자 설정 파일(~/.claude/settings.json)의 값 — 설정 탭(커스텀)이 바꾸는 곳
+ */
+export type TtlConfig = {
+  source: 'force5m' | 'env' | 'setting' | 'enable1h' | 'auto'
+  /** 그 출처가 정한 값(자동이면 null) */
+  value: '5m' | '1h' | null
+  userSetting: '5m' | '1h' | null
+  /** 사용자 설정 파일 경로 — 못 찾으면 null(바꾸기 버튼을 숨긴다) */
+  userFile: string | null
 }
 
 /** $.store 에 두는 열린 패널. 트리는 그 그룹 세션에서만 따라 연다 */
@@ -292,12 +397,22 @@ declare module 'claude-code' {
       compactions: CompactEvent[]
       /** 질문(사용자 프롬프트)이 시작된 시각, 오래된 것부터 — 그래프 [최근 질문 40] 경계. 기록 파일 · 질문마다 */
       flowQuestions: number[]
+      /** 모델마다(modelKey) 공통 앞부분 — 캐시가 식은 뒤 첫 요청이 그래도 읽은 크기(flow.ts noteShared) */
+      flowShared: Record<string, number>
       /** 기록 파일을 읽었는가(못 읽었으면 그래프 자리에 그 사실을 보인다) */
       flowLoaded: boolean
       /** 앞 구간을 못 읽었을 때 그 까닭(패널에 한 줄로 보인다) */
       flowNote: string | null
       /** 계산식 최적과 그 재료(출처 포함). 설정 화면 · 게이지 · 컴팩트 손익이 같은 값을 쓴다 */
       optimal: Optimal | null
+      /** 기록에서 잰 메인 대화 캐시 유지 시간(분, 5 · 60) — 턴 끝 · 흐름을 읽을 때 잰다. 못 쟀으면 null */
+      ttlMeasured: number | null
+      /** 캐시 유지 시간 설정의 출처(설정 탭) — 무엇이 정하나 · 우리가 바꿀 수 있나 */
+      ttlConfig: TtlConfig | null
+      /** 패널 위 [간략][자세히] 로 이 세션에서만 바꾼 보기 — null 이면 화면 프리셋 값 */
+      paneModeLocal: PaneMode | null
+      /** 자동으로 펴진 바를 ✕ 로 다시 접은 단계(warn · cut · cold) — 그보다 급해질 때만 다시 편다. 컴팩트하면 null */
+      autoDismissed: string | null
     }
   }
 }

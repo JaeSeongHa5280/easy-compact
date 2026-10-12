@@ -7,7 +7,7 @@
 // 2026-10-10 실측(이 mod 를 만든 세션 14턴): 턴당 호출 1~39회, 평균 9회 — 턴당 호출 수를 가정하면
 // 3배 틀린다. 그래서 "요청 1회" 값과, 요청마다 API 가 보고한 토큰으로 잰 실제 질문 비용을 보인다.
 
-import type { CompactInputs, CompactMix, CostParts, SaveTurn, Thresholds } from '../types'
+import type { CompactInputs, CompactMix, CostParts, SaveTurn, StepDetail, Thresholds, Usage } from '../types'
 import { L } from './i18n'
 
 /** $/MTok. write5m · write1h 는 입력의 1.25배 · 2배 */
@@ -68,12 +68,38 @@ export function modelKey(model: string): string {
   return model.replace(/\[.*\]$/, '').replace(/-\d{8}$/, '').trim()
 }
 
-/** API 가 요청마다 보고하는 네 가지 토큰 수(ModelUsage) */
+/**
+ * API 가 요청마다 보고하는 네 가지 토큰 수(ModelUsage). cache_creation_5m · 1h = 쓰기의 종류별 몫 — 기록(트랜스크립트)의
+ * usage.cache_creation 에만 있고 엔진이 요청마다 주는 값엔 없다
+ */
 export type Tokens = {
   input_tokens: number
   output_tokens: number
   cache_read_input_tokens: number
   cache_creation_input_tokens: number
+  cache_creation_5m?: number
+  cache_creation_1h?: number
+}
+
+/**
+ * 캐시 유지 시간(분). 엔진이 요청마다 정한다: 메인 대화 = 구독 요금제 사용량 안 1시간, 사용량 초과 · API 키 · 클라우드 5분,
+ * 하위 에이전트 · 컴팩트 등 = 5분(공식 문서 code.claude.com/docs/en/prompt-caching "Which TTL each request gets", 2026-10-12
+ * 확인). promptCacheTtl 설정 · 환경 변수로 바뀐다. 기본값을 단정하지 않고 기록에서 잰 값을 쓴다(register.tsx measureTtl)
+ */
+export type TtlMin = 5 | 60
+
+/** 그 유지 시간의 쓰기 요율 — 1시간 = 입력 × 2, 5분 = × 1.25. 식은 캐시를 다시 쓰는 값(복구 값)도 이 요율이다 */
+export function writeRate(r: Rates, ttl: number): number {
+  return ttl < 60 ? r.write5m : r.write1h
+}
+
+/** 기록의 종류별 몫 → 그 요청의 유지 시간. 쓰기가 없거나 몫을 모르면 null */
+export function ttlOfTokens(t: Tokens): TtlMin | null {
+  const m5 = t.cache_creation_5m ?? 0
+  const h1 = t.cache_creation_1h ?? 0
+  if (h1 > 0) return 60
+  if (m5 > 0) return 5
+  return null
 }
 
 export const ZERO_COST: CostParts = { read: 0, write: 0, output: 0, input: 0, usd: 0 }
@@ -99,16 +125,19 @@ export function thresholds(): Thresholds {
 // 예전 문턱(내 질문 값 분포의 상위 % · 프리셋 $0.25/$1)은 습관 따라 움직이거나 근거가 없었다
 
 /**
- * 요청 하나의 실제 값 = API 가 보고한 토큰 × 그 모델의 요율. 메인 루프의 캐시 쓰기는 1시간짜리, 하위 에이전트는
- * 5분짜리다(2026-10-11 에이전트 기록의 cache_creation: ephemeral_5m 만 있음). 엔진은 쓰기 종류를 안 알려 준다.
- * 모르는 모델이면 null.
+ * 요청 하나의 실제 값 = API 가 보고한 토큰 × 그 모델의 요율. 쓰기는 기록에 종류별 몫(5분 · 1시간)이 있으면 그대로, 없으면
+ * writeTtl(분) — 메인 대화는 세션의 유지 시간(Usage.cacheTtlMin), 하위 에이전트는 5분(이 PC 기록 570개: 사이드체인 전부
+ * ephemeral_5m). 엔진이 요청마다 주는 값엔 종류가 없다. 모르는 모델이면 null.
  */
-export function costOf(t: Tokens, model: string, writeTtl: '1h' | '5m' = '1h'): CostParts | null {
+export function costOf(t: Tokens, model: string, writeTtl: number = CACHE_TTL_MIN): CostParts | null {
   const prompt = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
   const r = ratesFor(model, prompt)
   if (!r) return null
   const read = (t.cache_read_input_tokens * r.read) / 1e6
-  const write = (t.cache_creation_input_tokens * (writeTtl === '5m' ? r.write5m : r.write1h)) / 1e6
+  const m5 = t.cache_creation_5m ?? 0
+  const h1 = t.cache_creation_1h ?? 0
+  const known = m5 + h1 > 0 ? Math.min(m5 + h1, t.cache_creation_input_tokens) : 0
+  const write = (m5 * r.write5m + h1 * r.write1h + (t.cache_creation_input_tokens - known) * writeRate(r, writeTtl)) / 1e6
   const output = (t.output_tokens * r.output) / 1e6
   const input = (t.input_tokens * r.input) / 1e6
   return { read, write, output, input, usd: read + write + output + input }
@@ -122,12 +151,12 @@ export const REWRITE_NOTE_USD = 0.25
  * 모델을 바꾼 뒤 첫 요청. prevCtx = 앞 메인 요청의 컨텍스트(flow.ts lastCtxOf), null 이면(세션 첫 요청 · 컴팩트 직후) 0.
  * 새 내용(파일 · 도구 결과)을 쓴 몫은 평소 캐시 쓰기라 넣지 않는다 — 쓰기 값 전체로 세면 새 세션 첫 질문도 "다시 씀" 이 된다
  */
-export function rewriteOf(t: Tokens, model: string, prevCtx: number | null): number {
+export function rewriteOf(t: Tokens, model: string, prevCtx: number | null, ttl: number = CACHE_TTL_MIN): number {
   if (prevCtx === null) return 0
   const r = ratesFor(model, t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens)
   if (!r) return 0
   const missed = Math.max(0, prevCtx - t.cache_read_input_tokens)
-  return (Math.min(t.cache_creation_input_tokens, missed) * r.write1h) / 1e6
+  return (Math.min(t.cache_creation_input_tokens, missed) * writeRate(r, ttlOfTokens(t) ?? ttl)) / 1e6
 }
 
 export function addCost(a: CostParts, b: CostParts): CostParts {
@@ -155,27 +184,73 @@ export function endsWithTail(blockText: string, tail: string): boolean {
   return block.length >= 20 && tail.endsWith(block)
 }
 
+/** 유지 시간을 모를 때(기록에서 못 쟀고 짐작할 거리도 없을 때) — 구독 요금제 기본 */
 export const CACHE_TTL_MIN = 60
 /** 컨텍스트 색 기준은 thresholds() 의 ctxWarn · ctxCut(설정의 컴팩트 권장 크기). 요청마다 컨텍스트 전체를 다시 읽으니 크기가 곧 요청당 값이다 */
 
+/** 5분 캐시의 노랑 기준 처음 값(분) — 1시간용 10분을 그대로 쓰면 늘 노랑이다 */
+export const CACHE_WARN_5M_DEFAULT = 2
+
+/** 지금 유지 시간의 캐시 노랑 기준(분) */
+export function cacheWarnFor(t: Pick<Thresholds, 'cacheWarnMin' | 'cacheWarnMin5m'>, ttl: number): number {
+  return ttl < 60 ? (t.cacheWarnMin5m ?? CACHE_WARN_5M_DEFAULT) : t.cacheWarnMin
+}
+
+/** 사용량의 유지 시간(분) — 모르면 60 */
+export function ttlOf(u: Pick<Usage, 'cacheTtlMin'> | null | undefined): number {
+  return u?.cacheTtlMin === 5 ? 5 : CACHE_TTL_MIN
+}
+
+/** "1시간" · "5분" — 설정 · 카드 풀이 */
+export function ttlName(ttl: number): string {
+  return ttl < 60 ? L(`${ttl}분`, `${ttl} min`) : L(`${ttl / 60}시간`, `${ttl / 60} h`)
+}
+
 export type Estimate =
-  | { kind: 'warm'; perCallUsd: number; minsLeft: number | null; rewriteUsd: number; rates: Rates }
-  | { kind: 'cold'; rewriteUsd: number; rates: Rates; reason: 'expired' | 'model' }
+  | { kind: 'warm'; perCallUsd: number; minsLeft: number | null; ttlMin: number; rewriteUsd: number; rates: Rates }
+  | { kind: 'cold'; rewriteUsd: number; rates: Rates; reason: 'expired' | 'model'; ttlMin: number }
   | { kind: 'unpriced' }
 
 /**
- * 지금 입력하면 드는 값. 캐시가 살아 있으면 요청 1회가 컨텍스트를 그 모델의 읽기 요율로 읽고,
- * 마지막 활동에서 60분이 지났으면 첫 요청이 컨텍스트 전체를 1시간 쓰기 요율로 다시 쓴다.
+ * 캐시가 식은 뒤 첫 요청이 컨텍스트 ctx 를 다시 쓰는 값. shared = 그래도 캐시에서 읽히는 공통 앞부분(시스템 · 도구 —
+ * 같은 모델의 다른 세션이 데워 둔다, flow.ts sharedFor). 회사 세션(Sonnet 5.5) 요청 1 · 17(식은 뒤 첫 요청)이 둘 다
+ * 47,594 를 읽었다 — 빼면 그냥 이어 가기가 $0.60 이 아니라 $0.42 였다(2026-10-12). 모르면 0(전부 다시 씀)
  */
-export function estimate(contextTokens: number, model: string, lastActivityMs: number | null, nowMs: number, isModelSwitched = false): Estimate {
+export function rewriteAllUsd(ctx: number, r: Rates, shared = 0, ttl: number = CACHE_TTL_MIN): number {
+  const s = Math.max(0, Math.min(shared, ctx))
+  return ((ctx - s) * writeRate(r, ttl) + s * r.read) / 1e6
+}
+
+/**
+ * 지금 입력하면 드는 값. 캐시가 살아 있으면 요청 1회가 컨텍스트를 그 모델의 읽기 요율로 읽고, 마지막 활동에서 유지 시간
+ * (ttl 분)이 지났으면 첫 요청이 컨텍스트 전체를 그 유지 시간의 쓰기 요율로 다시 쓴다(공통 앞부분 shared 는 읽기).
+ */
+export function estimate(
+  contextTokens: number,
+  model: string,
+  lastActivityMs: number | null,
+  nowMs: number,
+  isModelSwitched = false,
+  shared = 0,
+  ttl: number = CACHE_TTL_MIN,
+): Estimate {
   const r = ratesFor(model, contextTokens)
   if (!r || contextTokens <= 0) return { kind: 'unpriced' }
-  const rewriteUsd = (contextTokens * r.write1h) / 1e6
+  const rewriteUsd = rewriteAllUsd(contextTokens, r, shared, ttl)
   // 모델을 바꿨으면 새 모델엔 이 대화 캐시가 없다 — 식은 캐시와 같다(2026-10-11 기록 7회: 공통 앞부분 ~4.5만만 읽고 나머지 다시 씀)
-  if (isModelSwitched) return { kind: 'cold', rewriteUsd, rates: r, reason: 'model' }
-  const minsLeft = lastActivityMs === null ? null : Math.floor(CACHE_TTL_MIN - (nowMs - lastActivityMs) / 60000)
-  if (minsLeft !== null && minsLeft <= 0) return { kind: 'cold', rewriteUsd, rates: r, reason: 'expired' }
-  return { kind: 'warm', perCallUsd: (contextTokens * r.read) / 1e6, minsLeft, rewriteUsd, rates: r }
+  if (isModelSwitched) return { kind: 'cold', rewriteUsd, rates: r, reason: 'model', ttlMin: ttl }
+  const minsLeft = lastActivityMs === null ? null : Math.floor(ttl - (nowMs - lastActivityMs) / 60000)
+  if (minsLeft !== null && minsLeft <= 0) return { kind: 'cold', rewriteUsd, rates: r, reason: 'expired', ttlMin: ttl }
+  return { kind: 'warm', perCallUsd: (contextTokens * r.read) / 1e6, minsLeft, ttlMin: ttl, rewriteUsd, rates: r }
+}
+
+/** 띠 · 카드 · 패널이 같은 셈을 쓰게 사용량(Usage)에서 바로 — 공통 앞부분(sharedTokens) · 유지 시간을 빠뜨리지 않는다. ctx 를 주면 그 크기로 */
+export function estimateFor(
+  u: Pick<Usage, 'contextTokens' | 'model' | 'lastActivityMs' | 'switchedFrom' | 'sharedTokens' | 'cacheTtlMin'>,
+  nowMs: number,
+  ctx = u.contextTokens,
+): Estimate {
+  return estimate(ctx, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom), u.sharedTokens ?? 0, ttlOf(u))
 }
 
 /**
@@ -212,12 +287,18 @@ export type Payoff = {
 }
 
 /**
- * 컴팩트 요청이 입력을 어떻게 내는지(몫, 합 1). 처음엔 전부 캐시 없이 정가 입력으로 본다 — 엔진의 과금 방식이라 사람마다
- * 다르지 않다고 보고, 한 번 대조했다(2026-10-11: /usage 세션 비용과 기록의 요청 합 차이가 컴팩트 직전 크기 × 입력 요율과
- * 맞았다). 컴팩트가 끝날 때 엔진이 주는 실제 토큰으로 다시 잰다
+ * 컴팩트 요청이 입력을 어떻게 내는지(몫, 합 1). 캐시가 살아 있을 때의 컴팩트는 대화 캐시를 그대로 읽는다 — 엔진이 준
+ * 컴팩트 요청 토큰이 98.6% 캐시 읽기였다(2026-10-12 이 PC 실측). 0.3.x 는 처음 값을 전부 정가 입력으로 봐(2026-10-11 한 번
+ * 대조한 값 — 식은 캐시였던 것으로 보인다) 컴팩트가 7배 비싸 보였고 본전이 멀었다(동료). 컴팩트가 끝날 때 엔진이 주는 실제
+ * 토큰으로 다시 잰다 — 캐시가 살아 있던 컴팩트만(식은 캐시의 컴팩트는 coldCompact 셈을 따로 쓴다)
  */
 export type { CompactInputs, CompactMix, SaveTurn }
-export const UNCACHED_COMPACT: CompactMix = { input: 1, read: 0, write: 0 }
+export const WARM_COMPACT: CompactMix = { input: 0, read: 1, write: 0 }
+
+/** 잰 몫이 캐시가 살아 있던 컴팩트의 것인가 — 읽기가 절반 아래면 식은 캐시였다(0.3.x 가 가리지 않고 남긴 값을 거른다) */
+export function isWarmMix(mix: CompactMix): boolean {
+  return mix.read >= 0.5
+}
 
 /** 컴팩트 요청의 실제 토큰 → 입력 몫 */
 export function compactMixOf(t: Tokens): CompactMix | null {
@@ -227,22 +308,52 @@ export function compactMixOf(t: Tokens): CompactMix | null {
 }
 
 /**
- * 캐시가 식었을 때: 그냥 이어 가면 다음 요청이 컨텍스트 전체를 1시간 쓰기 요율로 다시 쓴다.
- * 바로 컴팩트하면 정가 입력으로 한 번 읽고(+ 요약 출력 ~1만) 줄어든 컨텍스트만 다시 쓴다.
+ * 캐시가 식었을 때: 그냥 이어 가면 다음 요청이 컨텍스트 전체를 세션 유지 시간(ttl)의 쓰기 요율로 다시 쓴다(1시간 = 입력 × 2,
+ * 5분 = × 1.25 — 복구 값이 유지 시간마다 다르다). 바로 컴팩트하면 정가 입력으로 한 번 읽고(+ 요약 출력 ~1만) 줄어든
+ * 컨텍스트만 다시 쓴다. 공통 앞부분 shared(다른 세션이 데워 둔 시스템 · 도구)는 셋 다 캐시 읽기다(rewriteAllUsd).
  * 정리 단계는 없다 — 정리 질문도 첫 요청이 전체를 다시 써서 식은 캐시에선 가장 비싼 단계다
  */
-export function coldCompact(ctx: number, inputs: CompactInputs, model: string): { continueUsd: number; compactUsd: number } | null {
+export function coldCompact(
+  ctx: number,
+  inputs: CompactInputs,
+  model: string,
+  shared = 0,
+  ttl: number = CACHE_TTL_MIN,
+): { continueUsd: number; compactUsd: number } | null {
   const r = ratesFor(model, ctx)
   if (!r || ctx <= 0) return null
   const after = Math.min(inputs.after, ctx)
   const ra = ratesFor(model, after) ?? r
+  const s = Math.max(0, Math.min(shared, ctx))
   return {
-    continueUsd: (ctx * r.write1h) / 1e6,
-    compactUsd: (ctx * r.input + inputs.output * r.output + after * ra.write1h) / 1e6,
+    continueUsd: rewriteAllUsd(ctx, r, shared, ttl),
+    compactUsd: ((ctx - s) * r.input + s * r.read + inputs.output * r.output) / 1e6 + rewriteAllUsd(after, ra, shared, ttl),
   }
 }
 
-export function compactPayoff(ctx: number, inputs: CompactInputs, model: string, callsPerQuestion: number | null): Payoff | null {
+/** coldCompact 를 사용량(Usage)에서 바로 — estimateFor 와 같은 까닭 */
+export function coldFor(
+  u: Pick<Usage, 'contextTokens' | 'model' | 'sharedTokens' | 'cacheTtlMin'>,
+  inputs: CompactInputs,
+  ctx = u.contextTokens,
+): { continueUsd: number; compactUsd: number } | null {
+  return coldCompact(ctx, inputs, u.model, u.sharedTokens ?? 0, ttlOf(u))
+}
+
+/**
+ * 이 세션 금액의 색(설정 sessionColors — 기본 $10 · $50 · $100): 넘으면 노랑 · 주황 · 빨강, 그 아래는 기본 글색(undefined).
+ * 금액 문턱을 없앴던 까닭(위 머리말)은 기준이 습관 통계였기 때문 — 이 값은 사람이 정하는 경고선이다
+ */
+export const SESSION_HEX = { yellow: '#d6b03a', orange: '#e8833a', red: '#e05555' } as const
+
+export function sessionColorOf(usd: number, colors: readonly [number, number, number]): string | undefined {
+  if (usd >= colors[2]) return SESSION_HEX.red
+  if (usd >= colors[1]) return SESSION_HEX.orange
+  if (usd >= colors[0]) return SESSION_HEX.yellow
+  return undefined
+}
+
+export function compactPayoff(ctx: number, inputs: CompactInputs, model: string, callsPerQuestion: number | null, ttl: number = CACHE_TTL_MIN): Payoff | null {
   const r = ratesFor(model, ctx)
   if (!r || ctx <= 0) return null
   const after = Math.min(inputs.after, ctx)
@@ -254,9 +365,11 @@ export function compactPayoff(ctx: number, inputs: CompactInputs, model: string,
   const compactUsd = (ctx * (mix.input * r.input + mix.read * r.read + mix.write * r.write1h) + inputs.output * r.output) / 1e6
   // 저장 턴: 요청마다 지금 컨텍스트를 읽고(크기에 비례 — 시점은 안 바꾼다) 출력 · 새로 쓰기(크기와 상관없음 — 권장을 조금
   // 늦춘다). 컴팩트 뒤 첫 요청은 남는 것 중 요약만 새로 쓴다(시스템 · 도구는 캐시 그대로)
+  // 저장 턴 · 컴팩트 뒤 첫 요청은 메인 대화라 세션 유지 시간의 쓰기 요율(재료에 있으면 그 값 — 최적 계산은 재료만 넘긴다)
+  const tt = inputs.ttl ?? ttl
   const save = inputs.save ?? SAVE_GUESS
-  const saveUsd = nowCallUsd * save.steps + (save.output * r.output + save.write * r.write1h) / 1e6
-  const costUsd = saveUsd + compactUsd + (Math.min(inputs.summary, after) * ra.write1h) / 1e6
+  const saveUsd = nowCallUsd * save.steps + (save.output * r.output + save.write * writeRate(r, tt)) / 1e6
+  const costUsd = saveUsd + compactUsd + (Math.min(inputs.summary, after) * writeRate(ra, tt)) / 1e6
   const saveCallUsd = nowCallUsd - afterCallUsd
   const breakEvenCalls = saveCallUsd > 0 ? Math.ceil(costUsd / saveCallUsd) : null
   const perQ = callsPerQuestion !== null && callsPerQuestion > 0 ? callsPerQuestion : null
@@ -269,6 +382,52 @@ export function compactPayoff(ctx: number, inputs: CompactInputs, model: string,
     breakEvenCalls,
     breakEvenQuestions: perQ === null || breakEvenCalls === null ? null : Math.ceil(breakEvenCalls / perQ),
   }
+}
+
+/**
+ * 견줄 모델(9c): Opus ↔ Sonnet(같은 판 5.5). 그 밖의 모델(Haiku · Fable 등)은 Opus 5.5 와. 요율을 모르면 null
+ */
+export function otherModelOf(model: string): string | null {
+  if (!ratesFor(model)) return null
+  if (/opus/.test(model)) return 'claude-sonnet-5-5'
+  return 'claude-opus-5-5'
+}
+
+/**
+ * 같은 토큰을 다른 모델 요율로(9c): 질문마다 읽기 · 쓰기 · 출력 · 입력 값을 그 요율로 나눠 토큰으로 되돌리고 to 모델 요율로 다시
+ * 센다. 에이전트 줄(몫을 나눠 적은 0.4.0 기록)은 그 에이전트 모델 요율 · 5분 쓰기로, 나머지는 질문 모델 · 1시간 쓰기로 — 질문 모델
+ * 하나로 다 되돌리면 Haiku 에이전트 몫이 몇십 분의 일로 잡혔다(리뷰). now = 그 질문들의 실제 값(앱 자체 요청 몫 뺌 — 토큰을
+ * 모른다), models = 질문 모델들(modelKey). 모르는 모델 질문은 뺀다. 질문이 없으면 null
+ */
+export function repriceTurns(
+  turns: readonly { cost: CostParts; appUsd?: number; model?: string; details?: readonly StepDetail[] }[],
+  to: string,
+  ttl: number = CACHE_TTL_MIN,
+): { now: number; other: number; count: number; models: string[] } | null {
+  const rt = ratesFor(to)
+  if (!rt) return null
+  const back = (usd: number, rate: number, toRate: number) => (rate > 0 ? (Math.max(0, usd) / rate) * toRate : 0)
+  let now = 0
+  let other = 0
+  let count = 0
+  const models = new Set<string>()
+  for (const t of turns) {
+    const r = t.model ? ratesFor(t.model) : null
+    if (!r) continue
+    const c = t.cost
+    count++
+    models.add(modelKey(t.model!))
+    now += c.usd - (t.appUsd ?? 0)
+    let main = { read: c.read, write: c.write, output: c.output, input: c.input }
+    for (const d of t.details ?? []) {
+      if (!d.agent || d.read === undefined || d.output === undefined) continue
+      const ra = (d.model ? ratesFor(d.model) : null) ?? r
+      other += back(d.read, ra.read, rt.read) + back(d.write ?? 0, ra.write5m, rt.write5m) + back(d.output, ra.output, rt.output) + back(d.input ?? 0, ra.input, rt.input)
+      main = { read: main.read - d.read, write: main.write - (d.write ?? 0), output: main.output - d.output, input: main.input - (d.input ?? 0) }
+    }
+    other += back(main.read, r.read, rt.read) + back(main.write, writeRate(r, ttl), writeRate(rt, ttl)) + back(main.output, r.output, rt.output) + back(main.input, r.input, rt.input)
+  }
+  return count === 0 ? null : { now, other, count, models: [...models] }
 }
 
 export type Level = 'ok' | 'warn' | 'cut'

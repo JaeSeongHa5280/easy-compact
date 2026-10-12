@@ -2,9 +2,13 @@ import { expect, test } from 'claude-code/testing'
 
 import { setLang } from './i18n'
 
+import { SESSION_HEX, sessionColorOf } from './cost'
 import {
   chooseTidy,
   DEFAULT_SETTINGS,
+  parseScreen,
+  SCREEN_VIEWS,
+  viewOf,
   normalizeSettings,
   nudgeCache,
   isAutoWord,
@@ -35,14 +39,14 @@ test('직접 지정으로: 지금 빨강(구간 끝)을 그 크기로 — 바꾸
   expect(setCompactAt(DEFAULT_SETTINGS, 300_000)).toEqual({ ...DEFAULT_SETTINGS, compactAt: 300_000, follow: false })
 })
 
-test('컴팩트 구간: 0~100만 비용표의 크기 띠 한 줄(처음 설치 값 25만 ~ 30만, 표의 한 줄). 명령은 값으로', () => {
+test('컴팩트 구간: 0~100만 비용표의 크기 띠 한 줄(처음 설치 값 20만 ~ 25만, 표의 한 줄). 명령은 값으로', () => {
   expect(RANGE_ROWS[0]).toBe(100_000)
   expect(RANGE_ROWS[RANGE_ROWS.length - 1]).toBe(1_000_000)
   // 띠 = 이웃 경계 사이
   expect(RANGE_BANDS[0]).toEqual([100_000, 150_000])
   expect(RANGE_BANDS[RANGE_BANDS.length - 1]).toEqual([700_000, 1_000_000])
   expect(RANGE_BANDS.length).toBe(RANGE_ROWS.length - 1)
-  expect(DEFAULT_SETTINGS).toMatchObject({ follow: true, rangeStart: 250_000, rangeEnd: 300_000 })
+  expect(DEFAULT_SETTINGS).toMatchObject({ follow: true, rangeStart: 200_000, rangeEnd: 250_000 })
   expect(RANGE_BANDS.some(([a, b]) => a === DEFAULT_SETTINGS.rangeStart && b === DEFAULT_SETTINGS.rangeEnd)).toBe(true)
   // 명령: 값으로(범위 안으로), 시작이 끝 이상이면 그대로
   const manual = setFollow(DEFAULT_SETTINGS, false, 250_000)
@@ -75,15 +79,45 @@ test('저장된 값을 관대하게 읽는다: 빠진 키는 기본, 깨진 값�
   expect(fixed.compactAt).toBe(400_000)
 })
 
-test('띠: 처음엔 보임 · 필요할 때만 꺼짐 · 최대 · 칸 다 보임, 0.2.0 의 auto 는 최소 + 필요할 때만, 이름은 영 · 한', () => {
-  expect(DEFAULT_SETTINGS).toMatchObject({ band: 'full', bandAuto: false, bandHidden: false })
-  expect(Object.values(DEFAULT_SETTINGS.bandShow).every(Boolean)).toBe(true)
-  expect(normalizeSettings({ band: 'tiny', bandAuto: 'y', bandHidden: 1, bandShow: 'x' })).toEqual(DEFAULT_SETTINGS)
+test('바 접기 · 화면: 처음엔 펼침 · 컴팩트할 때 펴기 켬 · 최대 · 자세히(저장소를 못 읽을 때), 0.4.0 전 값은 옮긴다, 이름은 영 · 한', () => {
+  expect(DEFAULT_SETTINGS).toMatchObject({ band: 'full', bandFolded: false, bandAutoOpen: true, screen: 'detail', custom: null })
+  expect(Object.values(viewOf(DEFAULT_SETTINGS).bandShow).every(Boolean)).toBe(true)
+  expect(normalizeSettings({ band: 'tiny', bandFolded: 'y', bandAutoOpen: 1, screen: 'x', custom: 'x' })).toMatchObject({ band: 'full', bandFolded: false, bandAutoOpen: true, screen: 'detail', custom: null })
+  // 0.2.0 의 auto(컴팩트할 때만) → 최소 + 접고 컴팩트할 때 펴기. 칸을 하나라도 껐으면 그 칸 그대로 커스텀
   const s = normalizeSettings({ band: 'auto', bandShow: { resets: false, fiveHour: 'no' } })
-  expect(s).toMatchObject({ band: 'min', bandAuto: true, bandHidden: false })
-  expect(s.bandShow).toEqual({ ...DEFAULT_SETTINGS.bandShow, resets: false })
-  expect(normalizeSettings({ band: 'full', bandAuto: true, bandHidden: true })).toMatchObject({ band: 'full', bandAuto: true, bandHidden: true })
-  expect(setBandPart(DEFAULT_SETTINGS, 'cache', false).bandShow.cache).toBe(false)
+  expect(s).toMatchObject({ band: 'min', bandFolded: true, bandAutoOpen: true, screen: 'custom' })
+  expect(s.custom!.bandShow).toEqual({ ...SCREEN_VIEWS.basic.bandShow, resets: false })
+  // 0.4.0 전 안 보이기 → 접고 안 펴기, 자동 숨김 → 접고 펴기, 늘 보이기 → 펼침(✕ 와 ⇲ 를 하나로)
+  expect(normalizeSettings({ bandHidden: true, bandAuto: true })).toMatchObject({ bandFolded: true, bandAutoOpen: false })
+  expect(normalizeSettings({ bandAuto: true })).toMatchObject({ bandFolded: true, bandAutoOpen: true })
+  expect(normalizeSettings({ bandAuto: false, bandHidden: false })).toMatchObject({ bandFolded: false, bandAutoOpen: true })
+  // 칸 다 켬 + 패널 간략(0.4.0 개발판) → 기본, 패널 값 없음(0.3.x) → 자세히(보던 그대로)
+  expect(normalizeSettings({ paneMode: 'simple' }).screen).toBe('basic')
+  expect(normalizeSettings({ bandShow: { cache: true } }).screen).toBe('detail')
+  // 새 저장값은 그대로 · 깨진 커스텀 색 기준(오름차순 아님)은 처음 값
+  expect(normalizeSettings({ screen: 'simple', bandFolded: true, bandAutoOpen: false })).toMatchObject({ screen: 'simple', bandFolded: true, bandAutoOpen: false })
+  expect(normalizeSettings({ screen: 'custom', custom: { sessionColors: [50, 10, 100] } }).custom!.sessionColors).toEqual([10, 50, 100])
+  expect(normalizeSettings({ screen: 'custom', custom: { sessionColors: [5, 20, 40], agentLine: false } }).custom).toMatchObject({ sessionColors: [5, 20, 40], agentLine: false })
+  // 칸 명령(setBandPart)은 지금 보이는 값에서 커스텀으로 옮겨 바꾼다
+  const c = setBandPart(DEFAULT_SETTINGS, 'cache', false)
+  expect(c.screen).toBe('custom')
+  expect(viewOf(c).bandShow.cache).toBe(false)
+  expect(viewOf(c).bandShow.sessionAvg).toBe(true)
+  // 화면 이름(영 · 한, "전문가" 도 자세히로)
+  expect(parseScreen('간단')).toBe('simple')
+  expect(parseScreen('Basic')).toBe('basic')
+  expect(parseScreen('전문가')).toBe('detail')
+  expect(parseScreen('커스텀')).toBe('custom')
+  expect(parseScreen('nope')).toBe(null)
+  // 세션 금액 색: 노랑 · 주황 · 빨강, 그 아래는 기본 글색
+  expect(sessionColorOf(9.99, [10, 50, 100])).toBe(undefined)
+  expect(sessionColorOf(10, [10, 50, 100])).toBe(SESSION_HEX.yellow)
+  expect(sessionColorOf(75, [10, 50, 100])).toBe(SESSION_HEX.orange)
+  expect(sessionColorOf(100, [10, 50, 100])).toBe(SESSION_HEX.red)
+  // 캐시 경고: 유지 시간마다 따로(5분 캐시는 0 ~ 4분)
+  expect(nudgeCache(DEFAULT_SETTINGS, 1, 5)).toMatchObject({ cacheWarnMin5m: 3, cacheWarnMin: 10 })
+  expect(nudgeCache({ ...DEFAULT_SETTINGS, cacheWarnMin5m: 4 }, 1, 5).cacheWarnMin5m).toBe(4)
+  expect(nudgeCache(DEFAULT_SETTINGS, 1)).toMatchObject({ cacheWarnMin: 15, cacheWarnMin5m: 2 })
   expect(parseBandMode('최소')).toBe('min')
   expect(parseBandMode('최대')).toBe('full')
   expect(parseBandMode('MAX')).toBe('full')

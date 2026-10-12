@@ -2,18 +2,20 @@
 //
 // 세션 기록 파일(트랜스크립트)에 요청마다 usage 가, 컴팩트마다 compact_boundary 줄(시각 · 직전 크기)이
 // 남는다 — 이 mod 를 쓰기 전 구간도 그래서 그릴 수 있다. 컴팩트 요청 자체의 값은 기록에 없어
-// 그 구간은 추정(정가 입력)으로 보이고, mod 가 본 컴팩트는 엔진이 준 실제 토큰으로 잰다.
+// 그 구간은 그때 캐시 상태로 추정하고(compactEffects), mod 가 본 컴팩트는 엔진이 준 실제 토큰으로 잰다.
 
 import type { CompactEvent, CtxPoint } from '../types'
-import { costOf, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds } from './cost'
+import { CACHE_TTL_MIN, costOf, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
 import type { Tokens } from './cost'
 import { L } from './i18n'
 
 /**
  * questions = 질문(사용자 프롬프트)이 시작된 시각, 오래된 것부터 — 그래프 [최근 질문 40] 의 경계.
- * 없으면(undefined) 질문을 적기 전 판 저장 파일 — 불러올 때 기록에서 다시 읽는다
+ * 없으면(undefined) 질문을 적기 전 판 저장 파일 — 불러올 때 기록에서 다시 읽는다.
+ * shared = 모델마다(modelKey) 캐시가 식은 뒤 첫 요청이 그래도 캐시에서 읽은 크기(공통 앞부분 — noteShared). 없으면
+ * (undefined) 그 값을 적기 전 판 저장 파일 — 기록에서 다시 읽는다
  */
-export type Flow = { points: CtxPoint[]; compactions: CompactEvent[]; questions?: number[] }
+export type Flow = { points: CtxPoint[]; compactions: CompactEvent[]; questions?: number[]; shared?: Record<string, number> }
 
 /** 점이 너무 많으면 앞을 버린다(그래프는 어차피 몇백 칸) */
 export const MAX_POINTS = 5000
@@ -70,33 +72,67 @@ export function recordsFromTranscript(text: string): FlowRecord[] {
     const m = r.message as { id?: string; model?: string; usage?: Record<string, unknown> } | undefined
     if (r.type !== 'assistant' || !m?.usage || !m.id || seen.has(m.id)) continue
     seen.add(m.id)
-    out.push({
-      kind: 'p',
-      atMs,
-      model: m.model ?? '?',
-      tokens: {
-        input_tokens: num(m.usage.input_tokens),
-        output_tokens: num(m.usage.output_tokens),
-        cache_read_input_tokens: num(m.usage.cache_read_input_tokens),
-        cache_creation_input_tokens: num(m.usage.cache_creation_input_tokens),
-      },
-    })
+    out.push({ kind: 'p', atMs, model: m.model ?? '?', tokens: tokensOfUsage(m.usage) })
   }
   return out
 }
 
-/** tools/scan-transcript.mjs 의 출력(줄마다 "p …" · "c …" · "q …") → 건들 */
+/**
+ * 기록 한 줄의 usage → 토큰. cache_creation 의 ephemeral_5m · 1h(쓰기 종류별 몫)가 있으면 같이 — 그 요청의 캐시 유지 시간이다
+ * (엔진이 요청마다 정한다: 구독 사용량 안 1시간, API 키 · 사용량 초과 5분 — 단정하지 않고 이 값으로 잰다)
+ */
+export function tokensOfUsage(u: Record<string, unknown>): Tokens {
+  const cc = (typeof u.cache_creation === 'object' && u.cache_creation !== null ? u.cache_creation : null) as Record<string, unknown> | null
+  return {
+    input_tokens: num(u.input_tokens),
+    output_tokens: num(u.output_tokens),
+    cache_read_input_tokens: num(u.cache_read_input_tokens),
+    cache_creation_input_tokens: num(u.cache_creation_input_tokens),
+    ...(cc ? { cache_creation_5m: num(cc.ephemeral_5m_input_tokens), cache_creation_1h: num(cc.ephemeral_1h_input_tokens) } : {}),
+  }
+}
+
+/**
+ * 기록 본문의 마지막 메인 요청이 쓴 캐시 종류(분) — 끝에서부터 찾는다. 쓰기가 없거나 종류를 모르는 요청은 건너뛴다(그 앞
+ * 요청으로). 도구 결과 안에 든 에이전트 usage 는 사용자 줄이라 안 걸린다. 못 찾으면 null
+ */
+export function lastMainTtl(text: string): number | null {
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!
+    if (!line.includes('"cache_creation"') || !line.includes('"assistant"')) continue
+    let r: Record<string, unknown>
+    try {
+      r = JSON.parse(line) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (r.isSidechain === true || r.type !== 'assistant') continue
+    const u = (r.message as { usage?: Record<string, unknown> } | undefined)?.usage
+    const ttl = u ? ttlOfTokens(tokensOfUsage(u)) : null
+    if (ttl !== null) return ttl
+  }
+  return null
+}
+
+/** tools/scan-transcript.mjs 의 출력(줄마다 "p …" · "c …" · "q …") → 건들. p 줄 끝 둘(5분 · 1시간 쓰기)은 없을 수 있다 */
 export function recordsFromLines(text: string): FlowRecord[] {
   const out: FlowRecord[] = []
   for (const line of text.split('\n')) {
     const f = line.trim().split(/\s+/)
     if (f[0] === 'p' && f.length >= 7) {
-      const [, at, input, output, read, write, model] = f
+      const [, at, input, output, read, write, model, w5, w1] = f
       out.push({
         kind: 'p',
         atMs: Number(at) || 0,
         model: model!,
-        tokens: { input_tokens: Number(input) || 0, output_tokens: Number(output) || 0, cache_read_input_tokens: Number(read) || 0, cache_creation_input_tokens: Number(write) || 0 },
+        tokens: {
+          input_tokens: Number(input) || 0,
+          output_tokens: Number(output) || 0,
+          cache_read_input_tokens: Number(read) || 0,
+          cache_creation_input_tokens: Number(write) || 0,
+          ...(w5 !== undefined && w1 !== undefined ? { cache_creation_5m: Number(w5) || 0, cache_creation_1h: Number(w1) || 0 } : {}),
+        },
       })
     } else if (f[0] === 'c' && f.length >= 4) {
       out.push({ kind: 'c', atMs: Number(f[1]) || 0, trigger: f[2]!, pre: Number(f[3]) || 0 })
@@ -107,9 +143,84 @@ export function recordsFromLines(text: string): FlowRecord[] {
   return out
 }
 
+/**
+ * 기록으로 "그 사이 캐시가 식었나" 를 볼 때의 간격: 캐시 유지 시간 + 여유(1시간이면 5분, 5분이면 1분). 시각은 요청 · 컴팩트가
+ * 끝난 때라 유지 시간 직전에 시작한 긴 요청(컴팩트)은 캐시를 다 읽고도 그보다 떨어져 보인다 — 그런 요청의 읽기를 공통 앞부분으로
+ * 적으면 대화 전체가 공통 앞부분이 되고, 그런 컴팩트를 정가로 세면 7배 비싸다. 공통 앞부분 · 요약 · 지난 컴팩트 값이 모두 이
+ * 간격을 쓴다. ttl = 앞 요청이 쓴 캐시의 유지 시간(점의 ttl — 모르면 60)
+ */
+export function coldGapMs(ttl: number = CACHE_TTL_MIN): number {
+  return (ttl + (ttl >= 60 ? 5 : 1)) * 60_000
+}
+
+/** 1시간 캐시의 간격(옛 이름) */
+export const COLD_GAP_MS = coldGapMs(CACHE_TTL_MIN)
+
+/** 점이 쓴 캐시의 유지 시간 — 모르면 60 */
+const ttlAt = (p: CtxPoint | undefined) => (p?.ttl === 5 ? 5 : CACHE_TTL_MIN)
+
+/**
+ * 이 요청 앞에 캐시가 식었나: 세션 첫 요청, 앞 활동(요청 · 컴팩트)에서 COLD_GAP_MS 가 넘게 지남, 앞 요청과 모델이 다름(컴팩트가
+ * 사이에 없을 때 — 컴팩트 뒤 첫 요청은 컴팩트 요청이 데운 앞부분을 읽는다)
+ */
+export function isColdStart(flow: Flow, atMs: number, model: string): boolean {
+  const last = flow.points[flow.points.length - 1]
+  if (!last) return flow.compactions.length === 0
+  const lastC = flow.compactions[flow.compactions.length - 1]
+  const prevAt = Math.max(last.atMs, lastC?.atMs ?? 0)
+  if (prevAt > 0 && atMs - prevAt > coldGapMs(ttlAt(last))) return true
+  const isAfterCompact = lastC !== undefined && lastC.index >= flow.points.length
+  return !isAfterCompact && last.model !== undefined && model !== '?' && modelKey(last.model) !== modelKey(model)
+}
+
+/**
+ * 캐시가 식은 뒤 첫 요청이면 그 요청이 캐시에서 읽은 크기를 그 모델의 공통 앞부분으로 적는다 — 시스템 · 도구처럼 같은
+ * 모델의 다른 세션이 데워 둔 몫. 식은 캐시 셈(cost.ts rewriteAllUsd)이 이만큼은 읽기로 센다. 요청을 잇기 전에 부른다
+ */
+export function noteShared(flow: Flow, atMs: number, model: string, read: number): void {
+  if (!model || model === '?' || !isColdStart(flow, atMs, model)) return
+  flow.shared = { ...flow.shared, [modelKey(model)]: Math.max(0, read) }
+}
+
+/** 요청당 실측: 이만큼 이상 모여야 쓴다(그 전엔 컨텍스트 × 읽기 요율 어림) */
+export const PER_CALL_MIN = 3
+/** 요청당 실측에 쓰는 최근 요청 수 */
+const PER_CALL_WINDOW = 20
+
+function median(values: readonly number[]): number {
+  const v = [...values].sort((a, b) => a - b)
+  const h = Math.floor(v.length / 2)
+  return v.length % 2 === 1 ? v[h]! : (v[h - 1]! + v[h]!) / 2
+}
+
+/** 그 모델 요청의 최근 점들(오래된 것부터) — 컴팩트를 건너도 된다(읽기 말고 드는 값은 크기와 거의 상관없다) */
+function recentPointsOf(flow: Flow, model: string): CtxPoint[] {
+  return flow.points.filter(p => p.model !== undefined && modelKey(p.model) === modelKey(model)).slice(-PER_CALL_WINDOW)
+}
+
+/**
+ * 요청마다 읽기 말고 드는 값(새로 쓰기 · 출력 · 입력)의 가운데 값. "요청당"(9a) = 지금 크기 × 읽기 요율 + 이 값 — 예전엔 읽기뿐이라
+ * Opus 5.5 · Sonnet 5.5 가 같은 값이었다(읽기 요율이 둘 다 $0.20 — 동료). 실제 차이는 새로 쓰기 · 출력(Opus 가 2배)에 있다.
+ * 요청 값을 그대로 가운데 값으로 하면 컴팩트 뒤 크기가 줄어도 한동안 옛 크기 값이 남아(또는 3개 모이기 전 읽기 어림으로 떨어져)
+ * 숫자가 튀었다 — 크기 몫은 지금 크기로, 나머지만 실측. 가운데 값이라 다시 쓰기 같은 튀는 값에 안 끌린다. 설정 표 "질문 1개"(9b)도
+ * 이 값을 쓴다. 요율을 모르면 · 모자라면 null
+ */
+export function extraPerCall(flow: Flow, model: string): number | null {
+  const pts = recentPointsOf(flow, model)
+  if (pts.length < PER_CALL_MIN) return null
+  const r = ratesFor(model, 0)
+  if (!r) return null
+  return median(pts.map(p => Math.max(0, p.usd - ((ratesFor(model, p.ctx) ?? r).read * p.ctx) / 1e6)))
+}
+
+/** 그 모델의 공통 앞부분(noteShared). 못 쟀으면 0 — 식은 캐시는 전부 다시 쓰는 것으로 센다 */
+export function sharedFor(flow: Pick<Flow, 'shared'>, model: string): number {
+  return flow.shared?.[modelKey(model)] ?? 0
+}
+
 /** 건들 → 흐름. 값은 요청마다 그 모델 요율로 */
 export function flowFromRecords(records: readonly FlowRecord[]): Flow {
-  const flow: Flow = { points: [], compactions: [], questions: [] }
+  const flow: Flow = { points: [], compactions: [], questions: [], shared: {} }
   for (const r of records) {
     if (r.kind === 'q') {
       flow.questions!.push(r.atMs)
@@ -125,7 +236,14 @@ export function flowFromRecords(records: readonly FlowRecord[]): Flow {
     const t = r.tokens
     const ctx = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
     if (ctx <= 0) continue // 오류 · 합성 응답
-    addPoint(flow, { atMs: r.atMs, ctx, usd: costOf(t, r.model)?.usd ?? 0, ...(r.model && r.model !== '?' ? { model: r.model } : {}) })
+    noteShared(flow, r.atMs, r.model, t.cache_read_input_tokens)
+    // 쓰기 종류를 모르는 요청(쓰기 없음)은 앞 요청의 유지 시간으로 값을 센다
+    const ttl = ttlOfTokens(t) ?? ttlAt(flow.points[flow.points.length - 1])
+    addPoint(
+      flow,
+      { atMs: r.atMs, ctx, usd: costOf(t, r.model, ttl)?.usd ?? 0, ...(r.model && r.model !== '?' ? { model: r.model } : {}), ...(ttlOfTokens(t) !== null ? { ttl: ttlOfTokens(t)! } : {}) },
+      t.input_tokens + t.cache_creation_input_tokens,
+    )
   }
   return trim(flow)
 }
@@ -136,7 +254,8 @@ export function scanTranscript(text: string): Flow {
 
 /**
  * 세션별 저장 파일: 다시 불러올 때마다 큰 기록을 다시 읽지 않게. v2 = 점마다 모델(모델 바꾼 시점을 그린다) —
- * 모델 id 는 표(m)에 한 번만 적고 점엔 그 번호(-1 = 모름). 점마다 id 를 쓰면 파일이 몇 배다. v3 = 질문 시작 시각(q)
+ * 모델 id 는 표(m)에 한 번만 적고 점엔 그 번호(-1 = 모름). 점마다 id 를 쓰면 파일이 몇 배다. v3 = 질문 시작 시각(q),
+ * v4 = 모델별 공통 앞부분(s), v5 = 점마다 캐시 유지 시간(다섯째 칸, 모르면 없음)
  */
 export function serializeFlow(flow: Flow): string {
   const models: string[] = []
@@ -147,24 +266,28 @@ export function serializeFlow(flow: Flow): string {
     models.push(model)
     return models.length - 1
   }
-  const p = flow.points.map(pt => [pt.atMs, pt.ctx, Math.round(pt.usd * 1e6) / 1e6, idOf(pt.model)])
-  return JSON.stringify({ v: 3, m: models, p, c: flow.compactions, ...(flow.questions ? { q: flow.questions } : {}) })
+  const p = flow.points.map(pt => {
+    const row = [pt.atMs, pt.ctx, Math.round(pt.usd * 1e6) / 1e6, idOf(pt.model)]
+    return pt.ttl === 5 || pt.ttl === 60 ? [...row, pt.ttl] : row
+  })
+  return JSON.stringify({ v: 5, m: models, p, c: flow.compactions, ...(flow.questions ? { q: flow.questions } : {}), ...(flow.shared ? { s: flow.shared } : {}) })
 }
 
 /**
- * v1(모델 없음) · v2(질문 없음) · v3 를 읽는다. v1 이면 점에 모델이, v1 · v2 면 질문이 없다 — lacksModels ·
- * questions 없음으로 보고 기록에서 다시 읽는다
+ * v1(모델 없음) · v2(질문 없음) · v3(공통 앞부분 없음) · v4(유지 시간 없음) · v5 를 읽는다. v1 이면 점에 모델이, v1 · v2 면
+ * 질문이, v1~v4 면 공통 앞부분이 없다고 본다 — lacksModels · questions · shared 없음으로 보고 기록에서 다시 읽는다(v4 는 점마다
+ * 유지 시간을 다시 재려고 — 5분 캐시 세션의 식은 캐시 판단이 그 값을 쓴다)
  */
 export function parseFlowFile(text: string): Flow | null {
   try {
-    const raw = JSON.parse(text) as { v?: number; m?: unknown; p?: unknown; c?: unknown; q?: unknown }
-    if ((raw.v !== 1 && raw.v !== 2 && raw.v !== 3) || !Array.isArray(raw.p) || !Array.isArray(raw.c)) return null
+    const raw = JSON.parse(text) as { v?: number; m?: unknown; p?: unknown; c?: unknown; q?: unknown; s?: unknown }
+    if ((raw.v !== 1 && raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5) || !Array.isArray(raw.p) || !Array.isArray(raw.c)) return null
     const models = Array.isArray(raw.m) ? (raw.m as unknown[]).map(x => (typeof x === 'string' ? x : '')) : []
     const points = (raw.p as unknown[])
       .filter((x): x is number[] => Array.isArray(x) && x.length >= 3)
-      .map(([atMs, ctx, usd, mi]) => {
+      .map(([atMs, ctx, usd, mi, ttl]) => {
         const model = typeof mi === 'number' && mi >= 0 ? models[mi] : undefined
-        return { atMs: num(atMs), ctx: num(ctx), usd: num(usd), ...(model ? { model } : {}) }
+        return { atMs: num(atMs), ctx: num(ctx), usd: num(usd), ...(model ? { model } : {}), ...(ttl === 5 || ttl === 60 ? { ttl } : {}) }
       })
     const compactions = (raw.c as Partial<CompactEvent>[])
       .filter(c => c && typeof c.index === 'number' && typeof c.before === 'number')
@@ -175,11 +298,16 @@ export function parseFlowFile(text: string): Flow | null {
         after: typeof c.after === 'number' ? c.after : null,
         costUsd: typeof c.costUsd === 'number' ? c.costUsd : null,
         index: num(c.index),
+        ...(typeof c.summary === 'number' ? { summary: c.summary } : {}),
       }))
       // 중복 컴팩트를 걸러내기 전에 저장한 파일도 고쳐 읽는다(같은 시각 · 직전 크기면 하나)
       .filter((c, i, all) => all.findIndex(o => o.atMs === c.atMs && o.before === c.before) === i)
     const questions = Array.isArray(raw.q) ? (raw.q as unknown[]).map(num) : undefined
-    return { points, compactions, ...(questions ? { questions } : {}) }
+    const shared =
+      raw.v === 5 && raw.s !== null && typeof raw.s === 'object' && !Array.isArray(raw.s)
+        ? Object.fromEntries(Object.entries(raw.s as Record<string, unknown>).map(([k, v]) => [k, num(v)]))
+        : undefined
+    return { points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}) }
   } catch {
     return null
   }
@@ -227,11 +355,20 @@ export function withQuestion(flow: Flow, atMs: number): Flow {
   return { ...flow, questions: [...(flow.questions ?? []), atMs] }
 }
 
-/** 점 하나를 잇는다. 막 지난 컴팩트의 "직후" 크기는 그 뒤 첫 점이다 */
-export function addPoint(flow: Flow, p: CtxPoint): void {
+/**
+ * 점 하나를 잇는다. 막 지난 컴팩트의 "직후" 크기는 그 뒤 첫 점이고, 요약(새로 쓴 몫)은 그 점이 새로 낸 토큰 fresh(input +
+ * cache_creation). 안 적는 때: 캐시가 식은 뒤의 첫 점(전부 다시 써 요약보다 크다), 컴팩트 뒤 새 질문 없이 이어진 점(질문 도중
+ * 자동 컴팩트 — 그 점은 밀린 도구 결과까지 새로 써 요약보다 크다)
+ */
+export function addPoint(flow: Flow, p: CtxPoint, fresh?: number): void {
   flow.points.push(p)
   const last = flow.compactions[flow.compactions.length - 1]
-  if (last && last.after === null && last.index === flow.points.length - 1) last.after = p.ctx
+  if (last && last.after === null && last.index === flow.points.length - 1) {
+    last.after = p.ctx
+    const lastQ = flow.questions?.[flow.questions.length - 1]
+    const isNewQuestion = lastQ !== undefined && lastQ >= last.atMs
+    if (fresh !== undefined && isNewQuestion && p.atMs - last.atMs <= coldGapMs(ttlAt(p))) last.summary = Math.min(fresh, p.ctx)
+  }
 }
 
 /** 컴팩트 뒤 아직 요청이 없어 직후 크기를 모르는 컴팩트(맨 마지막 것만). 없으면 null */
@@ -250,10 +387,15 @@ export function lastCtxOf(flow: Flow): number | null {
   return flow.compactions.some(c => c.index >= flow.points.length) ? null : last.ctx
 }
 
-/** 살아 있는 세션: 점 하나를 이은 새 흐름(원본은 그대로) */
-export function withPoint(flow: Flow, p: CtxPoint): Flow {
+/**
+ * 살아 있는 세션: 점 하나를 이은 새 흐름(원본은 그대로). t = 그 요청의 토큰 — 캐시 읽기로 공통 앞부분(noteShared)을, 새로 낸
+ * 몫으로 컴팩트 요약(addPoint)을 잰다. 점의 ttl 은 부르는 쪽이 아는 값(기록에서 잰 세션 유지 시간)이면 넣는다. isWhole = 흐름이 세션 처음부터 다 있다 — 기록을 못 읽었거나 아직 읽는 중이면 점이 비어
+ * 다시 연(캐시가 살아 있는) 세션의 첫 요청도 "세션 첫 요청" 으로 보여 대화 전체 읽기가 공통 앞부분이 된다
+ */
+export function withPoint(flow: Flow, p: CtxPoint, t?: Tokens, isWhole = true): Flow {
   const next: Flow = { ...flow, points: [...flow.points], compactions: flow.compactions.map(c => ({ ...c })) }
-  addPoint(next, p)
+  if (t && p.model && isWhole) noteShared(next, p.atMs, p.model, t.cache_read_input_tokens)
+  addPoint(next, p, t ? t.input_tokens + t.cache_creation_input_tokens : undefined)
   return trim(next)
 }
 
@@ -284,7 +426,7 @@ export type CompactEffect = {
   model: string
   /** 줄인 양(직전 − 직후) */
   removed: number
-  /** 컴팩트 요청 + 직후 요약 다시 쓰기. isEstimated = 컴팩트 요청 값을 못 재서 정가 입력으로 셈 */
+  /** 컴팩트 요청 + 직후 요약 다시 쓰기. isEstimated = 컴팩트 요청 값을 못 재서 그때 캐시 상태로 추정 */
   costUsd: number
   isEstimated: boolean
   /** 그 뒤(다음 컴팩트 전까지) 요청 수와, 줄인 양을 다시 읽지 않아 아낀 값 */
@@ -299,7 +441,9 @@ export type CompactEffect = {
  * 컴팩트마다의 효과(직후 크기를 아직 모르면 아낀 값 0). 든 값은 그 컴팩트 때 모델 요율, 아낀 값은 그 뒤 요청마다
  * 그 요청의 모델 읽기 요율로 — 예전엔 전부 지금 모델 요율로 다시 재서 모델을 바꿀 때마다 지난 컴팩트 값이 바뀌었다.
  * model = 점에 모델 기록이 없을 때 쓰는 모델(지금 모델). 엔진이 값을 안 준 컴팩트(이 mod 전 · 기록으로만 안 것)는 추정 —
- * est.output = 요약 출력 토큰, est.summaryOf = 그 컴팩트의 요약 크기(새로 쓴 몫)
+ * est.output = 요약 출력 토큰, est.summaryOf = 그 컴팩트의 요약 크기(새로 쓴 몫).
+ * 추정은 그때 캐시 상태로: 앞 요청에서 캐시 시간 안이면 컴팩트 요청이 대화 캐시를 읽고(실측 98.6% 읽기), 지났으면 공통
+ * 앞부분만 읽고 나머지는 정가 입력. 0.3.x 는 늘 정가로 세 282k → 73k 컴팩트가 "손해 $0.20" 이었다(동료, 캐시 읽기면 이득)
  */
 export function compactEffects(
   flow: Flow,
@@ -316,8 +460,15 @@ export function compactEffects(
     if (!r) {
       return { event, model: atModel, removed, costUsd: event.costUsd ?? 0, isEstimated: event.costUsd === null, requestsAfter, savedUsd: 0, netUsd: 0, breakEvenLeft: null }
     }
-    const request = event.costUsd ?? (event.before * r.input + est.output * r.output) / 1e6
-    const costUsd = request + (Math.min(est.summaryOf(event), after) * r.write1h) / 1e6
+    const prevAt = Math.max(flow.points[event.index - 1]?.atMs ?? 0, i > 0 ? flow.compactions[i - 1]!.atMs : 0)
+    // 컴팩트 앞뒤 요청의 모델이 달라도 캐시 상태로 치지 않는다 — 바꾸고 컴팩트(새 모델엔 캐시 없음)인지 컴팩트하고 바꿨는지(캐시
+    // 있음) 기록으로는 못 가린다
+    const isWarm = prevAt > 0 && event.atMs - prevAt <= coldGapMs(ttlAt(flow.points[event.index - 1]))
+    const s = isWarm ? event.before : Math.min(sharedFor(flow, atModel), event.before)
+    const request = event.costUsd ?? ((event.before - s) * r.input + s * r.read + est.output * r.output) / 1e6
+    // 요약은 컴팩트 뒤 첫 요청(메인 대화)이 쓴다 — 그 요청의 유지 시간 요율(모르면 앞 요청 것)
+    const summaryTtl = flow.points[event.index]?.ttl ?? ttlAt(flow.points[event.index - 1])
+    const costUsd = request + (Math.min(est.summaryOf(event), after) * writeRate(r, summaryTtl)) / 1e6
     // 아낀 값: 줄인 양을 그 뒤 요청마다 다시 읽지 않은 값 — 요청마다 그 요청 모델의 읽기 요율
     const readOf = (p: CtxPoint | undefined) => (ratesFor(p?.model ?? atModel, p?.ctx ?? after) ?? r).read
     let savedUsd = 0
@@ -356,7 +507,7 @@ export function timingSvg(
 ): string {
   const barY = 4
   const barH = 8
-  // 끝 선은 폭의 80% 자리 — 오른쪽에 끝 이름("400k 늦어짐")이 들어갈 자리를 둔다
+  // 끝 선은 폭의 80% 자리 — 끝을 넘긴 만큼이 보일 자리를 둔다
   const top = Math.max(marks.cut * 1.25, ctx * 1.04)
   const x = (v: number) => Math.max(0, Math.min(width, (v / top) * width))
   let body = `<clipPath id="timing-clip"><rect x="0" y="${barY}" width="${width}" height="${barH}" rx="4"/></clipPath><g clip-path="url(#timing-clip)">`
@@ -370,17 +521,30 @@ export function timingSvg(
   const line = (v: number, color: string) =>
     `<rect x="${(x(v) - 1.5).toFixed(1)}" y="0" width="3" height="${barY * 2 + barH}" rx="1" fill="${color}"/>`
   body += line(marks.warn, LEVEL_HEX.warn) + line(marks.cut, LEVEL_HEX.cut)
-  // 이름: 시작은 선 왼쪽으로, 끝은 선 오른쪽으로 — 두 선이 가까워도 겹치지 않게. 자리가 모자라면 반대쪽으로
+  // 이름: 시작은 막대 왼쪽 끝에 왼쪽 정렬, 끝은 막대 오른쪽 끝에 오른쪽 정렬 — 어느 선인지는 색(노랑 · 빨강)으로 잇는다.
+  // 예전엔 선 옆에 붙였는데 좁은 패널에선 끝 이름이 오른쪽 자리가 모자라 선 왼쪽으로 뒤집혀 시작 이름과 겹쳤다("250k 좋은3때k
+  // 늦어짐", 동료). 둘이 그래도 닿으면(아주 좁음) 크기만 남긴다
   const fontPx = 10
   const textW = (s: string) => [...s].reduce((w, ch) => w + (ch.charCodeAt(0) >= 0x1100 ? fontPx : fontPx * 0.6), 0)
   const y = TIMING_H - 2
   const text = (at: number, anchor: string, color: string, s: string) =>
     `<text x="${at.toFixed(1)}" y="${y}" text-anchor="${anchor}" font-size="${fontPx}" font-family="sans-serif" fill="${color}">${escapeXml(s)}</text>`
-  const warnX = x(marks.warn)
-  const cutX = x(marks.cut)
-  body += warnX >= textW(marks.warnName) ? text(warnX, 'end', LEVEL_HEX.warn, marks.warnName) : text(warnX, 'start', LEVEL_HEX.warn, marks.warnName)
-  body += cutX + textW(marks.cutName) <= width ? text(cutX, 'start', LEVEL_HEX.cut, marks.cutName) : text(cutX, 'end', LEVEL_HEX.cut, marks.cutName)
+  const [warnName, cutName] = timingNames(marks.warnName, marks.cutName, width, textW)
+  body += text(0, 'start', LEVEL_HEX.warn, warnName) + text(width, 'end', LEVEL_HEX.cut, cutName)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${TIMING_H}" viewBox="0 0 ${width} ${TIMING_H}">${body}</svg>`
+}
+
+/** 시점 막대 이름 사이 최소 틈(이름 폭 단위와 같다 — Svg 는 px, 터미널은 칸) */
+const NAME_GAP = 8
+
+/**
+ * 시작 · 끝 이름이 width 에 나란히 들지 않으면 앞 낱말(크기 "250k")만 남긴다. 그래도 안 들면 그대로(줄이 넘친다 — 폭 120px
+ * 아래는 그리지 않는다). w = 글 폭 재는 법(Svg 는 px, 터미널은 칸)
+ */
+export function timingNames(warnName: string, cutName: string, width: number, w: (s: string) => number): [string, string] {
+  if (w(warnName) + NAME_GAP + w(cutName) <= width) return [warnName, cutName]
+  const short = (s: string) => s.split(' ')[0] ?? s
+  return [short(warnName), short(cutName)]
 }
 
 export const COMPACT_HEX = '#3fb6c6'
@@ -533,12 +697,16 @@ export function afterInNowTokens(flow: Flow, after: number): number {
 }
 
 /**
- * 컴팩트가 남긴 요약 크기 = 직후 크기 − 처음부터 있던 몫(first = 기록의 첫 요청: 시스템 · 도구 · 지시문). 요약은 컴팩트마다
+ * 컴팩트가 남긴 요약 크기 = 컴팩트 뒤 첫 요청이 새로 낸 몫(c.summary). 못 잰 컴팩트는 직후 크기 − 처음부터 있던 몫(first =
+ * 기록의 첫 요청: 시스템 · 도구 · 지시문 · 첫 질문 — 첫 질문만큼 작게 나오는 어림). 요약은 컴팩트마다
  * 앞 요약까지 다시 써 쌓이지 않고 바뀐다(이 세션 28k → 24k → 22k → 25k → 32k → 19k). 처음부터 있던 몫을 모르거나
  * (first = null · 직후보다 큼 — 기록이 세션 처음부터가 아님), 직후를 아직 못 쟀거나, 첫 요청과 모델이 달라(모델마다 세는
  * 값이 다르다) 견줄 수 없으면 null
  */
 export function compactSummary(flow: Flow, c: CompactEvent, first: CtxPoint | null): number | null {
+  // 잰 값(컴팩트 뒤 첫 요청이 새로 낸 몫)이 있으면 그것 — "직후 − 첫 요청" 은 첫 요청의 첫 질문 글만큼 작게 나왔다(동료 "요약
+  // 1k 포함", 작성자 세션 15번: 어림 0.5k~35k 대 잰 값 7.9k~36k, 2026-10-12)
+  if (typeof c.summary === 'number' && c.after !== null) return Math.min(c.summary, c.after)
   if (!first || c.after === null || c.after <= first.ctx) return null
   const model = flow.points[c.index]?.model ?? flow.points[c.index - 1]?.model
   if (model && first.model && modelKey(model) !== modelKey(first.model)) return null

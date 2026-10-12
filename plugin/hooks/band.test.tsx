@@ -5,9 +5,11 @@ const BAND = { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 80 
 
 /** 설정 탭 칸을 다 펼친다 — 처음엔 컴팩트 시점 · 문구만 펼침(바 · 언어는 접혀 제목 줄에 지금 값). 이미 펼친 칸은 둔다 */
 async function openSettings(pane: { find: (q: { key: string; text: string }) => Promise<unknown>; press: (q: { key: string }) => Promise<unknown> }) {
-  for (const k of ['set-compact', 'set-tidy', 'set-band', 'set-pane', 'set-lang']) {
+  // 0.4.0: 바 · 패널 칸은 맨 위 "화면" 칸의 [세부] 안
+  for (const k of ['set-screen', 'set-window', 'set-compact', 'set-tidy', 'set-cache', 'set-lang']) {
     if (await pane.find({ key: `fold-${k}`, text: '▸' })) await pane.press({ key: `fold-${k}` })
   }
+  if (!(await pane.find({ key: 'session-colors', text: '' })) && (await pane.find({ key: 'screen-more', text: '' }))) await pane.press({ key: 'screen-more' })
 }
 
 test('데스크톱 띠: 컴팩트 → 실행/취소 → 실행이면 /compact 명령을 돌린다', async ($, on) => {
@@ -155,14 +157,16 @@ test('값이 있을 때: 띠 두 줄(한도 · 예상)과 사용량 패널이 �
   // "세션 누적" 만으론 무엇이 쌓인 건지 흐려 "이 세션 누적 비용". "API 정가 환산" 은 모든 금액에 걸려 맨 아래 요율 줄로
   expect(await pane.find({ text: /^이 세션 누적 비용 \$\d+\.\d\d$/ })).not.toBe(undefined)
   expect(await pane.find({ text: /^금액은 모두 API 정가 환산입니다/ })).not.toBe(undefined)
-  // 본문에도 같은 값 줄(다음 요청 위). 카드는 접을 수 있다(간략 보기): 접으면 제목 줄 요약만 — 앞에 지금 값(컨텍스트 크기)
-  expect(await pane.find({ key: 'k-total' })).not.toBe(undefined)
+  // 본문엔 같은 값 줄을 두지 않는다(0.4.0 — 같은 값은 한 곳). 카드는 접을 수 있다(간략 보기): 접으면 제목 줄 요약만 — 앞에 지금
+  // 값(컨텍스트 크기)
+  expect(await pane.find({ key: 'k-total' })).toBe(undefined)
+  expect(await pane.find({ key: 'k-call' })).not.toBe(undefined)
   await pane.press({ key: 'fold-s-now' })
   expect(await pane.find({ key: 'fold-s-now', text: '▸' })).not.toBe(undefined)
-  expect(await pane.find({ key: 'k-total' })).toBe(undefined)
+  expect(await pane.find({ key: 'k-call' })).toBe(undefined)
   expect(await pane.find({ text: /^컨텍스트 ~?\d+k · 이 세션 누적 비용 \$\d+\.\d\d$/ })).not.toBe(undefined)
   await pane.press({ key: 'fold-s-now' })
-  expect(await pane.find({ key: 'k-total' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'k-call' })).not.toBe(undefined)
   // 질문별 비용 · 컴팩트 카드도 같은 버튼으로 접는다
   await pane.press({ key: 'fold-s-compact' })
   expect(await pane.find({ key: 'f-head' })).toBe(undefined)
@@ -457,42 +461,44 @@ test('설정: 컴팩트 시점(비용표 크기 띠 / 직접 지정 입력칸, [
   })
   // 설정 명령은 사용량 패널의 설정 탭을 연다(사용량 내용 대신 설정만)
   expect(await pane.find({ key: 'pane-settings', text: '✓ ⚙ 설정' })).not.toBe(undefined)
-  // 처음엔 컴팩트 시점 · 문구만 펼침 — 바 · 언어는 접혀 제목 줄에 지금 값, 캐시 경고는 접지 않는다
-  expect(await pane.find({ key: 'cmp-mode' })).not.toBe(undefined)
-  expect(await pane.find({ key: 'tidy-default' })).not.toBe(undefined)
-  expect(await pane.find({ key: 'cache-up' })).not.toBe(undefined)
-  expect(await pane.find({ key: 'fold-set-cache' })).toBe(undefined)
-  expect(await pane.find({ key: 'vis-always' })).toBe(undefined)
+  // 처음엔 맨 위 "화면" 칸만 펼침(0.4.0 설정 정리) — 컴팩트 시점 · 문구 · 언어는 접혀 제목 줄에 지금 값, 캐시 경고는 접지 않는다
+  expect(await pane.find({ key: 'screen-basic' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'cmp-mode' })).toBe(undefined)
+  expect(await pane.find({ key: 'tidy-default' })).toBe(undefined)
+  // 캐시 칸도 접힌다(유지 시간 · 정하는 곳 · 경고 둘 · 바꾸기로 늘었다)
+  expect(await pane.find({ key: 'cache-up' })).toBe(undefined)
+  expect(await pane.find({ key: 'fold-set-cache' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'session-colors' })).toBe(undefined)
   expect(await pane.find({ key: 'lang-ko' })).toBe(undefined)
   await openSettings(pane)
   expect(await pane.find({ text: '질문별 비용' })).toBe(undefined)
-  // 처음은 구간 방식 · 처음 설치 값 구간 25만 ~ 30만. 0~100만 비용표의 크기 띠 줄마다 버튼 하나 — 직접 지정의 ◀ ▶ 는 안
+  // 처음은 구간 방식 · 처음 설치 값 구간 20만 ~ 25만. 0~100만 비용표의 크기 띠 줄마다 버튼 하나 — 직접 지정의 ◀ ▶ 는 안
   // 보인다. 직후 크기를 몰라 최적 대비는 비어 있다. 지금 컨텍스트(30만)는 그 자리에 "지금" 줄로
   expect(await pane.find({ key: 'cmp-range', text: '✓ 구간' })).not.toBe(undefined)
   // 적용 중인 값은 카드 맨 위 한 줄(강조 색) + 표의 그 줄 끝 "적용 중" — 녹색 "지금 구간" 줄은 없다
   expect(await pane.find({ key: 'cmp-applied' })).not.toBe(undefined)
-  expect((await pane.find({ type: 'Text', text: '구간 250k ~ 300k' }))?.props.color).toBe('suggestion')
-  expect(await pane.find({ key: 'cmp-on-250000' })).not.toBe(undefined)
+  expect((await pane.find({ type: 'Text', text: '구간 200k ~ 250k' }))?.props.color).toBe('suggestion')
+  expect(await pane.find({ key: 'cmp-on-200000' })).not.toBe(undefined)
   expect(await pane.find({ text: /^지금 구간/ })).toBe(undefined)
   expect(await pane.find({ key: 'cmp-t-head' })).not.toBe(undefined)
-  expect((await pane.find({ key: 'cmp-band-250000' }))?.props.variant).toBe('primary')
-  expect((await pane.find({ key: 'cmp-t-250000' }))?.props.borderStyle).toBe('round')
+  expect((await pane.find({ key: 'cmp-band-200000' }))?.props.variant).toBe('primary')
+  expect((await pane.find({ key: 'cmp-t-200000' }))?.props.borderStyle).toBe('round')
   // 띠 버튼 이름 길이가 같다(숫자 폭 공백 U+2007 로 맞춤) — 버튼 줄이 들쭉날쭉했다
   const nameOf = async (k: number) => String((await pane.find({ key: `cmp-band-${k}` }))?.props.label)
   expect((await nameOf(700_000)).length).toBe((await nameOf(250_000)).length)
   // 앞에 고르기 표시 ○(고른 줄 ◉) — 이름만 있으니 버튼처럼 안 느껴졌다
   expect(/^○\s+700k ~ 1M\s*$/.test(await nameOf(700_000))).toBe(true)
-  expect((await nameOf(250_000)).startsWith('◉')).toBe(true)
+  expect((await nameOf(200_000)).startsWith('◉')).toBe(true)
   // 띠의 요청 1회 · 캐시 식으면(Opus 5.5: 15만 ~ 20만 × $0.20 · $8)
   expect(await pane.find({ text: '$0.03~0.04' })).not.toBe(undefined)
   expect(await pane.find({ text: '$1.20~1.60' })).not.toBe(undefined)
-  // 지금 컨텍스트는 맨 위 적용 중 줄에 크기만(적용 중 기준 색: 끝 300k 에 닿아 빨강) — 표 사이에 끼운 줄은 띠 버튼 줄처럼
+  // 지금 컨텍스트는 맨 위 적용 중 줄에 크기만(적용 중 기준 색: 끝 250k 을 넘어 빨강) — 표 사이에 끼운 줄은 띠 버튼 줄처럼
   // 생겨 눌러 보게 됐다
   expect(await pane.find({ key: 'cmp-t-now' })).toBe(undefined)
   expect(await pane.find({ type: 'Text', text: '현재 컨텍스트' })).not.toBe(undefined)
   expect((await pane.find({ type: 'Text', text: /^300k$/ }))?.props.color).toBe('red')
-  // 그 옆에 지금 크기에서 요청 1회(Opus 5.5: 30만 × $0.20 = $0.06, 컨텍스트와 같은 색)
-  expect(await pane.find({ type: 'Text', text: '요청 1회' })).not.toBe(undefined)
+  // 그 옆에 지금 크기에서 읽기 1회(Opus 5.5: 30만 × $0.20 = $0.06, 컨텍스트와 같은 색) — 바의 "요청당"(실제 값, 9a)과 이름을 가른다
+  expect(await pane.find({ type: 'Text', text: '읽기 1회' })).not.toBe(undefined)
   expect((await pane.find({ type: 'Text', text: /^\$0\.06$/ }))?.props.color).toBe('red')
   expect(await pane.find({ key: 'cmp-down' })).toBe(undefined)
   expect(await pane.find({ key: 'cmp-apply' })).toBe(undefined)
@@ -509,26 +515,26 @@ test('설정: 컴팩트 시점(비용표 크기 띠 / 직접 지정 입력칸, [
   expect(store.get('settings')).toBe(undefined)
   expect((await pane.find({ key: 'cmp-band-300000' }))?.props.variant).toBe('primary')
   expect((await pane.find({ key: 'cmp-t-300000' }))?.props.borderStyle).toBe('round')
-  expect(await pane.find({ text: '구간 250k ~ 300k → 구간 300k ~ 400k 로 바꿀까요?' })).not.toBe(undefined)
+  expect(await pane.find({ text: '구간 200k ~ 250k → 구간 300k ~ 400k 로 바꿀까요?' })).not.toBe(undefined)
   // 고르는 동안에도 실제 적용 구간은 표에 "적용 중"
-  expect(await pane.find({ key: 'cmp-on-250000' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'cmp-on-200000' })).not.toBe(undefined)
   expect(await pane.find({ key: 'cmp-on-300000' })).toBe(undefined)
   expect(await pane.find({ key: 'cmp-apply' })).not.toBe(undefined)
   await pane.press({ key: 'cmp-cancel' })
   expect(await pane.find({ key: 'cmp-apply' })).toBe(undefined)
-  expect((await pane.find({ key: 'cmp-band-250000' }))?.props.variant).toBe('primary')
-  expect((await pane.find({ key: 'cmp-t-250000' }))?.props.borderStyle).toBe('round')
+  expect((await pane.find({ key: 'cmp-band-200000' }))?.props.variant).toBe('primary')
+  expect((await pane.find({ key: 'cmp-t-200000' }))?.props.borderStyle).toBe('round')
   // 띠를 고르고 적용 — 모든 세션이 읽는 저장소에 남는다
-  await pane.press({ key: 'cmp-band-200000' })
+  await pane.press({ key: 'cmp-band-150000' })
   await pane.press({ key: 'cmp-apply' })
-  expect(saved()).toMatchObject({ follow: true, rangeStart: 200_000, rangeEnd: 250_000 })
+  expect(saved()).toMatchObject({ follow: true, rangeStart: 150_000, rangeEnd: 200_000 })
   expect(await pane.find({ key: 'cmp-apply' })).toBe(undefined)
-  expect(await pane.find({ type: 'Text', text: '구간 200k ~ 250k' })).not.toBe(undefined)
-  expect(await pane.find({ key: 'cmp-on-200000' })).not.toBe(undefined)
+  expect(await pane.find({ type: 'Text', text: '구간 150k ~ 200k' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'cmp-on-150000' })).not.toBe(undefined)
 
-  // 직접 지정: 구간 끝(25만)에서 시작, 크기는 입력칸에 써서(◀ ▶ 대신) — 적용 전엔 저장된 값 그대로
+  // 직접 지정: 구간 끝(20만)에서 시작, 크기는 입력칸에 써서(◀ ▶ 대신) — 적용 전엔 저장된 값 그대로
   await pane.press({ key: 'cmp-manual' })
-  expect((await pane.find({ key: 'cmp-size-input' }))?.props.value).toBe('250k')
+  expect((await pane.find({ key: 'cmp-size-input' }))?.props.value).toBe('200k')
   // 못 읽는 글은 빨강으로 알리고, 친 채로 두면(Enter 없이) 적용에도 안 들어간다
   await pane.input({ key: 'cmp-size-input', text: '이십만', kind: 'change' })
   expect(await pane.find({ text: /^크기로 못 읽었습니다/ })).not.toBe(undefined)
@@ -547,14 +553,14 @@ test('설정: 컴팩트 시점(비용표 크기 띠 / 직접 지정 입력칸, [
   expect((await pane.find({ type: 'Text', text: '160k부터 노랑' }))?.props.color).toBe('yellow')
   expect((await pane.find({ type: 'Text', text: '200k부터 빨강' }))?.props.color).toBe('red')
   expect(await pane.find({ text: '10만 ~ 100만' })).not.toBe(undefined)
-  expect(await pane.find({ text: '구간 200k ~ 250k → 직접 지정 200k 로 바꿀까요?' })).not.toBe(undefined)
+  expect(await pane.find({ text: '구간 150k ~ 200k → 직접 지정 200k 로 바꿀까요?' })).not.toBe(undefined)
   await pane.press({ key: 'cmp-apply' })
   expect(saved()).toMatchObject({ follow: false, compactAt: 200_000 })
   expect((await pane.find({ type: 'Text', text: '직접 지정 200k' }))?.props.color).toBe('suggestion')
   // 구간으로 돌아가면 고른 구간 그대로
   await pane.press({ key: 'cmp-range' })
   await pane.press({ key: 'cmp-apply' })
-  expect(saved()).toMatchObject({ follow: true, rangeStart: 200_000, rangeEnd: 250_000 })
+  expect(saved()).toMatchObject({ follow: true, rangeStart: 150_000, rangeEnd: 200_000 })
   // 캐시 경고 −/+
   await pane.press({ key: 'cache-up' })
   expect(saved().cacheWarnMin).toBe(15)
@@ -642,11 +648,12 @@ test('설정: 컴팩트 시점(비용표 크기 띠 / 직접 지정 입력칸, [
 test('비용 패널 컨텍스트 아래: 흐름 그래프와 컴팩트 효과, 기록이 없을 땐 빈 자리 안내', async ($, on) => {
   mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
   const at = (min: number) => new Date(Date.parse('2026-10-10T12:00:00Z') + min * 60_000).toISOString()
-  const asst = (id: string, ctx: number, min: number) =>
+  // write = 캐시에서 못 읽고 새로 쓴 몫(컴팩트 뒤 첫 요청이면 그 + 입력 10 이 요약)
+  const asst = (id: string, ctx: number, min: number, write = 0) =>
     JSON.stringify({
       type: 'assistant',
       timestamp: at(min),
-      message: { id, model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 100, cache_read_input_tokens: ctx - 10, cache_creation_input_tokens: 0 } },
+      message: { id, model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 100, cache_read_input_tokens: ctx - 10 - write, cache_creation_input_tokens: write } },
     })
   let transcript = ''
   const store = new Map<string, unknown>()
@@ -683,13 +690,13 @@ test('비용 패널 컨텍스트 아래: 흐름 그래프와 컴팩트 효과, �
   expect(await pane.find({ text: '컨텍스트 흐름' })).not.toBe(undefined)
   expect(await pane.find({ text: /요청이 두 번 넘게 쌓이면/ })).not.toBe(undefined)
 
-  // 기록이 있으면: 그래프 + 컴팩트 효과
+  // 기록이 있으면: 그래프 + 컴팩트 효과. 컴팩트 뒤 첫 요청이 캐시가 식은 뒤(77분 뒤)라 요약을 못 잰다
   transcript = [
     asst('a', 300_000, 1),
     asst('b', 590_000, 2),
     JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: at(3), compactMetadata: { trigger: 'manual', preTokens: 596_000 } }),
-    asst('c', 94_000, 4),
-    asst('d', 120_000, 5),
+    asst('c', 94_000, 80),
+    asst('d', 120_000, 81),
   ].join('\n')
   await $.command.run({ command: 'easy-compact', args: '' })
   expect(await pane.find({ text: /요청 \d+회 · 컴팩트 1회/ })).not.toBe(undefined)
@@ -705,11 +712,11 @@ test('비용 패널 컨텍스트 아래: 흐름 그래프와 컴팩트 효과, �
   expect(await pane.find({ text: /^총 / })).toBe(undefined)
   expect(await pane.find({ text: /왼쪽 = / })).toBe(undefined)
   expect(await pane.find({ text: / · 안 했으면 / })).not.toBe(undefined)
-  // 컴팩트 시점: 지금 컨텍스트(12만)가 적용 중인 구간(처음 설치 값 25만 ~ 30만)의 어디쯤인지 — 상태 말 · 다음 자리까지 남은 양 ·
+  // 컴팩트 시점: 지금 컨텍스트(12만)가 적용 중인 구간(처음 설치 값 20만 ~ 25만)의 어디쯤인지 — 상태 말 · 다음 자리까지 남은 양 ·
   // 막대(SVG — 선 · 이름은 flow 테스트에서). 예전 "100% = 컴팩트 기본 비용" 게이지는 고른 구간과 따로 놀았다
   expect(await pane.find({ type: 'Text', text: '컴팩트 시점' })).not.toBe(undefined)
   expect(await pane.find({ text: '● 여유' })).not.toBe(undefined)
-  expect(await pane.find({ text: /^250k부터 컴팩트하기 좋은 때 · 1\d\dk 남음$/ })).not.toBe(undefined)
+  expect(await pane.find({ text: /^200k부터 컴팩트하기 좋은 때 · 80k 남음$/ })).not.toBe(undefined)
   expect(String((await pane.findAll({ type: 'Svg' })).map(s => s.props.alt).find(a => /^컴팩트 시점/.test(String(a))))).toMatch(/^컴팩트 시점 — 지금 120k, 여유/)
   expect(await pane.find({ text: /컴팩트 기본 비용|^100%/ })).toBe(undefined)
   // 미룬 비용은 숫자 한 줄 — 지난 구간과 견줌도 그 줄에
@@ -717,8 +724,8 @@ test('비용 패널 컨텍스트 아래: 흐름 그래프와 컴팩트 효과, �
   expect(await pane.find({ text: /^ · 지난 구간 \$/ })).not.toBe(undefined)
   // 범례 색 이름이 곡선 색과 같다(예전엔 "초록" 인데 곡선은 파랑)
   expect(await pane.find({ text: '초록' })).toBe(undefined)
-  // 상주(컴팩트해도 남는 크기): 맨 위 컨텍스트 막대 범례(앞칸 남는 몫 · 뒤칸 대화) — 기록 첫 요청(30만)이 직후 크기보다 커서
-  // 기본 적재와 컴팩트 요약을 못 가른다
+  // 상주(컴팩트해도 남는 크기): 맨 위 컨텍스트 막대 범례(앞칸 남는 몫 · 뒤칸 대화) — 요약을 못 쟀고 기록 첫 요청(30만)이 직후
+  // 크기보다 커서 기본 적재와 컴팩트 요약을 못 가른다
   expect(await pane.find({ text: '상주 94k' })).not.toBe(undefined)
   expect(await pane.find({ text: '대화 26k' })).not.toBe(undefined)
   // 컴팩트 판단은 컴팩트 카드의 한 줄만: 12만 → 9.4만은 줄어드는 게 거의 없다. "지금 요청 1회 · 컴팩트하면" 줄은 지금 카드의
@@ -730,13 +737,13 @@ test('비용 패널 컨텍스트 아래: 흐름 그래프와 컴팩트 효과, �
   expect(await pane.find({ text: /^\(요약 \d/ })).toBe(undefined)
   expect(await pane.find({ text: '쌓인 요약' })).toBe(undefined)
 
-  // 기록이 세션 처음부터면(첫 요청 6만 < 직후): 요약 = 직후 크기 − 처음부터 있던 몫, 컴팩트 줄 옆에도
+  // 요약 = 컴팩트 뒤 첫 요청이 새로 쓴 몫(3.4만), 기본 적재 = 직후 − 요약 — 컴팩트 줄 옆에도
   transcript = [
     asst('z', 60_000, 0),
     asst('a', 300_000, 1),
     asst('b', 590_000, 2),
     JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: at(3), compactMetadata: { trigger: 'manual', preTokens: 596_000 } }),
-    asst('c', 94_000, 4),
+    asst('c', 94_000, 4, 33_990),
     asst('d', 120_000, 5),
   ].join('\n')
   await $.command.run({ command: 'easy-compact', args: '' })
@@ -777,14 +784,14 @@ test('비용 패널 컨텍스트 아래: 흐름 그래프와 컴팩트 효과, �
   expect(await pane.find({ text: / \(추정\)/ })).not.toBe(undefined)
   expect(await pane.find({ type: 'Text', text: '컴팩트 시점' })).not.toBe(undefined)
 
-  // 미룬 비용이 컴팩트 한 번 값을 한참 넘어도 적용 중인 구간(처음 설치 값 25만 ~ 30만) 아래면 "여유" — 예전 게이지는 그
+  // 미룬 비용이 컴팩트 한 번 값을 한참 넘어도 적용 중인 구간(처음 설치 값 20만 ~ 25만) 아래면 "여유" — 예전 게이지는 그
   // 값(비용만 본 최적)으로 색을 정해 고른 구간 아래인데도 빨강 "컴팩트할 때" 였다
   const longWait = [asst('z', 60_000, 0), asst('a', 300_000, 1), asst('b', 590_000, 2), boundary, asst('c', 94_000, 4)]
-  for (let k = 0; k < 40; k++) longWait.push(asst(`w${k}`, 240_000, 5 + k))
+  for (let k = 0; k < 40; k++) longWait.push(asst(`w${k}`, 190_000, 5 + k))
   transcript = longWait.join('\n')
   await $.command.run({ command: 'easy-compact', args: '' })
   expect(await pane.find({ text: '● 여유' })).not.toBe(undefined)
-  expect(await pane.find({ text: '250k부터 컴팩트하기 좋은 때 · 10k 남음' })).not.toBe(undefined)
+  expect(await pane.find({ text: '200k부터 컴팩트하기 좋은 때 · 10k 남음' })).not.toBe(undefined)
   expect(await pane.find({ text: /● 컴팩트할 때|● 컴팩트 늦어짐/ })).toBe(undefined)
   // 그래프 단추는 컴팩트 횟수가 아니라 질문 수로 — 컴팩트가 7번이어도 질문 기록이 없으면 다 그린다
   const cut = (min: number) => JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: at(min), compactMetadata: { trigger: 'manual', preTokens: 300_000 } })
@@ -851,13 +858,18 @@ test('세션 한도 줄은 계정에 따라 저절로: 엔진이 한도를 주�
   }))
   on('clock.now', async () => ({ value: Date.now() }))
 
-  // API 키 세션: 엔진이 한도를 안 준다 → 한도 줄 없음, 비용 줄은 그대로
+  // API 키 세션: 엔진이 한도를 안 준다 → 한도 줄 없음, 비용 줄(요청당 · 컨텍스트 · 구간 · 캐시)이 창 버튼과 같은 맨 윗줄로 —
+  // 예전엔 빈 윗줄을 남겨 칸이 비어 보였다
   await $.command.run({ command: 'easy-compact', args: '' })
   const api = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
   expect(await api.find({ text: '5시간' })).toBe(undefined)
   expect(await api.find({ text: '요청당 ' })).not.toBe(undefined)
+  const top = JSON.stringify(await api.find({ key: 'b-r1' }))
+  expect(top).toContain('요청당 ')
+  expect(top).toContain('"key":"band-close"')
+  expect(await api.find({ key: 'b-r2' })).toBe(undefined)
 
-  // 구독 세션: 5시간 · 7일이 오면 그 줄이 생긴다
+  // 구독 세션: 5시간 · 7일이 오면 그 줄이 맨 위, 비용 줄은 둘째 줄
   limits = [
     { kind: 'five_hour', percentUsed: 10, source: 'test' },
     { kind: 'seven_day', percentUsed: 21, source: 'test' },
@@ -865,6 +877,8 @@ test('세션 한도 줄은 계정에 따라 저절로: 엔진이 한도를 주�
   await $.command.run({ command: 'easy-compact', args: '' })
   const sub = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
   expect(await sub.find({ text: '5시간' })).not.toBe(undefined)
+  expect(JSON.stringify(await sub.find({ key: 'b-r1' }))).not.toContain('요청당 ')
+  expect(JSON.stringify(await sub.find({ key: 'b-r2' }))).toContain('요청당 ')
 })
 
 test('확인창: 연 자리(오른쪽 컴팩트 버튼)를 다시 누르면 닫힌다', async ($, on) => {
@@ -1039,37 +1053,37 @@ test('식은 캐시 · 큰 컨텍스트: 띠가 "바로 컴팩트 권장", 확�
   expect(ran[0]).toContain('이어서 할 일')
 
   // 최적을 낼 수 있으면(직후 94k · Opus 5.5) 비용표에 "최적 대비"(이 세션 값)와 비용이 가장 적은 줄에 ★ — 구간은
-  // 사람이 표에서 고른 값(처음 설치 값 25만 ~ 30만) 그대로. 한 점(최적)은 컴팩트마다 움직여 "이게 맞나" 싶었다.
+  // 사람이 표에서 고른 값(처음 설치 값 20만 ~ 25만) 그대로. 한 점(최적)은 컴팩트마다 움직여 "이게 맞나" 싶었다.
   // 띠마다 "시작 ~ 끝" 의 최적 대비
   await $.command.run({ command: 'easy-compact', args: 'settings' })
   const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
   await openSettings(pane)
-  expect(await pane.find({ type: 'Text', text: '구간 250k ~ 300k' })).not.toBe(undefined)
-  // ★ 최적(금색) — 흐린 ★ 하나는 눈에 안 띄었다. 최적(약 26만)이 든 25만 ~ 30만 띠에
+  expect(await pane.find({ type: 'Text', text: '구간 200k ~ 250k' })).not.toBe(undefined)
+  // ★ 최적(금색) — 흐린 ★ 하나는 눈에 안 띄었다. 컴팩트 요청이 대화 캐시를 읽으니(실측 98.6%) 컴팩트 한 번이
+  // 싸져 최적(약 22만)은 20만 ~ 25만 띠에 — 0.3.x 는 정가 입력으로 세 약 26만이었다
   expect((await pane.find({ type: 'Text', text: '★ 최적' }))?.props.color).toBe('#f5b301')
   expect(await pane.find({ text: /^(0|\+\d+)~(0|\+\d+)%$/ })).not.toBe(undefined)
-  // 처음 설치 값엔 최적이 들어 있어 추천은 맞다는 말만(버튼 없음)
-  expect(await pane.find({ text: /^고른 구간에 최적\(\d+k\)이 있습니다$/ })).not.toBe(undefined)
+  expect(await pane.find({ text: /컴팩트 한 번 \$0\.57/ })).not.toBe(undefined)
+  // 처음 설치 값(20만 ~ 25만)엔 최적이 들어 있어 추천은 맞다는 말만(버튼 없음) — 0.3.x 의 25만 ~ 30만은 이제 최적 위
+  expect(await pane.find({ text: /^고른 구간에 최적\(220k\)이 있습니다$/ })).not.toBe(undefined)
   expect(await pane.find({ key: 'cmp-recommend-pick' })).toBe(undefined)
-  // 다른 띠(15만 ~ 20만)를 고르면 아래 추천에 [◉ 이 구간 고르기] — 누르면 최적 띠로 돌아가 바꿀 것이 없다
+  // 다른 띠(15만 ~ 20만)를 고르면 아래 추천에 [◉ 이 구간 고르기] — 고르기 표시를 단 버튼("이 구간으로" 만으론 버튼처럼 안 생겼다)
   await pane.press({ key: 'cmp-band-150000' })
-  expect(await pane.find({ text: '구간 250k ~ 300k → 구간 150k ~ 200k 로 바꿀까요?' })).not.toBe(undefined)
+  expect(await pane.find({ text: '구간 200k ~ 250k → 구간 150k ~ 200k 로 바꿀까요?' })).not.toBe(undefined)
   expect(await pane.find({ text: '★ 추천' })).not.toBe(undefined)
-  expect(await pane.find({ type: 'Text', text: /^250k ~ 300k$/ })).not.toBe(undefined)
-  expect(await pane.find({ text: /^최적\(\d+k\)이 든 구간$/ })).not.toBe(undefined)
-  // 고르기 표시를 단 버튼 — "이 구간으로" 만으론 버튼처럼 안 생겼다
+  expect(await pane.find({ type: 'Text', text: /^200k ~ 250k$/ })).not.toBe(undefined)
+  expect(await pane.find({ text: /^최적\(220k\)이 든 구간$/ })).not.toBe(undefined)
   expect((await pane.find({ key: 'cmp-recommend-pick' }))?.props.label).toBe('◉ 이 구간 고르기')
   // 최적 대비 색(구간 시작 기준): +50% 넘는 띠는 빨강 · "비추천", 표 아래 한 줄
   expect(await pane.find({ type: 'Text', text: '비추천' })).not.toBe(undefined)
   expect((await pane.findAll({ type: 'Text', text: /^\+\d+~\+\d+%$/ })).some(t => t.props.color === 'red')).toBe(true)
   expect((await pane.findAll({ type: 'Text', text: /^\+\d+~\+\d+%$/ })).some(t => t.props.color === 'yellow')).toBe(true)
   // 최적 위는 "N 이상", 최적 아래(너무 잦음)는 띠 이름 — 첫 비추천 띠만 보고 "100k 이상" 이라 적어 다 비추천으로 읽혔다
-  // 이 세션(직후 94k · 최적 약 26만)은 최적 위 띠가 다 +50% 안이라 아래 띠만
-  expect(await pane.find({ text: '100k ~ 150k — 최적보다 요청당 +50% 넘게' })).not.toBe(undefined)
-  expect(await pane.find({ text: /이상 — 최적보다/ })).toBe(undefined)
+  expect(await pane.find({ text: /^100k ~ 150k · 700k 이상 — 최적보다 요청당 \+50% 넘게/ })).not.toBe(undefined)
   expect((await pane.findAll({ type: 'Text', text: '비추천' })).some(t => t.props.color === 'red')).toBe(true)
+  // 추천을 고르면 최적 띠(= 적용 중)로 돌아가 바꿀 것이 없다
   await pane.press({ key: 'cmp-recommend-pick' })
-  expect((await pane.find({ key: 'cmp-band-250000' }))?.props.variant).toBe('primary')
+  expect((await pane.find({ key: 'cmp-band-200000' }))?.props.variant).toBe('primary')
   expect(await pane.find({ text: /^고른 구간에 최적\(\d+k\)이 있습니다$/ })).not.toBe(undefined)
   expect(await pane.find({ key: 'cmp-recommend-pick' })).toBe(undefined)
   expect(await pane.find({ key: 'cmp-apply' })).toBe(undefined)
@@ -1088,7 +1102,7 @@ test('식은 캐시 · 큰 컨텍스트: 띠가 "바로 컴팩트 권장", 확�
   expect((await pane.find({ type: 'Text', text: /^좋음$/ }))?.props.color).toBe('green')
   expect((await pane.find({ type: 'Text', text: /^보통$/ }))?.props.color).toBe('yellow')
   expect(await pane.find({ text: /쌈/ })).toBe(undefined)
-  expect(await pane.find({ text: '250k ~ 300k(처음 설치 값)' })).not.toBe(undefined)
+  expect(await pane.find({ text: '200k ~ 250k(처음 설치 값)' })).not.toBe(undefined)
   expect(await pane.find({ text: /^Opus 5\.5 · 컴팩트 후 94k · 요청당 \+\d+k(\(가정\))? · 컴팩트 한 번 \$/ })).not.toBe(undefined)
   expect(await pane.find({ text: /계산에 쓴 값|컴팩트 기본 비용\(저장 턴 포함\)/ })).toBe(undefined)
   // 직접 지정의 비추천 크기(90만, 최적보다 +50% 넘게)는 알리기만 하고 적용은 된다
@@ -1096,7 +1110,7 @@ test('식은 캐시 · 큰 컨텍스트: 띠가 "바로 컴팩트 권장", 확�
   await pane.input({ key: 'cmp-size-input', text: '90만' })
   expect(await pane.find({ type: 'Text', text: /^\+\d+% 더 듦$/ })).not.toBe(undefined)
   expect((await pane.find({ type: 'Text', text: '· 비추천(적용은 됩니다)' }))?.props.color).toBe('red')
-  expect(await pane.find({ text: '구간 250k ~ 300k → 직접 지정 900k 로 바꿀까요?' })).not.toBe(undefined)
+  expect(await pane.find({ text: '구간 200k ~ 250k → 직접 지정 900k 로 바꿀까요?' })).not.toBe(undefined)
   // (이 테스트의 저장소는 값을 남기지 않아 적용 뒤 맨 위 줄은 그대로 — 적용이 막히지 않고 확인창이 닫히는 것까지)
   await pane.press({ key: 'cmp-apply' })
   expect(await pane.find({ key: 'cmp-apply' })).toBe(undefined)
@@ -1118,9 +1132,9 @@ test('구간 방식 띠: 구간 안이면 🟡 "컴팩트하기 좋은 때", 끝
   on('store.set', async () => ({ value: undefined }))
   on('ui.panes', async () => ({ value: [] }))
   on('ui.open', async () => ({ value: { isPlaced: true } }))
-  // 처음 설치 값 구간 25만 ~ 30만
-  const start = 250_000
-  const end = 300_000
+  // 처음 설치 값 구간 20만 ~ 25만
+  const start = 200_000
+  const end = 250_000
 
   tokens = start + 10_000
   await $.command.run({ command: 'easy-compact', args: '' })
@@ -1146,6 +1160,11 @@ test('구간 방식 띠: 구간 안이면 🟡 "컴팩트하기 좋은 때", 끝
 
 test('식은 캐시인데 바로 컴팩트가 더 비싼 크기(20만)면 강조 · 권장도, 바로 컴팩트 권장도 띄우지 않는다', async ($, on) => {
   mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const submitted: string[] = []
+  on('prompt.submit', async (_$, e) => {
+    submitted.push(e.text)
+    return { text: e.text }
+  })
   on('fs.list', async () => ({ value: [] }))
   on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now() - 2 * 3600_000, isLink: false } }))
   on('session.id', async () => ({ value: 't-cold-small' }))
@@ -1169,7 +1188,9 @@ test('식은 캐시인데 바로 컴팩트가 더 비싼 크기(20만)면 강조
   const button = await band.find({ key: 'compact', text: '이지 컴팩트' })
   expect(button?.props.variant).toBe('secondary')
   expect(button?.props.dimColor).toBe(true)
-  expect(await band.find({ text: /^아직 컴팩트할 때가 아님 · 구간 / })).not.toBe(undefined)
+  // 툴팁은 권하지 않는 까닭 그대로 — "아직 컴팩트할 때가 아님 · 구간" 은 구간 안이어도 떠 카드의 "손해" 와 엇갈렸다
+  expect(await band.find({ text: '캐시 만료 · 지금 바로 컴팩트하면 ~$0.15 더 듦 — 그냥 이어 가는 편이 쌈' })).not.toBe(undefined)
+  expect(await band.find({ text: /^아직 컴팩트할 때가 아님/ })).toBe(undefined)
   const icon = JSON.stringify(await band.find({ key: 'compact-icon' }))
   expect(icon).toContain('"dimColor":true')
   expect(icon).not.toContain('#4c9be8')
@@ -1182,15 +1203,31 @@ test('식은 캐시인데 바로 컴팩트가 더 비싼 크기(20만)면 강조
   expect(spend).not.toBe(undefined)
   expect(spend?.props.color).toBe(undefined)
   expect(await band.find({ text: /이득|비쌈|더 쌈/ })).toBe(undefined)
-  // 흐린 버튼도 누르면 확인 카드 — 카드도 띠와 같은 셈 · 같은 말(예전엔 다시 쓰기 몫 9.4만 × $8 = $0.75 만 초록으로 보여
-  // 띠의 "손해" 와 거꾸로 읽혔다)
+  // 흐린 버튼도 누르면 확인 카드 — 식은 캐시면 손익과 상관없이 캐시 만료 카드(주 버튼 ▶ 바로 컴팩트). 예전엔 손해인 크기면
+  // 보통 카드(▶ 저장하고 컴팩트)라 회사 세션에서 저장 질문이 전체를 다시 써 $0.43 이 들었다. 카드도 띠와 같은 셈 · 같은 말
+  // (예전엔 다시 쓰기 몫 9.4만 × $8 = $0.75 만 초록으로 보여 띠의 "손해" 와 거꾸로 읽혔다)
   await band.press({ key: 'compact' })
-  const card = JSON.stringify(await band.find({ key: 'confirm' }))
+  expect(await band.find({ key: 'confirm' })).toBe(undefined)
+  const card = JSON.stringify(await band.find({ key: 'confirm-cold' }))
+  expect(card).toContain('캐시가 만료됐습니다')
   expect(card).toContain('바로 컴팩트하면 ')
   expect(card).toContain('$1.75')
-  expect(card).toContain('$0.15 손해')
+  expect(card).toContain('~$0.15 손해')
+  expect(card).toContain(' · 그냥 이어 가는 편이 쌈')
+  expect(card).toContain('지금은 더 비쌈')
   expect(card).not.toContain('$0.75')
   expect(card).not.toContain('이득')
+  expect((await band.find({ key: 'compact-yes' }))?.props.variant).toBe('primary')
+  expect((await band.find({ key: 'compact-tidy' }))?.props.variant).toBe('secondary')
+  // 권하지 않는 상태에서 연 확인창이면 바 · 카드 제목 아이콘도 회색 그대로(회사 세션: 눌렀더니 파랑으로 바뀌어 권하는 듯 보였다)
+  expect(JSON.stringify(await band.find({ key: 'compact-icon' }))).toContain('"dimColor":true')
+  const titleIcon = await band.find({ type: 'Text', text: '🧊' })
+  expect(titleIcon?.props.dimColor).toBe(true)
+  expect(titleIcon?.props.color).toBe(undefined)
+  // 저장하고 컴팩트를 직접 고르면 그대로 저장 턴(막지 않는다 — 사용자 고름)
+  await band.press({ key: 'compact-tidy' })
+  expect(submitted.length).toBe(1)
+  expect(submitted[0]).toContain('[컴팩트 준비]')
 })
 
 test('패널 폭: 긴 질문 글은 버튼 안에서 패널 폭에 맞게 잘리고(…), 펼치면 전체 글이 아래에 줄을 바꿔 보인다', async ($, on) => {
@@ -1387,6 +1424,15 @@ test('하위 에이전트 값: 작업 중에도 띄운 질문에 더하고(에�
   on('fs.list', async () => ({ value: [] }))
   on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
   on('session.id', async () => ({ value: 't-agent' }))
+  // 엔진 기본 그림(시험엔 없다) — 작업 중 표시 · 답변 아래 줄이 감싸는 자리
+  on('ui.render', { component: 'Spinner' }, async ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{e.props.word}</Text>
+  })
+  on('ui.render', { component: 'AssistantMessage' }, async ($$, e) => {
+    const { Text } = $$.ui.resolve(e)
+    return <Text>{e.props.text}</Text>
+  })
   on('session.cwd', async () => ({ value: 'D:/Claude' }))
   on('session.model', async () => ({ value: 'claude-opus-5-5' }))
   on('session.usage', async () => ({
@@ -1443,7 +1489,8 @@ test('하위 에이전트 값: 작업 중에도 띄운 질문에 더하고(에�
     props: { bodyColumns: 80, placement: 'dock' },
   })
   // 진행 중 질문 = 메인 $0.21 + 에이전트 $0.60 — 에이전트는 한 줄로 합쳐 요청 수와 함께
-  expect(await pane.find({ text: /🤖 에이전트 요청 2회 · Opus 5\.5 · 문서 조사/ })).not.toBe(undefined)
+  // 에이전트 줄엔 도는 중 · 끝남(6c) — 작업 이름보다 앞에
+  expect(await pane.find({ text: /^🤖 에이전트 요청 2회 · 도는 중 · Opus 5\.5 · / })).not.toBe(undefined)
   expect(await pane.find({ text: '$0.60' })).not.toBe(undefined)
   expect(await pane.find({ text: '$0.81' })).not.toBe(undefined)
   // 컨텍스트는 메인 요청 크기 그대로(에이전트가 쓴 2만이 아니라 5만)
@@ -1451,10 +1498,228 @@ test('하위 에이전트 값: 작업 중에도 띄운 질문에 더하고(에�
   // 요청 수는 메인 요청만
   expect(await pane.find({ text: /요청 1회/ })).not.toBe(undefined)
 
-  // 질문이 끝난 뒤에도 도는 백그라운드 에이전트 — 띄운 질문(t1)에 더한다
+  // 실시간(6a): 바 질문 줄 · 작업 중 표시에 에이전트 몫을 따로 — 질문 값엔 이미 더해져 있어 얼마가 에이전트인지 안 보였다
+  const working = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: { ...BAND, isWorking: true } })
+  expect(await working.find({ text: ' · 🤖 $0.60 · 요청 2회 · 도는 중' })).not.toBe(undefined)
+  const spinner = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Spinner', props: { word: 'Working', message: null, suffix: '…', mode: 'requesting' } })
+  expect(await spinner.find({ text: ' · 🤖 $0.60' })).not.toBe(undefined)
+  // 출력 토큰은 뺐다 — 그 자리에 🤖
+  expect(await spinner.find({ text: / · 출력 / })).toBe(undefined)
+  // 터미널은 그림 글자 대신 글
+  const termSpinner = await $.ui.mount({ plugin: 'easy-compact', surface: 'terminal', component: 'Spinner', props: { word: 'Working', message: null, suffix: '…', mode: 'requesting' } })
+  expect(await termSpinner.find({ text: ' · 에이전트 $0.60' })).not.toBe(undefined)
+
+  // 질문이 끝난 뒤에도 도는 백그라운드 에이전트 — 띄운 질문(t1)에 더한다. 답변 아래 줄 · 바 지난 질문 줄에 "도는 중"
   await $.turn.complete({ answer: '찾는 중입니다', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
   await agentStep(2)
   expect(await pane.find({ text: '$1.11' })).not.toBe(undefined)
+  const reply = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AssistantMessage', props: { text: '찾는 중입니다', isFirstOfReply: true } })
+  expect(await reply.find({ text: ' · 🤖 $0.90 · 요청 3회 · 도는 중' })).not.toBe(undefined)
+  const idle = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  expect(await idle.find({ text: ' · 🤖 $0.90 · 요청 3회 · 도는 중' })).not.toBe(undefined)
+  // 접힌 질문 줄에도 🤖 몫(6b)
+  expect(await pane.find({ text: '🤖 $0.90 · 도는 중' })).not.toBe(undefined)
+
+  // 에이전트가 끝남(그 agentId 의 turn.complete) — 도는 중이 빠지고, 에이전트 줄은 끝남
+  await $.turn.complete({ answer: '다 찾음', durationMs: 1, isAborted: false, turnId: 'sub', reason: 'answer', agentId: 'ag1' } as Parameters<typeof $.turn.complete>[0])
+  expect(await reply.find({ text: ' · 🤖 $0.90 · 요청 3회' })).not.toBe(undefined)
+  expect(await reply.find({ text: /도는 중/ })).toBe(undefined)
+  expect(await pane.find({ text: '🤖 $0.90' })).not.toBe(undefined)
+  // 펼치면 요금 분해가 메인 / 🤖 에이전트로(6b): 메인 = 읽기 5만 × $0.20 + 출력 1만 × $20, 에이전트 = 쓰기 6만 × $5 + 출력 3만 × $20
+  await pane.press({ key: 'hx-0' })
+  expect(await pane.find({ text: '메인 $0.21 · 읽기 $0.01 · 쓰기 $0.00 · 출력 $0.20' })).not.toBe(undefined)
+  expect(await pane.find({ text: '🤖 에이전트 $0.90 · 읽기 $0.00 · 쓰기 $0.30 · 출력 $0.60' })).not.toBe(undefined)
+  expect(await pane.find({ text: /^🤖 에이전트 요청 3회 · 끝남 · Opus 5\.5 · / })).not.toBe(undefined)
+})
+
+test('엔진 목록에 없는 갈래(워크플로우 · 엔진 자체)는 끝났다는 소식이 없어도 2분 조용하면 끝남 — "도는 중" 이 세션 내내 남았다(리뷰)', async ($, on) => {
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const clock = mock.clock(on, { now: Date.parse('2026-10-12T13:00:00Z') })
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: clock.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-quiet' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.surfaces', async () => ({ value: ['desktop'] }))
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 100_000, window: 1_000_000, percent: 10 }, rateLimits: [], cost: { usd: 1 } } }))
+  on('store.get', async () => ({ value: undefined }))
+  on('store.set', async () => ({ value: undefined }))
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', async (_$, e) => ({ text: e.answer }))
+  // 목록엔 늘 없다(워크플로우 에이전트 · 엔진 자체 갈래)
+  on('agent.list', async () => ({ value: [] }))
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { input_tokens: 0, output_tokens: 1_000, cache_read_input_tokens: 10_000, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' } }
+  })
+  await $.session.start({ cwd: 'D:/Claude', surface: 'desktop', isInteractive: true })
+  await $.turn.start({ text: '돌려 줘', turnId: 't1' })
+  for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
+    // 결과만
+  }
+  for await (const _ of $.turn.step({ turnId: 'wf', index: 0, model: 'claude-opus-5-5', messageCount: 1, agentId: 'wf-agent' })) {
+    // 결과만
+  }
+  await $.turn.complete({ answer: '돌렸습니다', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  // 막 돈 뒤엔 도는 중 — 목록에 없다고 바로 끝남으로 치지 않는다
+  await clock.advance(1_600)
+  expect(await band.find({ text: /도는 중/ })).not.toBe(undefined)
+  // 2분 넘게 조용하면 끝남
+  await clock.advance(3 * 60_000)
+  expect(await band.find({ text: /도는 중/ })).toBe(undefined)
+  expect(await band.find({ text: /🤖 \$/ })).not.toBe(undefined)
+})
+
+test('좁은 터미널(패널을 연 CLI · 바 100칸 아래)엔 창 버튼을 맨 윗줄에 혼자, 한도 줄은 그 아래 전체 폭 — 넓으면 한 줄', async ($, on) => {
+  // 2026-10-12 CLI 실물: 바 ~68칸에 창 버튼 묶음(~45칸)이 오른쪽을 차지해 한도 칸이 "5 / 시 / 간" 처럼 세로로 쪼개졌다
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-narrow' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', async () => ({
+    value: {
+      startedAt: 0,
+      context: { tokens: 100_000, window: 1_000_000, percent: 10 },
+      rateLimits: [{ kind: 'five_hour', percentUsed: 25, resetsAt: new Date(Date.now() + 3 * 3600_000).toISOString() }, { kind: 'seven_day', percentUsed: 12 }],
+      cost: { usd: 1 },
+    },
+  }))
+  on('clock.now', async () => ({ value: Date.now() }))
+  on('store.get', async () => ({ value: undefined }))
+  on('store.set', async () => ({ value: undefined }))
+  await $.command.run({ command: 'easy-compact', args: '' })
+  const narrow = await $.ui.mount({ plugin: 'easy-compact', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 70 } })
+  expect(JSON.stringify(await narrow.find({ key: 'b-r0' }))).toContain('"band-close"')
+  const limits = JSON.stringify(await narrow.find({ key: 'b-r1' }))
+  expect(limits).toContain('5시간')
+  expect(limits).not.toContain('"band-close"')
+  const wide = await $.ui.mount({ plugin: 'easy-compact', surface: 'terminal', component: 'AbovePrompt', props: { ...BAND, bodyColumns: 160 } })
+  expect(await wide.find({ key: 'b-r0' })).toBe(undefined)
+  expect(JSON.stringify(await wide.find({ key: 'b-r1' }))).toContain('"band-close"')
+})
+
+test('패널 간략 모드(12): 비용 요약(세션 · 질문 · 메인/🤖 · 지금 한 줄 · 컴팩트 판단) + 질문별 비용만, [자세히] · 명령으로 바꾼다', async ($, on) => {
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const store = new Map<string, unknown>()
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-simple' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 100_000, window: 1_000_000, percent: 10 }, rateLimits: [], cost: { usd: 3.5 } } }))
+  on('clock.now', async () => ({ value: Date.now() }))
+  on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', async (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', async (_$, e) => ({ text: e.answer }))
+  on('agent.spawn', async () => ({ model: 'claude-opus-5-5', agentId: 'ag1' }))
+  on('turn.step', async function* (_$, e) {
+    const isAgent = e.agentId !== undefined
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { input_tokens: 0, output_tokens: 10_000, cache_read_input_tokens: isAgent ? 0 : 50_000, cache_creation_input_tokens: isAgent ? 20_000 : 0, model: 'claude-opus-5-5' } }
+  })
+  const step = async (turnId: string, agentId?: string) => {
+    for await (const _ of $.turn.step({ turnId, index: 0, model: 'claude-opus-5-5', messageCount: 1, ...(agentId ? { agentId } : {}) })) {
+      // 결과만
+    }
+  }
+  await $.turn.start({ text: '문서 찾아 줘', turnId: 't1' })
+  await step('t1')
+  await $.agent.spawn({ prompt: '찾아라', description: '문서 조사', subagentType: 'Explore' })
+  await step('sub', 'ag1')
+  await $.turn.complete({ answer: '찾았습니다', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  await $.turn.start({ text: '정리해 줘', turnId: 't2' })
+  await step('t2')
+  await $.turn.complete({ answer: '정리했습니다', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+  await $.turn.start({ text: '마무리', turnId: 't3' })
+  await step('t3')
+  await $.turn.complete({ answer: '끝', durationMs: 1, isAborted: false, turnId: 't3', reason: 'answer' })
+
+  // 9a: 바 "요청당" = 이 세션 최근 요청의 실제 값(읽기 5만 × $0.20 + 출력 1만 × $20 = $0.21) — 읽기만이면 $0.01 이라
+  // Opus 5.5 · Sonnet 5.5 가 같았다(동료)
+  const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ text: '~$0.21' })).not.toBe(undefined)
+  // 비용 줄 맨 앞 이 세션 금액 — 자세히 화면이라 질문 평균도(질문 3개 $0.93 → 평균 $0.31)
+  expect(await band.find({ type: 'Text', text: '이 세션 ' })).not.toBe(undefined)
+  expect(await band.find({ type: 'Text', text: '$3.50' })).not.toBe(undefined)
+  expect(await band.find({ text: ' (질문 3개 · 평균 $0.31)' })).not.toBe(undefined)
+
+  // 패널 보기는 이 세션만 — 저장하지 않는다(화면 프리셋은 세부를 못 바꾼다)
+  expect(await $.command.run({ command: 'easy-compact', args: '간략' })).toMatchObject({ text: '이 세션 사용량 패널을 간략 보기로 바꿨습니다(화면 설정은 그대로).' })
+  expect((store.get('settings') as { screen?: string } | undefined)?.screen).not.toBe('custom')
+  await $.command.run({ command: 'easy-compact', args: 'usage' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 80, placement: 'dock' } })
+  // 비용 요약: 이 세션 누적(제목 줄) · 질문 2개 합 $0.72(= $0.51 + $0.21) · 질문당 평균 · 메인 / 🤖 나눔 · 지금 한 줄 · 판단 한 줄
+  expect(await pane.find({ type: 'Text', text: '비용 요약' })).not.toBe(undefined)
+  expect(await pane.find({ text: '이 세션 누적 비용 $3.50' })).not.toBe(undefined)
+  expect(await pane.find({ text: '3개 $0.93 · 질문당 평균 $0.31' })).not.toBe(undefined)
+  expect(await pane.find({ text: '메인 $0.63 · 🤖 에이전트 $0.30' })).not.toBe(undefined)
+  // 9c: 같은 질문들을 다른 모델 요율로 — 읽기는 같고 출력 · 쓰기가 반값(Sonnet 5.5)
+  expect(await pane.find({ text: '같은 질문 3개를 Sonnet 5.5 로 ~$0.48 · 지금 Opus 5.5 $0.93' })).not.toBe(undefined)
+  expect(JSON.stringify(await pane.find({ key: 'm-now' }))).toContain('요청당 ')
+  // 질문별 비용 카드는 그대로, 컨텍스트 막대 · 컴팩트 카드 · 흐름 그래프 · 요율 줄은 없다
+  expect(await pane.find({ text: '질문별 비용' })).not.toBe(undefined)
+  expect(await pane.find({ text: '컨텍스트 흐름' })).toBe(undefined)
+  expect(await pane.find({ text: '컴팩트 효과' })).toBe(undefined)
+  expect(await pane.find({ text: /^금액은 모두 API 정가 환산/ })).toBe(undefined)
+  expect((await pane.find({ key: 'pane-simple' }))?.props.variant).toBe('primary')
+  // [자세히] — 지금까지의 패널 전부
+  await pane.press({ key: 'pane-detail' })
+  expect((store.get('settings') as { screen?: string } | undefined)?.screen).not.toBe('custom')
+  expect(await pane.find({ text: '컨텍스트 흐름' })).not.toBe(undefined)
+  expect(await pane.find({ type: 'Text', text: '비용 요약' })).toBe(undefined)
+  expect((await pane.find({ key: 'pane-detail' }))?.props.variant).toBe('primary')
+  // 자세히에도 모델 견줌 줄(컨텍스트 · 비용 카드)
+  expect(await pane.find({ text: '같은 질문 3개를 Sonnet 5.5 로 ~$0.48 · 지금 Opus 5.5 $0.93' })).not.toBe(undefined)
+  // 9b: 설정 표에 "질문 1개" 칸 — 질문 평균 요청 1회 × (그 크기 읽기 + 요청마다 출력 $0.20) + 에이전트 평균 $0.10(질문 셋 중
+  // 하나가 $0.30). 20만 ~ 25만 = $0.34 ~ $0.35
+  await $.command.run({ command: 'easy-compact', args: 'settings' })
+  await openSettings(pane)
+  expect(await pane.find({ type: 'Text', text: '질문 1개' })).not.toBe(undefined)
+  expect(await pane.find({ text: '$0.34~0.35' })).not.toBe(undefined)
+  expect(await pane.find({ text: /^이 세션 질문 평균 요청 1\.0회 × \(그 크기 읽기 \+ 요청마다 새로 쓰기 · 출력 ~\$0\.20\) \+ 에이전트 평균 ~\$0\.10 — Opus 5\.5 요율$/ })).not.toBe(undefined)
+})
+
+test('에이전트 이름: 띄운 때를 못 봤으면(mod 다시 불러옴) 엔진 목록의 설명으로 — "하위 에이전트" 로만 나왔다(동료)', async ($, on) => {
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-agent-name' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 100_000, window: 1_000_000, percent: 10 }, rateLimits: [], cost: { usd: 1 } } }))
+  on('clock.now', async () => ({ value: Date.now() }))
+  on('store.get', async () => ({ value: undefined }))
+  on('store.set', async () => ({ value: undefined }))
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  // agent.spawn 을 못 본 에이전트 — 엔진 목록엔 있다
+  on('agent.list', async () => ({ value: [{ id: 'bg1', description: 'Implement viewer card UI', type: 'general-purpose', status: 'running' }] }))
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: { input_tokens: 0, output_tokens: 1_000, cache_read_input_tokens: 10_000, cache_creation_input_tokens: 0, model: 'claude-opus-5-5' } }
+  })
+  await $.turn.start({ text: '뷰어 카드 만들어 줘', turnId: 't1' })
+  for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
+    // 결과만
+  }
+  for await (const _ of $.turn.step({ turnId: 'sub', index: 0, model: 'claude-opus-5-5', messageCount: 1, agentId: 'bg1' })) {
+    // 결과만
+  }
+  await $.command.run({ command: 'easy-compact', args: 'usage' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 90, placement: 'dock' } })
+  expect(await pane.find({ text: /^🤖 에이전트 요청 1회 · 도는 중 · Opus 5\.5 · Implement viewer/ })).not.toBe(undefined)
+  expect(await pane.find({ text: /하위 에이전트/ })).toBe(undefined)
 })
 
 test('답 뒤 앱 자체 요청 · 컴팩트: 앞 질문에 ⚙ · 🗜 줄로 따로, 하위 에이전트 🤖 와 갈린다', async ($, on) => {
@@ -1533,8 +1798,10 @@ test('답 뒤 앱 자체 요청 · 컴팩트: 앞 질문에 ⚙ · 🗜 줄로 �
   expect(await pane.find({ text: /^⚙ 앱 자체 요청 · 답 뒤 · 다음 질문 제안/ })).not.toBe(undefined)
   // 컴팩트 줄: 직후 크기는 컴팩트 뒤 첫 메인 요청(8.4만)이 채운다
   expect(await pane.find({ text: /^🗜 컴팩트 530k → 84k$/ })).not.toBe(undefined)
-  // 앱 자체 요청은 읽기 · 쓰기 · 출력으로 못 나눠 내역 끝에 따로
-  expect(await pane.find({ text: /· 앱 자체 요청 \$0\.11$/ })).not.toBe(undefined)
+  // 펼친 요금 분해: 메인 / 🗜 컴팩트 / ⚙ 앱 자체 요청 줄로 — 컴팩트는 메인으로 세지 않는다(리뷰), 둘 다 금액만
+  expect(await pane.find({ text: '메인 $0.21' })).not.toBe(undefined)
+  expect(await pane.find({ text: '🗜 컴팩트 $0.31' })).not.toBe(undefined)
+  expect(await pane.find({ text: '⚙ 앱 자체 요청 $0.11' })).not.toBe(undefined)
   expect(await pane.find({ text: /🤖/ })).toBe(undefined)
 })
 
@@ -1752,6 +2019,43 @@ test('[바로 컴팩트]: 띠 · 설정 탭에 "바로 컴팩트 중" — 엔진
   await pressing
   for (let i = 0; i < 20 && (await pane.find({ key: 's-busy' })) !== undefined; i++) await new Promise(resolve => setTimeout(resolve, 10))
   expect(await pane.find({ key: 's-busy' })).toBe(undefined)
+})
+
+test('모델을 바꾸면 설정 탭의 계산 값 · 비용표가 바로 새 모델 요율 — 다음 요청을 기다리지 않는다(1.5초마다 모델 따라가기)', async ($, on) => {
+  // 동료: 모델을 바꿔도 설정 탭 · 카드 값이 다음 메인 요청 때까지 옛 모델 요율이었다
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const clock = mock.clock(on, { now: Date.parse('2026-10-11T13:00:00Z') })
+  let model = 'claude-opus-5-5'
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: clock.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-follow' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: model }))
+  on('session.surfaces', async () => ({ value: ['desktop'] }))
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  on('session.usage', async () => ({
+    value: { startedAt: 0, context: { tokens: 300_000, window: 1_000_000, percent: 30 }, rateLimits: [], cost: { usd: 1 } },
+  }))
+  on('store.get', async (_$, e) => ({ value: e.key === 'afterCompactTokens' ? 94_000 : undefined }))
+  on('store.set', async () => ({ value: undefined }))
+  // 패널은 연 뒤 열린 채 — 닫힌 것으로 흉내 내면 1.5초마다 패널 맞추기가 사용량을 다시 재 모델 따라가기 없이도 바뀐다
+  let isUp = false
+  on('ui.panes', async () => ({ value: isUp ? [{ id: 'easy-compact', title: '사용량', isShown: true, isFocused: false, isPlaced: true }] : [] }))
+  on('ui.open', async () => {
+    isUp = true
+    return { value: { isPlaced: true } }
+  })
+  await $.session.start({ cwd: 'D:/Claude', surface: 'desktop', isInteractive: true })
+  await $.command.run({ command: 'easy-compact', args: '' })
+  await $.command.run({ command: 'easy-compact', args: 'settings' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
+  await openSettings(pane)
+  expect(await pane.find({ text: /^Opus 5\.5 · 컴팩트 후 94k/ })).not.toBe(undefined)
+  model = 'claude-sonnet-5-5'
+  await clock.advance(1600)
+  expect(await pane.find({ text: /^Sonnet 5\.5 · 컴팩트 후 94k/ })).not.toBe(undefined)
+  expect(await pane.find({ text: /^Opus 5\.5 · 컴팩트 후/ })).toBe(undefined)
 })
 
 test('모델을 바꾸면: 띠가 새 모델 요율로 "모델 바뀜 · 이어 가면 전체 다시 쓰기", 새 모델 요청이 한 번 끝나면 다시 요청당 값', async ($, on) => {
@@ -2039,9 +2343,11 @@ test('영어: 띠 · 확인창 · 사용량 패널 · 설정 탭 · 도움말에
   await openSettings(pane)
   expect(await pane.find({ key: 'lang-en' })).not.toBe(undefined)
   expect((await leftovers(pane)).filter(t => t !== '언어 · Language' && t !== '[한국어]')).toEqual([])
-  // 띠 칸 · UI 레이아웃 상세 조정(펼친 것)도
-  await pane.press({ key: 'band-detail' })
+  // 화면 세부(프리셋이라 글로 — 못 누름) · 커스텀(버튼)도
   expect(await pane.find({ key: 'show-resets', text: '✓ Time to reset' })).not.toBe(undefined)
+  await pane.press({ key: 'screen-custom' })
+  expect(await pane.find({ key: 'show-resets', text: '✓ Time to reset' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'color-0-up' })).not.toBe(undefined)
   expect((await leftovers(pane)).filter(t => t !== '언어 · Language' && t !== '[한국어]')).toEqual([])
 
   // 명령 도움말 · 답
@@ -2049,7 +2355,7 @@ test('영어: 띠 · 확인창 · 사용량 패널 · 설정 탭 · 도움말에
   expect(hangul.test(String(help.text))).toBe(false)
   const set = await $.command.run({ command: 'easy-compact', args: 'set cache 10' })
   expect(hangul.test(String(set.text))).toBe(false)
-  for (const args of ['band', 'band 5h off', 'auto on', 'auto off', 'hide', 'show', 'max', 'min']) {
+  for (const args of ['band', 'band 5h off', 'auto on', 'auto off', 'autoopen off', 'hide', 'show', 'max', 'min', 'screen basic', 'simple', 'detailed']) {
     const r = await $.command.run({ command: 'easy-compact', args })
     expect(hangul.test(String(r.text))).toBe(false)
   }
@@ -2188,7 +2494,7 @@ test('터미널(CLI): 띠 · 확인 카드 · 사용량 패널 · 설정 탭이 
   })
   expect(await pane.find({ type: 'Text', text: '컴팩트 시점' })).not.toBe(undefined)
   expect(await pane.find({ text: '컨텍스트 흐름' })).not.toBe(undefined)
-  expect(await pane.find({ text: /^250k부터 컴팩트하기 좋은 때 · 1\d\dk 남음$/ })).not.toBe(undefined)
+  expect(await pane.find({ text: /^200k부터 컴팩트하기 좋은 때 · \d+k 남음$/ })).not.toBe(undefined)
   expect(await pane.find({ text: '질문별 비용' })).not.toBe(undefined)
   // 그림은 칸 그림(Raster): 컨텍스트 막대 · 흐름 그래프 · 컴팩트 시점 막대 — "데스크톱에서만" 안내는 없다
   const rasters = await pane.findAll({ type: 'Raster' })
@@ -2297,6 +2603,237 @@ test('캐시 타이머는 마지막 요청 시각 기준 — 앱이 기록에 �
   expect(await band.find({ text: '요청당 ' })).toBe(undefined)
 })
 
+test('식은 캐시 셈에 공통 앞부분: 세션 첫 요청이 캐시에서 읽은 시스템 · 도구(다른 세션이 데워 둠)는 이어 가기 · 바로 컴팩트 둘 다 읽기', async ($, on) => {
+  // 회사 세션(2026-10-12): 요청 1 과 식은 뒤 요청 17 이 둘 다 47,594 를 읽었다 — 전부 다시 쓴다고 세면 이어 가기가 높게 나와
+  // 판정이 바로 컴팩트 쪽으로 기울었다
+  const base = Date.now() - 2 * 24 * 3600_000
+  const line = (id: string, read: number, write: number, min: number) =>
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: new Date(base + min * 60_000).toISOString(),
+      message: { id, model: 'claude-opus-5-5', usage: { input_tokens: 0, output_tokens: 100, cache_read_input_tokens: read, cache_creation_input_tokens: write } },
+    })
+  const band = await mountFromTranscript($, on, [line('a', 47_594, 12_406, 1), line('b', 300_000, 0, 2)], 300_000)
+  // 이어 가기: (30만 − 4.76만) × $8 + 4.76만 × $0.20 ≈ $2.03(전부 다시 쓰면 $2.40)
+  expect(await band.find({ text: '캐시 만료' })).not.toBe(undefined)
+  expect(await band.find({ text: '$2.03 소비' })).not.toBe(undefined)
+  await band.press({ key: 'compact' })
+  const card = JSON.stringify(await band.find({ key: 'confirm-cold' }))
+  expect(card).toContain('~$2.03')
+  // "전체" 가 아니라 다시 쓰는 크기(30만 − 4.76만 ≈ 252k)
+  expect(card).toContain(' 중 ~252k 를 다시 씀 ')
+  expect(card).not.toContain('300k 전체를 다시 씀')
+  // 설정 탭 비용표 "캐시 식으면" 도 같은 셈 — 25만 ~ 30만: (25만 − 4.76만) × $8 + … ≈ $1.63 ~ $2.03(전부 다시 쓰면 $2.00 ~ $2.40)
+  await $.command.run({ command: 'easy-compact', args: 'settings' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
+  await openSettings(pane)
+  expect(await pane.find({ text: '$1.63~2.03' })).not.toBe(undefined)
+  expect(await pane.find({ text: '$2.00~2.40' })).toBe(undefined)
+  expect(await pane.find({ text: '1시간 넘게 쉬어 다시 쓰기(공통 앞부분 48k 은 읽기)' })).not.toBe(undefined)
+})
+
+test('캐시 유지 시간은 기록에서 잰다: 5분 캐시(API 키 · 사용량 초과)면 남은 시간 n/5분, 10분 쉬면 만료, 복구 값은 5분 쓰기 요율', async ($, on) => {
+  // 엔진은 요청마다 유지 시간을 정하고(구독 사용량 안 1시간, API 키 · 사용량 초과 5분 — 공식 문서) 기록의 cache_creation 에
+  // ephemeral_5m · 1h 로 남긴다. 단정하지 않고 그 값을 쓴다
+  const line = (base: number, id: string, read: number, write: number, min: number, ttl: '5m' | '1h') =>
+    JSON.stringify({
+      type: 'assistant',
+      timestamp: new Date(base + min * 60_000).toISOString(),
+      message: {
+        id,
+        model: 'claude-opus-5-5',
+        usage: {
+          input_tokens: 0,
+          output_tokens: 100,
+          cache_read_input_tokens: read,
+          cache_creation_input_tokens: write,
+          cache_creation: { ephemeral_5m_input_tokens: ttl === '5m' ? write : 0, ephemeral_1h_input_tokens: ttl === '1h' ? write : 0 },
+        },
+      },
+    })
+  // 10분 전에 끝난 5분 캐시 세션 — 1시간이었으면 살아 있을 때
+  const base = Date.now() - 12 * 60_000
+  const band = await mountFromTranscript($, on, [line(base, 'a', 47_594, 12_406, 1, '5m'), line(base, 'b', 290_000, 10_000, 2, '5m')], 300_000)
+  expect(await band.find({ text: '캐시 만료' })).not.toBe(undefined)
+  // 복구 값 = 5분 쓰기 요율(Opus 5.5 $5): (30만 − 4.76만) × $5 + 4.76만 × $0.20 ≈ $1.27 — 1시간 요율이면 $2.03
+  expect(await band.find({ text: '$1.27 소비' })).not.toBe(undefined)
+  expect(await band.find({ text: '$2.03 소비' })).toBe(undefined)
+  // 설정 탭 캐시 칸: 5분 · 기록에서 잼 · 5분 캐시 경고가 지금 것
+  await $.command.run({ command: 'easy-compact', args: 'settings' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 70, placement: 'dock' } })
+  await openSettings(pane)
+  expect(await pane.find({ type: 'Text', text: '5분' })).not.toBe(undefined)
+  expect(await pane.find({ text: '(이 세션 기록에서 잼)' })).not.toBe(undefined)
+  expect(await pane.find({ text: '남으면 노랑 · 지금 이 세션' })).not.toBe(undefined)
+  // 비용표 "캐시 식으면" 도 5분 요율 · 이름도 5분
+  expect(await pane.find({ text: '5분 넘게 쉬어 다시 쓰기(공통 앞부분 48k 은 읽기)' })).not.toBe(undefined)
+  // 유지 시간 바꾸기는 커스텀에서만(프리셋은 글로 막아 둠 — 잘 모르고 바꾸면 손해)
+  expect(await pane.find({ key: 'ttl-1h' })).toBe(undefined)
+  expect(await pane.find({ text: /^바꾸기는 화면 → 커스텀에서/ })).not.toBe(undefined)
+})
+
+test('캐시 타이머는 메인 요청마다 처음부터: 긴 작업 중에도 남은 분이 줄지 않는다', async ($, on) => {
+  // "계속 작업 중인데도 캐시 시간이 감소하는 거야?" — 예전엔 턴 끝에만 기준 시각을 바꿨다
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const clock = mock.clock(on, { now: Date.parse('2026-10-13T01:00:00Z') })
+  const store = new Map<string, unknown>()
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: clock.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-timer' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 100_000, window: 1_000_000, percent: 10 }, rateLimits: [], cost: { usd: 1 } } }))
+  on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', async (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  on('turn.start', async (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', async (_$, e) => ({ text: e.answer }))
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage: { input_tokens: 0, output_tokens: 100, cache_read_input_tokens: 99_000, cache_creation_input_tokens: 1_000, model: 'claude-opus-5-5' } }
+  })
+  const step = async () => {
+    for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 })) {
+      // 결과만
+    }
+  }
+  await $.turn.complete({ answer: '앞 질문', durationMs: 1, isAborted: false, turnId: 't0', reason: 'answer' })
+  await $.turn.start({ text: '긴 작업', turnId: 't1' })
+  // 50분 동안 10분마다 요청 — 턴은 아직 안 끝남
+  for (let i = 0; i < 5; i++) {
+    await clock.advance(10 * 60_000)
+    await step()
+  }
+  await clock.advance(60_000)
+  const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  // 마지막 요청에서 1분 — 59/60분(턴 시작에서 셌으면 9분 남거나 만료)
+  expect(await band.find({ text: '59/60분' })).not.toBe(undefined)
+  expect(await band.find({ text: '캐시 만료' })).toBe(undefined)
+})
+
+test('처음 설치 구간: 새 설치는 20만 ~ 25만, 0.3.x 를 쓰던 사람은 설정을 저장한 적이 없어도 쓰던 25만 ~ 30만 그대로', async ($, on) => {
+  // 기본값만 바꾸면 설정을 한 번도 안 바꾼 사람(저장값 없음)은 업데이트하자마자 말없이 구간이 바뀐다
+  const start = async (store: Map<string, unknown>, flowFiles: string[]) => {
+    mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+    mock.clock(on, { now: Date.parse('2026-10-12T13:00:00Z') })
+    on('fs.list', async () => ({ value: flowFiles.map(name => ({ name, kind: 'file', size: 10, mtimeMs: 1 })) }))
+    on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+    on('session.id', async () => ({ value: 's-me' }))
+    on('session.cwd', async () => ({ value: 'D:/Claude' }))
+    on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+    on('session.surfaces', async () => ({ value: ['desktop'] }))
+    on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+    on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+    on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 120_000, window: 1_000_000, percent: 12 }, rateLimits: [], cost: { usd: 1 } } }))
+    on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+    on('store.keys', async () => ({ value: [...store.keys()] }))
+    on('store.set', async (_$, e) => {
+      store.set(e.key, e.value)
+      return { value: undefined }
+    })
+    on('ui.panes', async () => ({ value: [] }))
+    on('ui.open', async () => ({ value: { isPlaced: true } }))
+    await $.session.start({ cwd: 'D:/Claude', surface: 'desktop', isInteractive: true })
+    return $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  }
+  // 이 PC 실측값이 있다(0.3.x 가 남김) — 쓰던 구간을 한 번 저장해 둔다. 구간 밖 값은 계속 기본값을 따른다
+  const upgraded = new Map<string, unknown>([['afterCompactTokens', 70_000]])
+  const band = await start(upgraded, [])
+  expect(upgraded.get('settings')).toEqual({ rangeStart: 250_000, rangeEnd: 300_000, screen: 'detail' })
+  expect(await band.find({ text: '250k~300k' })).not.toBe(undefined)
+})
+
+test('처음 설치 구간: 흔적이 없으면 새 설치(20만 ~ 25만), 다른 세션의 흐름 파일만 있어도 업데이트(25만 ~ 30만)', async ($, on) => {
+  const world = (store: Map<string, unknown>, flowFiles: string[]) => {
+    mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+    mock.clock(on, { now: Date.parse('2026-10-12T13:00:00Z') })
+    on('fs.list', async () => ({ value: flowFiles.map(name => ({ name, kind: 'file', size: 10, mtimeMs: 1 })) }))
+    on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+    on('session.id', async () => ({ value: 's-me' }))
+    on('session.cwd', async () => ({ value: 'D:/Claude' }))
+    on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+    on('session.surfaces', async () => ({ value: ['desktop'] }))
+    on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+    on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+    on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 120_000, window: 1_000_000, percent: 12 }, rateLimits: [], cost: { usd: 1 } } }))
+    on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+    on('store.set', async (_$, e) => {
+      store.set(e.key, e.value)
+      return { value: undefined }
+    })
+    on('ui.panes', async () => ({ value: [] }))
+    on('ui.open', async () => ({ value: { isPlaced: true } }))
+  }
+  // 자기 흐름 파일(s-me.json)만 있으면 새 설치
+  const fresh = new Map<string, unknown>()
+  world(fresh, ['s-me.json'])
+  await $.session.start({ cwd: 'D:/Claude', surface: 'desktop', isInteractive: true })
+  expect(fresh.get('settings')).toEqual({ rangeStart: 200_000, rangeEnd: 250_000, screen: 'basic' })
+  const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  expect(await band.find({ text: '200k~250k' })).not.toBe(undefined)
+  // 한 번 정하면 그 뒤엔 흔적이 생겨도 그대로(이미 저장값이 있다)
+  expect(fresh.get('settings')).toEqual({ rangeStart: 200_000, rangeEnd: 250_000, screen: 'basic' })
+})
+
+test('처음 설치 구간: 저장소엔 흔적이 없어도 다른 세션의 흐름 파일이 있으면 업데이트로 본다', async ($, on) => {
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  mock.clock(on, { now: Date.parse('2026-10-12T13:00:00Z') })
+  const store = new Map<string, unknown>()
+  on('fs.list', async () => ({ value: [{ name: 'other-session.json', kind: 'file', size: 10, mtimeMs: 1 }] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 's-me' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.surfaces', async () => ({ value: ['desktop'] }))
+  on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+  on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 120_000, window: 1_000_000, percent: 12 }, rateLimits: [], cost: { usd: 1 } } }))
+  on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', async (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  await $.session.start({ cwd: 'D:/Claude', surface: 'desktop', isInteractive: true })
+  expect(store.get('settings')).toEqual({ rangeStart: 250_000, rangeEnd: 300_000, screen: 'detail' })
+})
+
+test('저장 턴 · 컴팩트 몫 실측: 식은 캐시 때 것이 섞여도 셈이 부풀지 않는다(저장 턴은 가운데 값, 읽기 절반 아래 몫은 버림)', async ($, on) => {
+  // 이 PC(2026-10-12): 저장 턴 다섯 중 하나가 식은 캐시라 새로 씀 25만 — 평균이면 5만으로 부풀었다. 0.3.x 는 식은 캐시의 컴팩트
+  // 몫(정가 입력 위주)도 남겨 다음 손익이 7배쯤 비싸 보였다
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const store = new Map<string, unknown>([
+    ['afterCompactTokens', 94_000],
+    ['saveTurns', [{ steps: 3, output: 2_000, write: 2_000 }, { steps: 3, output: 2_000, write: 2_000 }, { steps: 2, output: 2_000, write: 251_707 }]],
+    ['compactMix', { input: 0.7, read: 0.3, write: 0 }],
+  ])
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
+  on('session.id', async () => ({ value: 't-save' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', async () => ({ value: { startedAt: 0, context: { tokens: 300_000, window: 1_000_000, percent: 30 }, rateLimits: [], cost: { usd: 1 } } }))
+  on('clock.now', async () => ({ value: Date.now() }))
+  on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', async (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  await $.command.run({ command: 'easy-compact', args: '' })
+  await $.command.run({ command: 'easy-compact', args: 'settings' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
+  await openSettings(pane)
+  // 컴팩트 한 번(직후 94k): 저장 턴(가운데 값: 요청 3 · 출력 2천 · 새로 씀 2천) $0.11 + 컴팩트 요청(캐시 읽기 — 식은 몫은 버림)
+  // $0.02 + 요약 출력 $0.20 + 요약 다시 쓰기 $0.24 ≈ $0.57. 평균이면 +$0.68, 식은 몫이면 +$0.25
+  expect(await pane.find({ text: /컴팩트 한 번 \$0\.57/ })).not.toBe(undefined)
+})
+
 test('다시 연 세션의 컴팩트 직후(첫 요청 전 · 엔진 컨텍스트 0)엔 "컨텍스트 0" 대신 직후 크기 추정값', async ($, on) => {
   // 컴팩트한 세션의 띠가 "컨텍스트 0" — 지난 컴팩트의 직후 크기(94k)로 추정한다
   const r = recordAt(Date.now() - 30 * 60_000)
@@ -2304,9 +2841,10 @@ test('다시 연 세션의 컴팩트 직후(첫 요청 전 · 엔진 컨텍스�
   expect(await band.find({ text: '컨텍스트 0' })).toBe(undefined)
   expect(await band.find({ text: /^컨텍스트 ~/ })).not.toBe(undefined)
   expect(await band.find({ text: ' 컴팩트 직후' })).not.toBe(undefined)
-  // 첫 요청 전엔 캐시가 없다 — 컴팩트 시각부터 센 "캐시 N분" 대신
-  expect(await band.find({ text: /^\d+분$/ })).toBe(undefined)
-  expect(await band.find({ text: ' · 캐시 없음(다음 요청이 새로 씀)' })).not.toBe(undefined)
+  // 첫 요청 전에도 캐시 남은 분 — 컴팩트 시각(25분 전)부터 센다. 컴팩트 요청이 앞부분 캐시를 읽어 시간이 새로 시작된다.
+  // 0.3.1 의 "캐시 없음(다음 요청이 새로 씀)" 은 뜻을 모르겠고 필요 없었다(얼리버드)
+  expect(await band.find({ text: /^3[45]\/60분$/ })).not.toBe(undefined)
+  expect(await band.find({ text: /캐시 없음/ })).toBe(undefined)
   // 지난 질문 줄(컴팩트 전 저장 턴의 "캐시 다시 씀")은 숨긴다 — 지금 일처럼 읽혔다
   expect(await band.find({ text: /^지난 질문/ })).toBe(undefined)
   // 방금 컴팩트해 아낄 게 없다 — 버튼은 흐리게, 툴팁에 손해
@@ -2423,10 +2961,10 @@ test('사용량 패널 기본: 자동 열기 끔 · 같이 열고 닫기 켬 —
   await world.clock.advance(3_100)
   expect(world.isUp).toBe(true)
 
-  // 설정 탭: 이지 컴팩트 바 아래 "사용량 패널" 칸 — 접힌 제목 줄에 두 옵션 값
+  // 설정 탭: 맨 위 "화면" 칸의 [세부] 안에 패널 두 옵션(0.4.0 — 바 · 패널 칸을 화면 한 칸으로)
   await run('settings')
   const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
-  expect(await pane.find({ text: '자동 열기 켬 · 같이 열고 닫기 켬' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'pane-auto-on' })).toBe(undefined)
   await openSettings(pane)
   expect(await pane.find({ key: 'pane-auto-on', text: '✓ 새 세션에서 열기' })).not.toBe(undefined)
   expect(await pane.find({ key: 'pane-sync-on', text: '✓ 모든 세션 같이' })).not.toBe(undefined)
@@ -2560,10 +3098,10 @@ test('띠 단축 명령: 최소 ↔ 최대(띠 버튼 · 명령), 필요할 때�
   expect(await band.find({ text: ' · 캐시 ' })).not.toBe(undefined)
   expect(await band.find({ key: 'compact' })).not.toBe(undefined)
   expect(await band.find({ key: 'band-mode', text: '—' })).not.toBe(undefined)
-  // 창 제어 버튼(⇲ 자동 숨김 · — 최소 · ✕ 닫기)의 설명 칩은 숨어 있다가 마우스를 올리면 보인다
-  expect(await band.find({ key: 'band-auto', text: '⇲' })).not.toBe(undefined)
-  expect(await band.find({ text: '자동 숨김 · 컴팩트 구간 전엔 입력창 아래로 접기' })).not.toBe(undefined)
+  // 창 제어 버튼(— 최소 · ✕ 접기)의 설명 칩은 숨어 있다가 마우스를 올리면 보인다. ⇲ 자동 숨김은 뺐다 — ✕ 와 같아 보였다
+  expect(await band.find({ key: 'band-auto' })).toBe(undefined)
   expect(await band.find({ text: '최소 · 한 줄로 줄이기' })).not.toBe(undefined)
+  expect(await band.find({ text: '접기 · 다시 펴기: 입력창 아래 [🔽 이지 컴팩트 ⇱]' })).not.toBe(undefined)
   // 사용량 패널 버튼(📊)은 윗줄 창 버튼 칸 안 맨 앞 — 아랫줄엔 이지 컴팩트 하나. 묶음 표시 없음(테두리는 위아래 줄을 더 먹고, 바탕색은 버튼과 겹쳤다)
   expect(JSON.stringify(await band.find({ key: 'b-r1' }))).toContain('"usage"')
   expect(JSON.stringify(await band.find({ key: 'b-r3' }))).not.toContain('"usage"')
@@ -2593,18 +3131,28 @@ test('띠 단축 명령: 최소 ↔ 최대(띠 버튼 · 명령), 필요할 때�
   expect(store.get('settings')).toMatchObject({ band: 'full' })
   expect(await band.find({ text: '41%' })).not.toBe(undefined)
 
-  // 자동 숨김(띄어 써도 · 처음 이름 "필요할 때만" 도): 구간(25만 ~ 30만) 시작 전엔 띠를 안 그린다 — 입력창 위 자리가 빈다
-  expect(await run('자동 숨김 켜기')).toMatch(/자동 숨김 켬/)
-  expect(store.get('settings')).toMatchObject({ band: 'full', bandAuto: true })
+  // 자동 숨김(옛 명령 — 띄어 써도 · 처음 이름 "필요할 때만" 도) = 접고 컴팩트할 때 펴기: 구간(20만 ~ 25만) 시작 전엔 띠를 안 그린다
+  expect(await run('자동 숨김 켜기')).toMatch(/^바를 접었습니다/)
+  expect(store.get('settings')).toMatchObject({ band: 'full', bandFolded: true, bandAutoOpen: true })
   expect(await band.find({ key: 'core' })).not.toBe(undefined)
   expect(await band.find({ text: '요청당 ' })).toBe(undefined)
   expect(await band.find({ key: 'usage' })).toBe(undefined)
-  // 구간에 닿으면 고른 크기(최대)로
-  tokens = 260_000
+  // 구간에 닿으면 고른 크기(최대)로 저절로 펴진다
+  tokens = 210_000
   await $.command.run({ command: 'easy-compact', args: '' })
   expect(await band.find({ key: 'compact', text: '컴팩트하기 좋은 때' })).not.toBe(undefined)
   expect(await band.find({ text: '41%' })).not.toBe(undefined)
-  // 최소면 한 줄 + 파란 🗜 · 짧은 [컴팩트] 버튼 · 📊: 상태 글 대신 강조 버튼 · 깜빡이는 노랑 점, 말은 툴팁으로. 누르면 확인창
+  // 저절로 펴진 바의 ✕ = 지금 급함(노랑)까지는 다시 접어 둔다(이 세션) — 빨강이 되면 다시 펴진다
+  expect(await band.find({ text: '다시 접기 · 더 급해지면(빨강 · 캐시 만료) 다시 펴짐' })).not.toBe(undefined)
+  await band.press({ key: 'band-close' })
+  expect(await band.find({ key: 'core' })).not.toBe(undefined)
+  expect(store.get('settings')).toMatchObject({ bandFolded: true, bandAutoOpen: true })
+  tokens = 260_000
+  await $.command.run({ command: 'easy-compact', args: '' })
+  expect(await band.find({ key: 'compact', text: '컴팩트 늦어짐' })).not.toBe(undefined)
+  // 최소면 한 줄 + 파란 🗜 · 짧은 [컴팩트] 버튼 · 📊: 상태 글 대신 강조 버튼 · 깜빡이는 점, 말은 툴팁으로. 누르면 확인창
+  tokens = 210_000
+  await $.command.run({ command: 'easy-compact', args: '' })
   await run('min')
   expect(await band.find({ text: '41%' })).toBe(undefined)
   expect(await band.find({ key: 'compact', text: '컴팩트하기 좋은 때' })).toBe(undefined)
@@ -2621,17 +3169,19 @@ test('띠 단축 명령: 최소 ↔ 최대(띠 버튼 · 명령), 필요할 때�
   await band.press({ key: 'compact' })
   expect(await band.find({ key: 'compact-yes' })).not.toBe(undefined)
   await band.press({ key: 'compact-no' })
-  // 켜기 · 끄기 없이 치면 번갈아(처음 이름도)
+  await run('최대')
+  // 켜기 · 끄기 없이 치면 번갈아(처음 이름도) — 크기를 고르면 이미 펼침이라 이번엔 접는다
   tokens = 120_000
   await $.command.run({ command: 'easy-compact', args: '' })
-  expect(await run('필요할때만')).toMatch(/자동 숨김 끔/)
-  expect(store.get('settings')).toMatchObject({ bandAuto: false })
+  expect(await run('필요할때만')).toMatch(/^바를 접었습니다/)
+  expect(await run('필요할때만')).toMatch(/폈습니다/)
+  expect(store.get('settings')).toMatchObject({ bandFolded: false })
   expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
-  // 바의 [자동 숨김] 버튼(크기 버튼 옆): 켜면 노랑 전이라 바로 사라지고, 다시 나오는 때를 토스트로
-  await band.press({ key: 'band-auto' })
-  expect(store.get('settings')).toMatchObject({ bandAuto: true })
-  expect(toasts.at(-1)).toBe('자동 숨김 — 컴팩트 구간(노랑) 전엔 입력창 아래 [🔽 이지 컴팩트 ⇱] 로 접힙니다. 누르면 다시 늘 보입니다.')
-  // 접힌 동안 입력창 아래 모드 줄에 파란 [🔽 이지 컴팩트 ⇱] 하나 — 엔진 모드 글(안쪽)은 앞에 그대로, 누르면 늘 보이기.
+  // 바의 ✕(접기): 컴팩트할 때 펴기가 켜져 있으면 토스트에 그 말 — 노랑 전이라 바로 접힌다
+  await band.press({ key: 'band-close' })
+  expect(store.get('settings')).toMatchObject({ bandFolded: true, bandAutoOpen: true })
+  expect(toasts.at(-1)).toBe('이지 컴팩트 바를 접었습니다 — 컴팩트할 때 저절로 펴집니다. 다시 펴기: 입력창 아래 [🔽 이지 컴팩트 ⇱] 를 누르거나 /easy-compact 보이기')
+  // 접힌 동안 입력창 아래 모드 줄에 파란 [🔽 이지 컴팩트 ⇱] 하나 — 엔진 모드 글(안쪽)은 앞에 그대로, 누르면 펼침.
   // 이 줄엔 마우스 올리기 칩을 두지 않는다(칩 글이 "자동 …" 으로 늘 보였다) — 버튼 글 말고 다른 글이 없다
   const footer = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'SessionMode', props: { modes: ['focus'] } })
   expect(await footer.find({ key: 'core-mode' })).not.toBe(undefined)
@@ -2641,51 +3191,32 @@ test('띠 단축 명령: 최소 ↔ 최대(띠 버튼 · 명령), 필요할 때�
   expect(JSON.stringify(await footer.find({ key: 'ec-mode' }))).not.toContain('"Text"')
   expect(await footer.find({ text: /자동 숨김/ })).toBe(undefined)
   await footer.press({ key: 'band-reveal' })
-  expect(store.get('settings')).toMatchObject({ bandAuto: false, bandHidden: false })
+  expect(store.get('settings')).toMatchObject({ bandFolded: false })
   expect(await footer.find({ key: 'band-reveal' })).toBe(undefined)
   expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
-  await band.press({ key: 'band-auto' })
+
+  // 컴팩트할 때 펴기를 끄고 접으면(옛 안 보이기) 회색 "닫힘" — 노랑 · 빨강이 와도 접힌 채
+  expect(await run('자동펴기 끄기')).toMatch(/끔/)
+  expect(await run('안 보이기')).toBe('이지 컴팩트 바를 모든 세션에서 접었습니다. 다시 펴기: 입력창 아래 [🔽 이지 컴팩트 닫힘 ⇱] 를 누르거나 /easy-compact 보이기')
+  expect(store.get('settings')).toMatchObject({ bandFolded: true, bandAutoOpen: false })
   expect(await band.find({ key: 'core' })).not.toBe(undefined)
-  // 노랑에 닿으면 "✓ 자동 숨김" 으로 보이고, 누르면 끈다(토스트는 켤 때만)
   tokens = 260_000
   await $.command.run({ command: 'easy-compact', args: '' })
-  expect(await band.find({ key: 'band-auto', text: '⇱' })).not.toBe(undefined)
-  expect(await footer.find({ key: 'band-reveal' })).toBe(undefined)
-  await band.press({ key: 'band-auto' })
-  expect(store.get('settings')).toMatchObject({ bandAuto: false })
-  expect(toasts.length).toBe(2)
-  tokens = 120_000
-  await $.command.run({ command: 'easy-compact', args: '' })
-
-  // 안보이기 · 보이기: 모든 세션(저장) — 띠 자리를 엔진에 돌려준다
-  expect(await run('안 보이기')).toMatch(/껐습니다/)
-  expect(store.get('settings')).toMatchObject({ bandHidden: true })
   expect(await band.find({ key: 'core' })).not.toBe(undefined)
-  expect(await band.find({ key: 'usage' })).toBe(undefined)
-  // 보이기 = 늘 보이기(숨김 · 자동 숨김을 다 푼다)
-  await run('자동숨김 켜기')
-  expect(await run('안보이기')).toBe('이지 컴팩트 바를 모든 세션에서 껐습니다. 다시 켜기: 입력창 아래 [🔽 이지 컴팩트 닫힘 ⇱] 를 누르거나 /easy-compact 보이기')
-  expect(await run('보이기')).toMatch(/^이지 컴팩트 바를 늘 보입니다/)
-  expect(store.get('settings')).toMatchObject({ bandHidden: false, bandAuto: false })
-  expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
-  // 크기를 고르면 안 보이기도 풀린다(보려고 고른 것)
-  await run('hide')
-  await run('최대')
-  expect(store.get('settings')).toMatchObject({ band: 'full', bandHidden: false })
-
-  // ✕(창 버튼의 닫기) = 안 보이기, 다시 여는 명령을 토스트로
-  await band.press({ key: 'band-close' })
-  expect(store.get('settings')).toMatchObject({ bandHidden: true })
-  // 끄는 길 셋(✕ · 설정 탭 · 명령)이 같은 말로 다시 켜는 법 두 가지를 알린다
-  expect(toasts.at(-1)).toBe('이지 컴팩트 바를 모든 세션에서 껐습니다. 다시 켜기: 입력창 아래 [🔽 이지 컴팩트 닫힘 ⇱] 를 누르거나 /easy-compact 보이기')
   expect(await footer.find({ key: 'band-reveal', text: '🔽 이지 컴팩트 닫힘 ⇱' })).not.toBe(undefined)
   // 닫았으면 회색(강조 버튼 아님 · dim)
   expect((await footer.find({ key: 'band-reveal' }))?.props.variant).toBe('secondary')
   expect((await footer.find({ key: 'band-reveal' }))?.props.dimColor).toBe(true)
-  expect(await band.find({ key: 'core' })).not.toBe(undefined)
-  // 닫은 뒤에도 입력창 아래 버튼으로 다시 연다
-  await footer.press({ key: 'band-reveal' })
-  expect(store.get('settings')).toMatchObject({ bandHidden: false, bandAuto: false })
+  tokens = 120_000
+  await $.command.run({ command: 'easy-compact', args: '' })
+  expect(await run('보이기')).toMatch(/^이지 컴팩트 바를 폈습니다/)
+  expect(store.get('settings')).toMatchObject({ bandFolded: false, bandAutoOpen: false })
+  expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
+  // 크기를 고르면 접기도 풀린다(보려고 고른 것)
+  await run('hide')
+  await run('최대')
+  expect(store.get('settings')).toMatchObject({ band: 'full', bandFolded: false })
+  await run('자동펴기 켜기')
 
   // 모르는 말엔 한 줄만(명령 출력은 대화 기록에 남는다) — 사람에게 보이는 명령은 보이기 · 안보이기뿐, 나머지는 바의 버튼
   expect(await run('이거 스킬처럼 입력하니깐')).toBe('모르는 명령입니다. 명령은 /easy-compact 보이기 · 안보이기 — 나머지는 바의 버튼(📊 패널 · ⚙ 설정 탭)')
@@ -2695,7 +3226,7 @@ test('띠 단축 명령: 최소 ↔ 최대(띠 버튼 · 명령), 필요할 때�
   // 숨은 명령(테스트 · 예전 사용법)은 도움말에 안 나온다
   for (const hidden of ['최소', '최대 ', 'settings', 'set ', '문구', 'lang', '자동숨김']) expect(help.includes(hidden)).toBe(false)
   // 예전 이름(툴바)으로 쳐도 칸 명령
-  expect(await run('툴바')).toMatch(/^이지 컴팩트 바: 늘 보이기 · 최대/)
+  expect(await run('툴바')).toMatch(/^이지 컴팩트 바: 펼침 · 최대/)
 })
 
 test('패널 단축 명령: /easy-compact 패널 [열기|닫기] — 띠가 없어도 사용량 패널을 열고 닫는다(없이 치면 번갈아)', async ($, on) => {
@@ -2736,7 +3267,7 @@ test('패널 단축 명령: /easy-compact 패널 [열기|닫기] — 띠가 없�
   expect(await pane.find({ key: 'pane-settings', text: '⚙ 설정' })).not.toBe(undefined)
 })
 
-test('설정 탭: 칸마다 접힘(제목 줄에 지금 값) · 자주 바꾸는 순, "이지 컴팩트 바"(표시 · 필요할 때만 · 크기)의 상세 조정으로 칸을 켜고 끈다', async ($, on) => {
+test('설정 탭: 화면 프리셋 넷(간단 · 기본 · 자세히 · 커스텀) — 프리셋 세부는 글로만(못 누름), 커스텀에서 칸 · 색 · 패널 · 🤖 줄을 고르고, 바 · 패널(창 상태)은 따로', async ($, on) => {
   mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
   const store = new Map<string, unknown>()
   bandWorld(on, store, () => 120_000)
@@ -2748,60 +3279,118 @@ test('설정 탭: 칸마다 접힘(제목 줄에 지금 값) · 자주 바꾸는
   await $.command.run({ command: 'easy-compact', args: 'settings' })
   const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
   const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
+  const run = async (args: string) => String((await $.command.run({ command: 'easy-compact', args })).text)
+  const saved = () => store.get('settings') as { screen: string; custom: { bandShow: Record<string, boolean>; sessionColors: number[]; paneMode: string; agentLine: boolean } }
 
-  // 설정 탭: 자주 바꾸는 순(컴팩트 시점 → 문구 → 바 → 캐시 경고 → 언어), 바 · 언어는 접혀 제목 줄에 지금 값
+  // 설정 탭: 화면 → 바 · 패널 → 컴팩트 시점 → 문구 → 캐시 → 언어. 처음엔 화면만 펼침, 나머지는 접혀 제목 줄에 지금 값
   const order = JSON.stringify(await pane.find({ key: 's-settings' }))
-  const at = ['set-compact', 'set-tidy', 'set-band', 'set-pane', 'set-cache', 'set-lang'].map(k => order.indexOf(`"${k}"`))
+  const at = ['set-screen', 'set-window', 'set-compact', 'set-tidy', 'set-cache', 'set-lang'].map(k => order.indexOf(`"${k}"`))
   expect(at.every((v, i) => v >= 0 && (i === 0 || v > at[i - 1]!))).toBe(true)
-  expect(await pane.find({ text: '이지 컴팩트 바' })).not.toBe(undefined)
-  expect(await pane.find({ text: '늘 보이기 · 최대' })).not.toBe(undefined)
+  expect(await pane.find({ type: 'Text', text: '화면' })).not.toBe(undefined)
   expect(await pane.find({ text: /^자동\(.+\)$/ })).not.toBe(undefined)
-  expect(await pane.find({ key: 'vis-always' })).toBe(undefined)
-  // 접은 칸은 접힌 채로(컴팩트 시점을 접으면 제목 줄에 적용 중 구간)
-  await pane.press({ key: 'fold-set-compact' })
   expect(await pane.find({ key: 'cmp-mode' })).toBe(undefined)
-  expect(await pane.find({ text: '구간 250k ~ 300k' })).not.toBe(undefined)
+  expect(await pane.find({ text: '구간 200k ~ 250k' })).not.toBe(undefined)
+  expect(await pane.find({ text: '펼침 · 최대' })).not.toBe(undefined)
+  // 프리셋 넷, 고른 것의 대상 한 줄. 세부는 접힘
+  for (const p of ['simple', 'basic', 'detail', 'custom']) expect(await pane.find({ key: `screen-${p}` })).not.toBe(undefined)
+  expect(await pane.find({ key: 'session-colors' })).toBe(undefined)
+  // 간단(처음 쓰는 사람): 바엔 이 세션 금액 · 컨텍스트 · 이지 컴팩트만
+  await pane.press({ key: 'screen-simple' })
+  expect(saved()).toMatchObject({ screen: 'simple' })
+  expect(await pane.find({ text: /^처음 쓰는 분: 이 세션 금액/ })).not.toBe(undefined)
+  expect(await band.find({ type: 'Text', text: '이 세션 ' })).not.toBe(undefined)
+  expect(await band.find({ text: '5시간' })).toBe(undefined)
+  expect(await band.find({ text: '요청당 ' })).toBe(undefined)
+  expect(await band.find({ text: ' · 캐시 ' })).toBe(undefined)
+  expect(await band.find({ key: 'compact' })).not.toBe(undefined)
+  // 기본: 한도 · 요청당 · 캐시까지
+  await pane.press({ key: 'screen-basic' })
+  expect(saved()).toMatchObject({ screen: 'basic' })
+  expect(await band.find({ text: '5시간' })).not.toBe(undefined)
+  expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
+  await pane.press({ key: 'screen-detail' })
   await openSettings(pane)
-  expect(await pane.find({ key: 'vis-always', text: '✓ 늘 보이기' })).not.toBe(undefined)
-  expect(await pane.find({ key: 'vis-auto', text: '자동 숨김' })).not.toBe(undefined)
+  // 프리셋의 세부는 글로만 — 버튼이 아니라 눌러지지 않는다
+  expect(await pane.find({ text: '자세히 화면의 값입니다 — 바꾸려면 [커스텀]' })).not.toBe(undefined)
+  expect((await pane.find({ key: 'show-resets' }))?.type).toBe('Box')
+  expect(await pane.find({ key: 'color-0-up' })).toBe(undefined)
+  expect(await pane.find({ text: '$10' })).not.toBe(undefined)
+  // 바 · 패널(창 상태)은 어느 화면에서든 버튼: 크기 · 접기 · 컴팩트할 때 펴기
   expect(await pane.find({ key: 'band-full', text: '✓ 최대' })).not.toBe(undefined)
-  expect(await pane.find({ key: 'show-resets' })).toBe(undefined)
-  await pane.press({ key: 'vis-auto' })
-  expect(store.get('settings')).toMatchObject({ bandAuto: true })
-  await pane.press({ key: 'vis-always' })
-  await pane.press({ key: 'band-detail' })
-  expect(await pane.find({ key: 'band-detail-box' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'fold-off', text: '✓ 펼침' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'autoopen-on', text: '✓ 저절로 펴기' })).not.toBe(undefined)
+  await pane.press({ key: 'autoopen-off' })
+  expect(store.get('settings')).toMatchObject({ bandAutoOpen: false })
+  await pane.press({ key: 'autoopen-on' })
 
+  // 커스텀: 처음 고르면 지금 화면(자세히) 값에서 시작 — 세부가 버튼
+  await pane.press({ key: 'screen-custom' })
+  expect(saved()).toMatchObject({ screen: 'custom', custom: { paneMode: 'detail' } })
+  expect((await pane.find({ key: 'show-resets' }))?.type).toBe('Button')
   // 리셋 시간 → 5시간 순으로 끈다
   expect(await band.find({ text: /후 리셋/ })).not.toBe(undefined)
   await pane.press({ key: 'show-resets' })
-  expect(store.get('settings')).toMatchObject({ bandShow: { resets: false, fiveHour: true } })
+  expect(saved().custom.bandShow).toMatchObject({ resets: false, fiveHour: true })
   expect(await band.find({ text: /후 리셋/ })).toBe(undefined)
   expect(await band.find({ text: '5시간' })).not.toBe(undefined)
   await pane.press({ key: 'show-fiveHour' })
   expect(await band.find({ text: '5시간' })).toBe(undefined)
   expect(await band.find({ text: '7일' })).not.toBe(undefined)
-
-  // 명령(영 · 한 이름 다): 캐시를 끄고, 비용 줄 칸을 다 끄면 줄째 빠진다 — 이지 컴팩트 버튼은 그대로
-  await $.command.run({ command: 'easy-compact', args: 'band cache off' })
-  expect(store.get('settings')).toMatchObject({ bandShow: { cache: false } })
+  // 한도 묶음(2): [한도 전체] 로 5시간 · 7일 · 리셋을 한꺼번에 — 다 끄면 한도 줄이 없어 비용 줄이 맨 윗줄로
+  await pane.press({ key: 'show-limits' })
+  expect(saved().custom.bandShow).toMatchObject({ fiveHour: false, sevenDay: false, resets: false })
+  expect(await band.find({ text: '7일' })).toBe(undefined)
+  expect(JSON.stringify(await band.find({ key: 'b-r1' }))).toContain('요청당 ')
+  await pane.press({ key: 'show-limits' })
+  expect(saved().custom.bandShow).toMatchObject({ fiveHour: true, sevenDay: true, resets: true })
+  expect(await band.find({ text: '5시간' })).not.toBe(undefined)
+  // 세션 금액 색 기준(−/+) — 오름차순을 지킨다(노랑은 주황을 못 넘는다)
+  await pane.press({ key: 'color-0-down' })
+  expect(saved().custom.sessionColors).toEqual([5, 50, 100])
+  for (let i = 0; i < 12; i++) await pane.press({ key: 'color-0-up' })
+  expect(saved().custom.sessionColors[0]).toBe(30)
+  await pane.press({ key: 'color-2-up' })
+  expect(saved().custom.sessionColors).toEqual([30, 50, 150])
+  // 패널 보기 · 답변 아래 🤖
+  await pane.press({ key: 'panemode-simple' })
+  expect(saved().custom.paneMode).toBe('simple')
+  await pane.press({ key: 'agentline-off' })
+  expect(saved().custom.agentLine).toBe(false)
+  // 프리셋에서 가져오기 — 처음부터 다시
+  await pane.press({ key: 'custom-from-basic' })
+  expect(saved()).toMatchObject({ screen: 'custom', custom: { paneMode: 'simple', agentLine: true, sessionColors: [10, 50, 100] } })
+  // 다른 화면을 골랐다 돌아와도 커스텀 값은 남는다
+  await pane.press({ key: 'show-cache' })
+  await pane.press({ key: 'screen-basic' })
+  expect(await band.find({ text: ' · 캐시 ' })).not.toBe(undefined)
+  await pane.press({ key: 'screen-custom' })
+  expect(saved().custom.bandShow.cache).toBe(false)
   expect(await band.find({ text: ' · 캐시 ' })).toBe(undefined)
-  for (const p of ['요청당', 'context', '구간']) await $.command.run({ command: 'easy-compact', args: `띠 ${p} 끄기` })
+
+  // 명령(영 · 한 이름 다): 프리셋에서 칸 명령을 치면 커스텀으로 — 그렇다고 답에 적는다
+  await pane.press({ key: 'screen-detail' })
+  expect(await run('band cache off')).toMatch(/화면을 커스텀으로 바꿨습니다/)
+  expect(saved()).toMatchObject({ screen: 'custom' })
+  expect(saved().custom.bandShow.cache).toBe(false)
+  // 비용 줄 칸을 다 끄면(이 세션 · 평균 포함) 줄째 빠진다 — 이지 컴팩트 버튼은 그대로
+  for (const p of ['세션', '평균', '요청당', 'context', '구간']) await run(`띠 ${p} 끄기`)
   expect(await band.find({ key: 'b-r2' })).toBe(undefined)
   expect(await band.find({ key: 'compact' })).not.toBe(undefined)
-  await $.command.run({ command: 'easy-compact', args: 'band question off' })
-  expect(store.get('settings')).toMatchObject({ bandShow: { lastTurn: false } })
-
-  // 모두 보이기
-  await pane.press({ key: 'band-show-all' })
+  await run('band question off')
+  expect(saved().custom.bandShow.lastTurn).toBe(false)
+  // 모두 보이기(명령)
+  await run('band all on')
   expect(await band.find({ text: '요청당 ' })).not.toBe(undefined)
   expect(await band.find({ text: '5시간' })).not.toBe(undefined)
   expect(await band.find({ text: /후 리셋/ })).not.toBe(undefined)
-  // 최소로 바꿔도 칸 설정은 남는다(최대 전용)
+  // 화면 명령
+  expect(await run('화면 기본')).toBe('화면을 기본(으)로 바꿨습니다.')
+  expect(saved()).toMatchObject({ screen: 'basic' })
+  // 최소로 바꿔도 칸 설정은 남는다
   await pane.press({ key: 'band-min' })
   expect(store.get('settings')).toMatchObject({ band: 'min' })
-  // 안 보이기도 설정 탭에서 — 끈 직후 다시 켜는 법을 토스트로(✕ · 명령과 같은 말)
-  await pane.press({ key: 'vis-never' })
-  expect(store.get('settings')).toMatchObject({ bandHidden: true })
-  expect(toasts.at(-1)).toMatch(/^이지 컴팩트 바를 모든 세션에서 껐습니다\. 다시 켜기: .* \/easy-compact 보이기$/)
+  // 접기도 설정 탭에서 — 접은 직후 다시 펴는 법을 토스트로(✕ · 명령과 같은 말)
+  await pane.press({ key: 'fold-on' })
+  expect(store.get('settings')).toMatchObject({ bandFolded: true })
+  expect(toasts.at(-1)).toMatch(/^이지 컴팩트 바를 접었습니다 — 컴팩트할 때 저절로 펴집니다\. 다시 펴기: .* \/easy-compact 보이기$/)
 })

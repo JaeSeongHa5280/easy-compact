@@ -9,11 +9,12 @@
 // 줄을 고른다, 또는 사람이 ◀ ▶ 로 정한 한 크기 — 두 방식 중 하나. 처음엔 최적에서 폭(5 · 10 · 20%)만큼으로 했는데,
 // 원한 구간은 요금표처럼 0~100만 크기마다 값이 붙은 표에서 고르는 것이었다. 고르는 값은 [적용] 을 눌러야 저장.
 
-import type { BandMode, BandShow, Settings, Thresholds, TidyStyleId } from '../types'
+import type { BandMode, BandShow, PaneMode, ScreenPreset, ScreenView, Settings, Thresholds, TidyStyleId } from '../types'
 import { L, lang } from './i18n'
 import { onTerminal } from './glyph'
 import type { Lang } from './i18n'
 import { COMPACT_MAX, COMPACT_MIN, rangeThresholdsFor, thresholdsFor } from './optimal'
+import { CACHE_WARN_5M_DEFAULT, fmtUsd } from './cost'
 
 /**
  * 정리 후 컴팩트 문구 프리셋. body 는 "무엇을 남기고 무엇을 답할지" 만 — 손해 판단과 [컴팩트 진행] ·
@@ -117,25 +118,177 @@ export const RANGE_ROWS: readonly number[] = [100_000, 150_000, 200_000, 250_000
  */
 export const RANGE_BANDS: readonly (readonly [number, number])[] = RANGE_ROWS.slice(1).map((end, i) => [RANGE_ROWS[i]!, end] as const)
 
+/** 칸을 다 켠 바(자세히) */
+const ALL_SHOWN: BandShow = {
+  fiveHour: true,
+  sevenDay: true,
+  resets: true,
+  session: true,
+  sessionAvg: true,
+  perRequest: true,
+  context: true,
+  range: true,
+  cache: true,
+  lastTurn: true,
+}
+
+/**
+ * 이 세션 금액 색 기준 처음 값: $10 노랑 · $50 주황 · $100 빨강. 습관 통계가 아니라 사람이 정하는
+ * 경고선이라 설정(커스텀)에서 바꾼다
+ */
+export const SESSION_COLORS_DEFAULT: [number, number, number] = [10, 50, 100]
+
+/**
+ * 화면 프리셋의 보기 값.
+ * - 간단: 컴팩트가 뭔지만 아는 처음 쓰는 사람 — 이 세션 금액 · 컨텍스트와 이지 컴팩트 버튼만. 한도 · 요청당 · 구간 · 캐시 분 ·
+ *   질문 줄 · 답변 아래 🤖 줄은 뺀다(컨텍스트 색과 버튼 상태가 컴팩트할 때를 알린다), 패널 간략
+ * - 기본: 지향하는 화면 — 한도 셋 · 이 세션 · 요청당 · 컨텍스트 · 구간 · 캐시 · 질문 줄, 패널 간략
+ * - 자세히: 지표 최대 — 기본 + 질문 평균, 패널 자세히(그래프 · 컴팩트 효과 · 모델 견줌)
+ */
+export const SCREEN_VIEWS: Record<Exclude<ScreenPreset, 'custom'>, ScreenView> = {
+  simple: {
+    bandShow: { fiveHour: false, sevenDay: false, resets: false, session: true, sessionAvg: false, perRequest: false, context: true, range: false, cache: false, lastTurn: false },
+    paneMode: 'simple',
+    sessionColors: SESSION_COLORS_DEFAULT,
+    agentLine: false,
+  },
+  basic: { bandShow: { ...ALL_SHOWN, sessionAvg: false }, paneMode: 'simple', sessionColors: SESSION_COLORS_DEFAULT, agentLine: true },
+  detail: { bandShow: ALL_SHOWN, paneMode: 'detail', sessionColors: SESSION_COLORS_DEFAULT, agentLine: true },
+}
+
 export const DEFAULT_SETTINGS: Settings = {
   // 직접 지정의 처음 값. 25만 = 컴팩트 직후 3만~12만 어느 환경에서도 최적보다 +11% 안(hooks/optimal.ts 계산)
   compactAt: 250_000,
   follow: true,
-  // 처음 설치 값 25만 ~ 30만 — 실제 세션 128개 모의에서 최적보다 +2% 안이던 23만 ~ 33만 안쪽.
-  // 예전 기본 15만 ~ 20만(작성자 세션 한 개 분석)은 컴팩트가 너무 잦았다
-  rangeStart: 250_000,
-  rangeEnd: 300_000,
+  // 처음 설치 값 20만 ~ 25만 — 컴팩트 요청을 캐시 읽기로 바르게 세자(0.4.0) 최적이 내려갔다: 직후 9.4만
+  // 가정에서 Opus 5.5 ~22만 · Sonnet 5.5 ~19만, 이 구간이면 두 모델 다 최적보다 +5% 안. 0.3.x 의 25만 ~ 30만은 컴팩트를 정가로
+  // 세 최적이 ~26만이던 때 값이고, 그보다 앞 15만 ~ 20만(작성자 세션 한 개 분석)은 컴팩트가 너무 잦았다. 이미 고른 구간은 그대로
+  rangeStart: 200_000,
+  rangeEnd: 250_000,
   cacheWarnMin: 10,
+  cacheWarnMin5m: CACHE_WARN_5M_DEFAULT,
   tidy: 'default',
   tidyCustom: '',
   lang: 'auto',
   band: 'full',
-  bandAuto: false,
-  bandHidden: false,
-  bandShow: { fiveHour: true, sevenDay: true, resets: true, perRequest: true, context: true, range: true, cache: true, lastTurn: true },
+  bandFolded: false,
+  // 컴팩트할 때 자동으로 펴기는 처음부터 켬 — ✕ 로 접어 둬도 컴팩트할 때를 놓치지 않게
+  bandAutoOpen: true,
+  // 저장소를 못 읽으면 자세히(0.4.0 전부터 보던 그대로 — 칸 다 · 패널 자세히). 새 설치는 첫 실행 때 기본을 적어 두고
+  // (register.tsx seedSettings · NEW_INSTALL_SCREEN), 0.4.0 전 저장값은 normalizeSettings 가 옮긴다(칸 다 켬 → 자세히)
+  screen: 'detail',
+  custom: null,
   paneAutoOpen: false,
   // 같이 열고 닫기는 처음부터 켬
   paneShared: true,
+}
+
+/** 새 설치의 화면 · 0.4.0 전부터 쓰던 사람의 화면(보던 그대로 = 칸 다 · 패널 자세히) */
+export const NEW_INSTALL_SCREEN: ScreenPreset = 'basic'
+export const UPDATE_SCREEN: ScreenPreset = 'detail'
+
+// ── 화면 프리셋(설정 탭 맨 위 "화면"): 보이는 것만 묶는다 — 컴팩트 기준은 프리셋이 없다(개인 기록 기반이라 없앤 것) ──
+
+export const SCREEN_PRESETS: readonly ScreenPreset[] = ['simple', 'basic', 'detail', 'custom']
+
+/** 프리셋 이름: 간단 · 기본 · 자세히 · 커스텀 */
+export function screenName(p: ScreenPreset): string {
+  return p === 'simple' ? L('간단', 'Simple') : p === 'basic' ? L('기본', 'Basic') : p === 'detail' ? L('자세히', 'Detailed') : L('커스텀', 'Custom')
+}
+
+/** 프리셋 한 줄 풀이(설정 탭) — 누구를 위한 화면인가 */
+export function screenUse(p: ScreenPreset): string {
+  return p === 'simple'
+    ? L('처음 쓰는 분: 이 세션 금액 · 컨텍스트 · 이지 컴팩트 버튼만. 버튼이 노랑 · 빨강으로 깜빡이면 컴팩트할 때입니다.', 'Getting started: session cost, context and the Easy Compact button only. When the button pulses yellow or red, it is time to compact.')
+    : p === 'basic'
+      ? L('기본: 한도 · 이 세션 금액 · 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시 · 질문 줄, 패널은 금액 요약.', 'Basic: limits, session cost, per request, context, compact range, cache and the question row; the pane shows the cost summary.')
+      : p === 'detail'
+        ? L('자세히: 지표를 다 — 기본 + 질문 평균, 패널은 그래프 · 컴팩트 효과 · 모델 견줌까지.', 'Detailed: every figure — Basic plus the question average; the pane adds graphs, compact effects and the model comparison.')
+        : L('커스텀: 아래 세부를 다 직접 고릅니다(캐시 유지 시간 포함).', 'Custom: choose every detail below yourself (cache lifetime included).')
+}
+
+/** "간단" · "basic" · "커스텀" 등 → 화면 프리셋. 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
+export function parseScreen(text: string): ScreenPreset | null {
+  const t = text.replace(/\s+/g, '').toLowerCase()
+  if (['간단', 'simple', '처음', 'beginner'].includes(t)) return 'simple'
+  if (['기본', 'basic', 'default'].includes(t)) return 'basic'
+  if (['자세히', 'detail', 'detailed', '전문가', 'expert'].includes(t)) return 'detail'
+  if (['커스텀', 'custom', '직접', '사용자지정'].includes(t)) return 'custom'
+  return null
+}
+
+/** 지금 보이는 값 — 프리셋이면 정해 둔 값, 커스텀이면 저장한 값(아직 없으면 기본) */
+export function viewOf(s: Pick<Settings, 'screen' | 'custom'>): ScreenView {
+  return s.screen === 'custom' ? (s.custom ?? SCREEN_VIEWS.basic) : SCREEN_VIEWS[s.screen]
+}
+
+/**
+ * 프리셋 고르기. 커스텀을 처음 고르면 지금 보이는 값을 옮겨 둔다(빈 화면에서 시작하지 않게) — 그 뒤엔 저장한 커스텀 값 그대로.
+ * 바 크기 · 접기 · 패널 열기 옵션(창 상태)은 그대로 둔다
+ */
+export function chooseScreen(s: Settings, p: ScreenPreset): Settings {
+  if (p !== 'custom') return { ...s, screen: p }
+  return { ...s, screen: 'custom', custom: s.custom ?? viewOf(s) }
+}
+
+/** 커스텀 값을 바꾼다 — 프리셋이었으면 지금 보이는 값에서 커스텀으로 옮겨 바꾼다(명령으로 칸을 바꿀 때) */
+export function editView(s: Settings, change: (v: ScreenView) => ScreenView): Settings {
+  return { ...s, screen: 'custom', custom: change(viewOf(s)) }
+}
+
+/** 커스텀을 프리셋 값으로 되돌린다(커스텀 칸의 [간단 · 기본 · 자세히에서 가져오기]) */
+export function resetCustom(s: Settings, from: Exclude<ScreenPreset, 'custom'>): Settings {
+  return { ...s, screen: 'custom', custom: SCREEN_VIEWS[from] }
+}
+
+/** 화면 한 줄(설정 탭 "화면" 아래 · 접힌 제목): "바 최대 · 칸 9개 · 패널 간략" */
+export function screenStateText(s: Settings): string {
+  const v = viewOf(s)
+  const shown = BAND_PARTS.filter(p => v.bandShow[p.key]).length
+  return [
+    L(`바 ${bandModeName(s.band)}`, `Bar ${bandModeName(s.band)}`),
+    L(`칸 ${shown}개`, `${shown} parts`),
+    L(`패널 ${paneModeName(v.paneMode)}`, `pane ${paneModeName(v.paneMode)}`),
+  ].join(' · ')
+}
+
+/** 기준 금액은 센트 없이($10) — 정수가 아니면 fmtUsd */
+export function fmtUsd0(v: number): string {
+  return Number.isInteger(v) ? `$${v}` : fmtUsd(v)
+}
+
+/** 세션 금액 색 기준의 −/+ 칸(달러) */
+export const SESSION_COLOR_STEPS: readonly number[] = [1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 500, 1000]
+
+/**
+ * 색 기준 하나를 한 칸 옮긴다(i = 0 노랑 · 1 주황 · 2 빨강). 오름차순을 지킨다 — 이웃 값을 넘지 못한다. 커스텀에서만(프리셋은 보기만)
+ */
+export function nudgeSessionColor(s: Settings, i: 0 | 1 | 2, dir: 1 | -1): Settings {
+  if (s.screen !== 'custom') return s
+  const v = viewOf(s)
+  const c = [...v.sessionColors] as [number, number, number]
+  const cur = c[i]
+  const next = dir > 0 ? SESSION_COLOR_STEPS.find(x => x > cur) : [...SESSION_COLOR_STEPS].reverse().find(x => x < cur)
+  if (next === undefined) return s
+  if ((i > 0 && next <= c[i - 1]!) || (i < 2 && next >= c[i + 1]!)) return s
+  c[i] = next
+  return { ...s, custom: { ...v, sessionColors: c } }
+}
+
+export function paneModeName(m: PaneMode): string {
+  return m === 'simple' ? L('간략', 'Simple') : L('자세히', 'Detailed')
+}
+
+/** 패널 보기 한 줄 풀이(설정 탭) */
+export function paneModeUse(m: PaneMode): string {
+  return m === 'simple'
+    ? L('금액 요약 · 지금 한 줄 · 컴팩트 판단 · 질문별 비용만. 그래프 · 컴팩트 효과는 자세히에서.', 'Money summary, one "now" line, the compact call and cost per question. Graphs and compact effects are in Detailed.')
+    : L('컨텍스트 막대 · 컴팩트 시점 · 흐름 그래프 · 컴팩트 효과까지 다.', 'Everything, including the context bar, compact timing, flow graph and compact effects.')
+}
+
+/** 한도 묶음(5시간 · 7일 · 리셋까지 남은 시간) 한꺼번에 켜고 끄기 — 설정 탭 [✓ 한도 전체](2번). 커스텀으로 옮겨 바꾼다 */
+export function setLimits(s: Settings, on: boolean): Settings {
+  return editView(s, v => ({ ...v, bandShow: { ...v.bandShow, fiveHour: on, sevenDay: on, resets: on } }))
 }
 
 // ── 사용량 패널: 새 세션에서 자동으로 열기 · 모든 세션 같이 열고 닫기(따로 켠다) ───────────────
@@ -194,68 +347,67 @@ export function revealLabel(isClosed: boolean): string {
   return onTerminal() ? `⇱ ${name}` : `${REVEAL_ICON} ${name} ⇱`
 }
 
-/** 자동 숨김 풀이(설정 탭) */
-export function bandAutoUse(): string {
-  return L(
-    `컴팩트 구간 시작(노랑) 전엔 입력창 아래 [${revealLabel(false)}] 로 접고, 닿으면 이지 컴팩트 버튼과 함께 보입니다. [${revealLabel(false)}] 을 누르면 다시 늘 보이기.`,
-    `Until the start of the compact range (yellow) the bar folds into [${revealLabel(false)}] below the input, then shows with the Easy Compact button. Press [${revealLabel(false)}] to always show again.`,
-  )
+/** 컴팩트할 때 자동으로 펴기 풀이(설정 탭) */
+export function bandAutoUse(isOn: boolean): string {
+  return isOn
+    ? L(
+        `✕ 로 접어 둔 바가 컴팩트 구간 시작(노랑) · 캐시 만료에 닿으면 저절로 펴지고, 컴팩트하면 다시 접힙니다. 펴진 바를 ✕ 로 접으면 더 급해질 때(빨강 · 캐시 만료)까지 기다립니다.`,
+        `A bar folded with ✕ opens by itself at the start of the compact range (yellow) or when the cache expires, and folds again after a compact. Fold it again with ✕ and it waits until things get more urgent (red · cache expired).`,
+      )
+    : L(`✕ 로 접은 바는 입력창 아래 [${revealLabel(true)}] 를 누를 때까지 접힌 채입니다.`, `A bar folded with ✕ stays folded until you press [${revealLabel(true)}] below the input.`)
 }
 
 /**
- * 바 표시 셋 중 하나: 늘 보이기 · 자동 숨김 · 안 보이기(저장은 bandHidden · bandAuto 둘 — 안 보이기면 자동 숨김 값은
- * 안 쓴다). 설정 탭 "표시" 한 줄 · 단축 명령(보이기 = 늘 보이기 — 숨김 · 자동 숨김을 다 푼다)이 이 셋으로 말한다.
- * 보이기 · 자동 숨김을 따로 두 줄로 두니 버튼 줄이 붙어 겹쳐 보였고, "숨김" 뒤 안내가 다시 켜는 법이 아니었다
+ * 바 표시 셋(저장은 bandFolded · bandAutoOpen 둘): 늘 보이기 = 펼침, 자동 = 접힘 + 컴팩트할 때 펴기, 꺼 둠 = 접힘 + 안 펴기.
+ * 0.4.0 에서 창 버튼 ⇲(자동 숨김)를 뺐다 — ✕(닫기)와 같아 보였다. 이제 ✕ = 접기, 펴질지는 설정의 "컴팩트할 때
+ * 자동으로 펴기" 가 정한다. 단축 명령(보이기 · 안보이기 · 자동숨김)이 이 셋으로 말한다
  */
 export type BandShowMode = 'always' | 'auto' | 'never'
-export const BAND_SHOW_MODES: readonly BandShowMode[] = ['always', 'auto', 'never']
 
 export function bandShowMode(s: Settings): BandShowMode {
-  return s.bandHidden ? 'never' : s.bandAuto ? 'auto' : 'always'
+  return !s.bandFolded ? 'always' : s.bandAutoOpen ? 'auto' : 'never'
 }
 
+/** 보이기 = 펼침(펴기 옵션은 그대로), 자동 = 접고 펴기 켬, 꺼 둠 = 접고 펴기 끔 */
 export function setBandShow(s: Settings, m: BandShowMode): Settings {
-  return { ...s, bandHidden: m === 'never', bandAuto: m === 'never' ? s.bandAuto : m === 'auto' }
+  if (m === 'always') return { ...s, bandFolded: false }
+  return { ...s, bandFolded: true, bandAutoOpen: m === 'auto' }
 }
 
-export function bandShowName(m: BandShowMode): string {
-  return m === 'always' ? L('늘 보이기', 'Always') : m === 'auto' ? L('자동 숨김', 'Auto-hide') : L('안 보이기', 'Hidden')
+/** 바 접기 · 펴기(창 버튼 ✕ · 입력창 아래 버튼) — 펴기 옵션은 그대로 */
+export function setFolded(s: Settings, folded: boolean): Settings {
+  return { ...s, bandFolded: folded }
 }
 
-/** 고른 표시의 한 줄 풀이(설정 탭) */
-export function bandShowUse(m: BandShowMode): string {
-  return m === 'always'
-    ? L('늘 입력창 위에 보입니다.', 'Always shown above the input.')
-    : m === 'auto'
-      ? bandAutoUse()
-      : L(
-          `안 쓰는 동안 모든 세션에서 이지 컴팩트 바를 끕니다. ${turnBackOn()}`,
-          `Turns the Easy Compact bar off in every session while you don't use it. ${turnBackOn()}`,
-        )
+/** 바 접힘 상태 이름(설정 탭 버튼) */
+export function foldName(folded: boolean): string {
+  return folded ? L('접음', 'Folded') : L('펼침', 'Open')
 }
 
-/** 끈 바를 다시 켜는 법 두 가지(버튼 · 단축 명령) */
-function turnBackOn(): string {
+/** 접은 바를 다시 펴는 법 두 가지(버튼 · 단축 명령) */
+function turnBackOn(isAuto: boolean): string {
   return L(
-    `다시 켜기: 입력창 아래 [${revealLabel(true)}] 를 누르거나 /easy-compact 보이기`,
-    `Turn it back on: press [${revealLabel(true)}] below the input, or type /easy-compact show`,
+    `다시 펴기: 입력창 아래 [${revealLabel(!isAuto)}] 를 누르거나 /easy-compact 보이기`,
+    `Open it again: press [${revealLabel(!isAuto)}] below the input, or type /easy-compact show`,
   )
 }
 
 /**
- * 바를 끈 직후 알림 — 끄는 길 셋(바의 ✕ · 설정 탭 "안 보이기" · /easy-compact 안보이기)이 같은 말로 다시 켜는 법을 알린다.
- * 안 보이기는 이 도구를 안 쓰는 사람이 지우기 전에 잠시 끄는 자리라, 끈 뒤 다시 켜는 길이 바로 보여야 한다
+ * 바를 접은 직후 알림 — 접는 길(바의 ✕ · 설정 탭 · /easy-compact 안보이기)이 같은 말로 다시 펴는 법을 알린다. 컴팩트할 때
+ * 저절로 펴지는지도(설정 "컴팩트할 때 자동으로 펴기")
  */
-export function hiddenNote(): string {
-  return L(`이지 컴팩트 바를 모든 세션에서 껐습니다. ${turnBackOn()}`, `Easy Compact bar is off in every session. ${turnBackOn()}`)
+export function hiddenNote(s: Pick<Settings, 'bandAutoOpen'>): string {
+  return s.bandAutoOpen
+    ? L(`이지 컴팩트 바를 접었습니다 — 컴팩트할 때 저절로 펴집니다. ${turnBackOn(true)}`, `Easy Compact bar folded — it opens by itself when it is time to compact. ${turnBackOn(true)}`)
+    : L(`이지 컴팩트 바를 모든 세션에서 접었습니다. ${turnBackOn(false)}`, `Easy Compact bar is folded in every session. ${turnBackOn(false)}`)
 }
 
 /** 끈 직후 토스트가 떠 있는 시간 — 기본 4초는 다시 켜는 법을 읽기에 짧다 */
 export const HIDDEN_NOTE_MS = 10_000
 
-/** 바 상태 한 줄(명령 답 · 설정 탭 접힌 제목): "늘 보이기 · 최대" */
+/** 바 상태 한 줄(명령 답 · 설정 탭 접힌 제목): "펼침 · 최대" · "접음 · 컴팩트할 때 펴기 · 최대" */
 export function bandStateText(s: Settings): string {
-  return `${bandShowName(bandShowMode(s))} · ${bandModeName(s.band)}`
+  return [foldName(s.bandFolded), s.bandFolded && s.bandAutoOpen ? L('컴팩트할 때 펴기', 'opens when compacting') : null, bandModeName(s.band)].filter(Boolean).join(' · ')
 }
 
 /** "켜기 · on · 끄기 · off" → true / false, 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
@@ -271,6 +423,8 @@ export const BAND_PARTS: readonly { key: keyof BandShow; group: 'limits' | 'cost
   { key: 'fiveHour', group: 'limits', names: ['5h', '5시간'] },
   { key: 'sevenDay', group: 'limits', names: ['7d', '7일'] },
   { key: 'resets', group: 'limits', names: ['reset', 'resets', '리셋'] },
+  { key: 'session', group: 'cost', names: ['session', '이세션', '세션', '세션금액'] },
+  { key: 'sessionAvg', group: 'cost', names: ['average', 'avg', '질문평균', '평균'] },
   { key: 'perRequest', group: 'cost', names: ['request', '요청당', '요청'] },
   { key: 'context', group: 'cost', names: ['context', '컨텍스트'] },
   { key: 'range', group: 'cost', names: ['range', '구간', '컴팩트구간'] },
@@ -284,6 +438,8 @@ export function bandPartName(key: keyof BandShow): string {
     fiveHour: ['5시간', '5h'],
     sevenDay: ['7일', '7d'],
     resets: ['리셋까지 남은 시간', 'Time to reset'],
+    session: ['이 세션 금액', 'Session cost'],
+    sessionAvg: ['질문 평균', 'Question average'],
     perRequest: ['요청당', 'Per request'],
     context: ['컨텍스트', 'Context'],
     range: ['컴팩트 구간', 'Compact range'],
@@ -312,9 +468,9 @@ export function parseBandPart(text: string): keyof BandShow | null {
   return BAND_PARTS.find(p => p.names.includes(t))?.key ?? null
 }
 
-/** 칸 하나 켜고 끄기 */
+/** 칸 하나 켜고 끄기 — 커스텀으로 옮겨 바꾼다 */
 export function setBandPart(s: Settings, key: keyof BandShow, on: boolean): Settings {
-  return { ...s, bandShow: { ...s.bandShow, [key]: on } }
+  return editView(s, v => ({ ...v, bandShow: { ...v.bandShow, [key]: on } }))
 }
 
 // ── 컴팩트 시점 ──────────────────────────────────────────────────
@@ -337,13 +493,17 @@ export function setRange(s: Settings, start: number, end: number): Settings {
   return clamp(start) < clamp(end) ? { ...s, follow: true, rangeStart: clamp(start), rangeEnd: clamp(end) } : s
 }
 
-/** 캐시 경고 −/+ 칸 */
+/** 캐시 경고 −/+ 칸 — 1시간 캐시 · 5분 캐시 따로(5분 캐시에 10분 경고면 늘 노랑) */
 export const CACHE_STEPS: readonly number[] = [0, 5, 10, 15, 20, 30]
+export const CACHE_STEPS_5M: readonly number[] = [0, 1, 2, 3, 4]
 
-export function nudgeCache(s: Settings, dir: 1 | -1): Settings {
-  const v = s.cacheWarnMin
-  const next = dir > 0 ? (CACHE_STEPS.find(m => m > v) ?? v) : ([...CACHE_STEPS].reverse().find(m => m < v) ?? v)
-  return { ...s, cacheWarnMin: next }
+/** ttl = 지금 세션의 캐시 유지 시간(분) — 그 유지 시간의 경고만 바꾼다 */
+export function nudgeCache(s: Settings, dir: 1 | -1, ttl = 60): Settings {
+  const is5m = ttl < 60
+  const steps = is5m ? CACHE_STEPS_5M : CACHE_STEPS
+  const v = is5m ? s.cacheWarnMin5m : s.cacheWarnMin
+  const next = dir > 0 ? (steps.find(m => m > v) ?? v) : ([...steps].reverse().find(m => m < v) ?? v)
+  return is5m ? { ...s, cacheWarnMin5m: next } : { ...s, cacheWarnMin: next }
 }
 
 // ── 컴팩트 문구 ──────────────────────────────────────────────────
@@ -414,21 +574,54 @@ export function normalizeSettings(raw: unknown): Settings {
   const rangeStart = hasRange ? r.rangeStart! : DEFAULT_SETTINGS.rangeStart
   const rangeEnd = hasRange ? r.rangeEnd! : DEFAULT_SETTINGS.rangeEnd
   const cacheWarnMin = isCount(r.cacheWarnMin) ? r.cacheWarnMin : isCount(r.values?.cacheWarnMin) ? r.values.cacheWarnMin : DEFAULT_SETTINGS.cacheWarnMin
+  const cacheWarnMin5m = isCount(r.cacheWarnMin5m) && r.cacheWarnMin5m < 5 ? r.cacheWarnMin5m : DEFAULT_SETTINGS.cacheWarnMin5m
   const tidy = r.tidy === 'custom' || TIDY_IDS.includes(r.tidy as TidyStyleId) ? (r.tidy as Settings['tidy']) : 'default'
   const tidyCustom = typeof r.tidyCustom === 'string' ? r.tidyCustom : ''
   const lang = r.lang === 'ko' || r.lang === 'en' ? r.lang : 'auto'
   // 0.2.0 의 band 'auto'(컴팩트할 때만 = 한 줄로 나옴)는 최소 + 필요할 때만으로
   const rawBand = (r as { band?: unknown }).band
   const band = rawBand === 'auto' ? 'min' : BAND_MODES.includes(rawBand as BandMode) ? (rawBand as BandMode) : DEFAULT_SETTINGS.band
-  const bandAuto = typeof r.bandAuto === 'boolean' ? r.bandAuto : rawBand === 'auto'
-  const bandHidden = typeof r.bandHidden === 'boolean' ? r.bandHidden : false
-  // 칸은 하나씩: 빠졌거나 깨진 칸은 보이기(새 판에서 칸이 늘어도 켜진 채로 시작한다)
-  const shown = (typeof r.bandShow === 'object' && r.bandShow !== null ? r.bandShow : {}) as Partial<Record<keyof BandShow, unknown>>
-  const bandShow = { ...DEFAULT_SETTINGS.bandShow }
-  for (const k of Object.keys(bandShow) as (keyof BandShow)[]) if (typeof shown[k] === 'boolean') bandShow[k] = shown[k] as boolean
+  // 바 접기: 0.4.0 전 안 보이기(bandHidden) → 접음 + 안 펴기, 자동 숨김(bandAuto · 0.2.0 band 'auto') → 접음 + 펴기, 늘 보이기 → 펼침
+  const old = r as { bandHidden?: unknown; bandAuto?: unknown }
+  const wasHidden = old.bandHidden === true
+  const wasAuto = old.bandAuto === true || rawBand === 'auto'
+  const bandFolded = typeof r.bandFolded === 'boolean' ? r.bandFolded : wasHidden || wasAuto
+  const bandAutoOpen = typeof r.bandAutoOpen === 'boolean' ? r.bandAutoOpen : !wasHidden
   const paneAutoOpen = typeof r.paneAutoOpen === 'boolean' ? r.paneAutoOpen : false
   const paneShared = typeof r.paneShared === 'boolean' ? r.paneShared : DEFAULT_SETTINGS.paneShared
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, tidy, tidyCustom, lang, band, bandAuto, bandHidden, bandShow, paneAutoOpen, paneShared }
+  const custom = normalizeView((r as { custom?: unknown }).custom)
+  const screen = SCREEN_PRESETS.includes(r.screen as ScreenPreset) ? (r.screen as ScreenPreset) : null
+  if (screen !== null) return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, paneAutoOpen, paneShared }
+  // 화면이 없는 저장값 = 0.4.0 전부터 쓰던 사람: 칸(bandShow) · 패널 보기(paneMode — 없으면 자세히)를 옮긴다. 칸을 다 켰으면
+  // 프리셋(패널 자세히 → 자세히, 간략 → 기본), 하나라도 껐으면 그 칸 그대로 커스텀. 새 칸(이 세션 금액)은 켜고 질문 평균은 끈다
+  const shown = (typeof (r as { bandShow?: unknown }).bandShow === 'object' && (r as { bandShow?: unknown }).bandShow !== null ? (r as { bandShow: object }).bandShow : {}) as Partial<Record<keyof BandShow, unknown>>
+  const oldShow: BandShow = { ...ALL_SHOWN, sessionAvg: false }
+  for (const k of Object.keys(oldShow) as (keyof BandShow)[]) if (typeof shown[k] === 'boolean') oldShow[k] = shown[k] as boolean
+  const rawPane = (r as { paneMode?: unknown }).paneMode
+  const oldPane: PaneMode = rawPane === 'simple' ? 'simple' : 'detail'
+  const allOn = BAND_PARTS.filter(p => p.key !== 'sessionAvg' && p.key !== 'session').every(p => oldShow[p.key])
+  const migrated: Pick<Settings, 'screen' | 'custom'> = allOn
+    ? { screen: oldPane === 'detail' ? 'detail' : 'basic', custom }
+    : { screen: 'custom', custom: { ...SCREEN_VIEWS.basic, bandShow: oldShow, paneMode: oldPane } }
+  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, paneAutoOpen, paneShared }
+}
+
+/** 저장된 커스텀 값을 관대하게: 빠진 칸은 기본 프리셋 값, 색 기준은 오름차순 양수 셋일 때만. 없거나 깨졌으면 null */
+function normalizeView(raw: unknown): ScreenView | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const v = raw as Partial<Record<keyof ScreenView, unknown>>
+  const base = SCREEN_VIEWS.basic
+  const shown = (typeof v.bandShow === 'object' && v.bandShow !== null ? v.bandShow : {}) as Partial<Record<keyof BandShow, unknown>>
+  const bandShow = { ...base.bandShow }
+  for (const k of Object.keys(bandShow) as (keyof BandShow)[]) if (typeof shown[k] === 'boolean') bandShow[k] = shown[k] as boolean
+  const c = v.sessionColors
+  const isColors = Array.isArray(c) && c.length === 3 && c.every(x => isCount(x) && x > 0) && c[0] < c[1] && c[1] < c[2]
+  return {
+    bandShow,
+    paneMode: v.paneMode === 'simple' || v.paneMode === 'detail' ? v.paneMode : base.paneMode,
+    sessionColors: isColors ? (c as [number, number, number]) : SESSION_COLORS_DEFAULT,
+    agentLine: typeof v.agentLine === 'boolean' ? v.agentLine : base.agentLine,
+  }
 }
 
 /** "30만" · "300k" · "300000" → 토큰, "10분" · "10" → 분. 못 읽으면 null */
@@ -451,7 +644,8 @@ export function parseMinutes(text: string): number | null {
   return m ? Number(m[1]) : null
 }
 
-/** 걸 기준: 구간 방식이면 고른 구간(노랑 = 시작, 빨강 = 끝), 직접 지정이면 그 크기(노랑 = 그 80%) */
+/** 걸 기준: 구간 방식이면 고른 구간(노랑 = 시작, 빨강 = 끝), 직접 지정이면 그 크기(노랑 = 그 80%). 캐시 경고는 1시간 · 5분 둘 다 */
 export function thresholdsOf(s: Settings, model: string): Thresholds {
-  return s.follow ? rangeThresholdsFor(s.rangeStart, s.rangeEnd, model, s.cacheWarnMin) : thresholdsFor(s.compactAt, model, s.cacheWarnMin)
+  const t = s.follow ? rangeThresholdsFor(s.rangeStart, s.rangeEnd, model, s.cacheWarnMin) : thresholdsFor(s.compactAt, model, s.cacheWarnMin)
+  return { ...t, cacheWarnMin5m: s.cacheWarnMin5m }
 }

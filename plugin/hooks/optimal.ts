@@ -119,6 +119,7 @@ export function penaltyAt(at: number, model: string, inputs: CompactInputs, grow
  */
 export function keepOptimal(prev: Optimal | null, next: Optimal): Optimal {
   if (!prev || prev.at === null) return next
+  // 공통 앞부분 · 질문 꼴은 최적 크기와 상관없다 — 부르는 쪽이 늘 새 값으로 덮는다(register.tsx applyThresholds)
   const key = (o: Optimal) => JSON.stringify([o.model ? modelKey(o.model) : '', o.inputs, o.growthSrc])
   return key(prev) === key(next) ? prev : next
 }

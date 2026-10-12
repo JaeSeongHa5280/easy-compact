@@ -22,8 +22,12 @@ import {
   setThresholds,
   projectSlug,
   ctxBarSvg,
+  isWarmMix,
+  repriceTurns,
+  rewriteAllUsd,
   tailOf,
   textBar,
+  WARM_COMPACT,
 } from './cost'
 
 // 이 시험의 글 기대값은 한국어 — 화면 글은 L(한, 영) 으로 언어를 따른다
@@ -180,6 +184,43 @@ test('식은 캐시: 이어 가면 전체 다시 쓰기, 바로 컴팩트는 정
   const small = coldCompact(200_000, IN, 'claude-opus-5-5')!
   expect(small.compactUsd > small.continueUsd).toBe(true)
   expect(coldCompact(100_000, IN, 'unknown-model')).toBe(null)
+})
+
+test('식은 캐시 셈에 공통 앞부분: 다른 세션이 데워 둔 시스템 · 도구는 읽기 요율 — 회사 세션(Sonnet 5.5) $0.60 → $0.42', () => {
+  const sonnet = ratesFor('claude-sonnet-5-5')!
+  // 15만 전부 다시 쓰기 × $4 = $0.60, 공통 앞부분 4.76만은 읽기($0.20) → (15만 − 4.76만) × $4 + 4.76만 × $0.20 ≈ $0.42
+  expect(rewriteAllUsd(150_000, sonnet).toFixed(2)).toBe('0.60')
+  expect(rewriteAllUsd(150_000, sonnet, 47_594).toFixed(2)).toBe('0.42')
+  // 컨텍스트보다 크게 잰 값은 컨텍스트까지만
+  expect(rewriteAllUsd(40_000, sonnet, 47_594)).toBe((40_000 * 0.2) / 1e6)
+  const cold = estimate(150_000, 'claude-sonnet-5-5', 0, 2 * 3600_000, false, 47_594)
+  expect(cold.kind === 'cold' && cold.rewriteUsd.toFixed(2)).toBe('0.42')
+  // 바로 컴팩트도 공통 앞부분은 읽기: Opus 5.5 50만, 공통 4.8만 → 이어 가기 (45.2만 × $8 + 4.8만 × $0.20) = $3.63,
+  // 컴팩트 45.2만 × $4 + 4.8만 × $0.20 + 출력 1만 × $20 + 직후 (9.4만 − 4.8만) × $8 + 4.8만 × $0.20 ≈ $2.40
+  const big = coldCompact(500_000, IN, 'claude-opus-5-5', 48_000)!
+  expect(big.continueUsd.toFixed(2)).toBe('3.63')
+  expect(big.compactUsd.toFixed(2)).toBe('2.40')
+})
+
+test('같은 토큰을 다른 모델 요율로(9c): 에이전트 몫은 그 에이전트 모델 · 5분 쓰기로, 나머지는 질문 모델로', () => {
+  // 메인 Opus 5.5: 읽기 $0.01 · 출력 $0.20. Haiku 5.5 에이전트: 출력 1만 × $0.5 = $0.005 · 5분 쓰기 2만 × $0.125 = $0.0025
+  const turn = {
+    model: 'claude-opus-5-5',
+    cost: { read: 0.01, write: 0.0025, output: 0.205, input: 0, usd: 0.2175 },
+    details: [{ label: '조사', usd: 0.0075, write: 0.0025, read: 0, output: 0.005, input: 0, agent: 'a1', model: 'claude-haiku-5-5', steps: 1 }],
+  }
+  const r = repriceTurns([turn], 'claude-sonnet-5-5')!
+  // Sonnet 5.5 로: 메인 읽기 5만 × $0.20 + 출력 1만 × $10 = $0.11, 에이전트 출력 1만 × $10 + 5분 쓰기 2만 × $2.5 = $0.15
+  // (질문 모델 Opus 요율로 다 되돌리면 에이전트 몫이 출력 250토큰 · 쓰기 312토큰으로 잡혀 ~$0.0033 이었다)
+  expect(r.other.toFixed(2)).toBe('0.26')
+  expect(r.now.toFixed(4)).toBe('0.2175')
+  expect(r.models).toEqual(['claude-opus-5-5'])
+})
+
+test('컴팩트 요청 몫: 캐시가 살아 있던 컴팩트만 남긴다 — 읽기가 절반 아래면 식은 캐시의 것', () => {
+  expect(isWarmMix({ input: 0.0085, read: 0.986, write: 0.0053 })).toBe(true)
+  expect(isWarmMix({ input: 0.7, read: 0.3, write: 0 })).toBe(false)
+  expect(WARM_COMPACT).toEqual({ input: 0, read: 1, write: 0 })
 })
 
 test('다시 쓴 값: 앞 요청 컨텍스트 중 못 읽고 새로 쓴 몫만 — 세션 첫 요청 · 새 내용 쓰기는 0', () => {

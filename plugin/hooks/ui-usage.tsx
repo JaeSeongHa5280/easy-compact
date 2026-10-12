@@ -3,8 +3,8 @@ import {
   average,
   PERM_HEX,
   compactPayoff,
-  coldCompact,
-  estimate,
+  coldFor,
+  estimateFor,
   fmtTokens,
   fmtUsd,
   LEVEL_HEX,
@@ -15,14 +15,18 @@ import {
   modelName,
   ratesFor,
   thresholds,
+  cacheWarnFor,
+  sessionColorOf,
 } from './cost'
 import { OUTPUT_GUESS, SUMMARY_GUESS } from './optimal'
+import { SESSION_COLORS_DEFAULT } from './settings'
 import {
   afterInNowTokens,
   COMPACT_HEX,
   compactEffects,
   compactSummary,
   TIMING_H,
+  timingNames,
   timingSvg,
   segmentExtra,
   FLOW_RECENT,
@@ -35,7 +39,7 @@ import {
   pendingCompact,
 } from './flow'
 import type { CompactEffect, Flow } from './flow'
-import { promptHead, clipText, cellsOf, fitCells, gainText, agoText, costBreakdown, modelText, switchText } from './text'
+import { APP_MIN_USD, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentSum, costBreakdown, modelText, switchText } from './text'
 import {
   ACCENT,
   TALK_HEX,
@@ -205,6 +209,9 @@ export function historyRow(
   // 아래 줄: 모델 · 노력도 · 컨텍스트(수준 색) — 모델부터 시작해 줄마다 같은 자리에 선다. 언제는 금액 밑(leadCell).
   // 읽기 · 쓰기 · 출력은 펼쳐야 보인다 — 줄에선 모델 · 컨텍스트가 더 중요하다
   const parts: unknown[] = []
+  // 접힌 줄에도 에이전트 몫(맨 앞 — 금액 칸의 값 중 얼마가 에이전트인지), 도는 중이면 그 말도
+  const agents = agentSum(t.details)
+  if (agents) parts.push(<Text key="a">{`${agentHead()} ${fmtUsd(agents.usd)}${agents.running ? L(' · 도는 중', ' · running') : ''}`}</Text>)
   if (t.model) {
     parts.push(
       fromModel ? (
@@ -439,25 +446,28 @@ export function drawFlow(
           height={TIMING_H}
         />
       ) : Raster ? (
-        // 터미널: 칸 그림 한 줄 + 아래 시작 · 끝 이름(데스크톱은 그림 안에 있다)
-        <Box key="f-timing" flexDirection="column">
-          <Raster
-            key="f-timing-cells"
-            columns={Math.max(10, Math.round(tilePx / 6))}
-            rows={1}
-            cells={timingCells(nowCtx, baseTokens, applied.ctxWarn, applied.ctxCut, LEVEL_HEX[extraLevel], Math.max(10, Math.round(tilePx / 6))).toBase64()}
-          />
-          <Box key="f-timing-names" columnGap={2}>
-            <Text>
-              <Text color={LEVEL_HEX.warn}>┃</Text>
-              <Text dimColor>{` ${markNames.warnName}`}</Text>
-            </Text>
-            <Text>
-              <Text color={LEVEL_HEX.cut}>┃</Text>
-              <Text dimColor>{` ${markNames.cutName}`}</Text>
-            </Text>
-          </Box>
-        </Box>
+        // 터미널: 칸 그림 한 줄 + 아래 시작 · 끝 이름(데스크톱은 그림 안에 있다). 이름은 데스크톱과 같이 시작은 왼쪽 끝,
+        // 끝은 오른쪽 끝 — 색 ┃ 로 막대의 선과 잇는다
+        (() => {
+          const cols = Math.max(10, Math.round(tilePx / 6))
+          // ┃ 와 띄움 두 칸씩은 빼고 잰다
+          const [warnName, cutName] = timingNames(markNames.warnName, markNames.cutName, cols - 4, cellsOf)
+          return (
+            <Box key="f-timing" flexDirection="column" width={cols}>
+              <Raster key="f-timing-cells" columns={cols} rows={1} cells={timingCells(nowCtx, baseTokens, applied.ctxWarn, applied.ctxCut, LEVEL_HEX[extraLevel], cols).toBase64()} />
+              <Box key="f-timing-names" justifyContent="space-between" columnGap={2}>
+                <Text>
+                  <Text color={LEVEL_HEX.warn}>┃</Text>
+                  <Text dimColor>{` ${warnName}`}</Text>
+                </Text>
+                <Text>
+                  <Text dimColor>{`${cutName} `}</Text>
+                  <Text color={LEVEL_HEX.cut}>┃</Text>
+                </Text>
+              </Box>
+            </Box>
+          )
+        })()
       ) : null}
     </Box>
   )
@@ -552,7 +562,8 @@ export function permanentOf(flow: Flow, isPartial: boolean, fallback: number | n
   const summary = isRescaled ? null : compactSummary(flow, last, first)
   return {
     tokens,
-    fixed: summary !== null && first ? first.ctx : null,
+    // 처음부터 있던 몫 = 직후 − 요약(컴팩트 뒤 첫 요청이 캐시에서 읽은 몫). 요약을 못 쟀으면 기록의 첫 요청과 같다
+    fixed: summary !== null ? last.after - summary : null,
     summary,
     isEstimated: pendingCompact(flow) !== null,
     isRescaled,
@@ -727,14 +738,14 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
   if (!r || ctx <= 0) return null
   const after = Math.min(inputs.after, ctx)
   const ratio = after > 0 ? ctx / after : 1
-  const est = estimate(ctx, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom))
+  const est = estimateFor(u, nowMs, ctx)
   const calls = average(sums.slice(-10).map(t => t.steps).filter(n => n > 0))
   let second: unknown = null
   if (ratio < LITTLE_SHRINK) {
     // 띠 툴팁 · 확인 카드와 같은 선 · 같은 말 · 같은 색
     second = <Text bold color="red" wrap="wrap">{L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'Little to save — compacting now is a loss')}</Text>
   } else if (est.kind === 'cold') {
-    const c = coldCompact(ctx, inputs, u.model)
+    const c = coldFor(u, inputs, ctx)
     if (c) {
       second = (
         <Text wrap="wrap">
@@ -863,9 +874,12 @@ export function drawHistory(
         // 펼치면 읽기 · 쓰기 · 출력 내역, 그 아래 동작별 값 — 접힌 줄에선 뺐다
         const extra = isOpen ? (
           <Box key={`hbox-${i}`} {...DETAIL_BOX}>
-            <Text key={`hb-${i}`} dimColor wrap="wrap">
-              {costBreakdown(t.cost, t.appUsd)}
-            </Text>
+            {/* 메인 / 🤖 에이전트 / ⚙ 앱 자체 요청 — 줄마다(에이전트가 없으면 예전처럼 한 줄) */}
+            {costBreakdown(t.cost, t.appUsd, t.details).map((line, k) => (
+              <Text key={`hb-${i}-${k}`} dimColor wrap="wrap">
+                {line}
+              </Text>
+            ))}
             {(t.details ?? []).length === 0
               ? emptyLine(ui, `hd-none-t-${i}`, L('동작별 기록이 없는 예전 질문입니다.', 'An earlier question without per-step records.'))
               : detailRows(ui, t.details ?? [], `hd-${i}`, textBox - DETAIL_INSET, g)}
@@ -892,6 +906,8 @@ export function drawNow(
   perm: Perm | null = null,
   inputs: CompactInputs | null = null,
   fold?: Fold,
+  modelLine: string | null = null,
+  colors: readonly [number, number, number] = SESSION_COLORS_DEFAULT,
 ) {
   const { Box, Text } = ui
   if (!u) {
@@ -906,7 +922,7 @@ export function drawNow(
       fold,
     )
   }
-  const est = estimate(u.contextTokens, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom))
+  const est = estimateFor(u, nowMs)
   const level = levelOf(u.contextTokens)
   const ctxPercent = u.percent ?? (u.window > 0 ? (u.contextTokens / u.window) * 100 : 0)
   const t = thresholds()
@@ -1006,26 +1022,29 @@ export function drawNow(
     </Box>
   )
 
-  // 비용은 두 줄: 다음 요청(예측) · 세션 누적. "지난 질문" 줄은 바로 아래 질문별 비용 맨 위와 같은 값이라 뺐다(2026-10-11).
-  // 요율 · 노력도 · 색 기준은 맨 아래 흐린 참고 줄로
+  // 비용은 다음 요청(예측) 한 줄. "지난 질문" 줄은 바로 아래 질문별 비용 맨 위와 같은 값이라 뺐고(2026-10-11), 본문 "누적 비용"
+  // 은 카드 제목 줄 "이 세션 누적 비용" 과 같은 값이라 뺐다(0.4.0 화면 정리 — 같은 값은 한 곳). 요율 · 노력도 · 색 기준은 맨 아래
+  // 흐린 참고 줄로
   const costRows: unknown[] = []
-  // 제목 줄에도 있지만 본문에도 — 펼쳐 볼 땐 다음 요청과 같은 줄 꼴로 견준다. 접으면 제목 줄만 남는다
-  // 이름 칸(12칸)에 "이 세션 누적 비용" 이 안 들어가 두 줄로 꺾였다 — 카드 제목 줄엔 "이 세션 누적 비용" 그대로
-  if (u.costUsd !== null) costRows.push(row(ui, 'k-total', L('누적 비용', 'Total cost'), fmtUsd(u.costUsd)))
+  // 모델 견줌(9c): 같은 질문들을 다른 모델로 — 요청 1회(읽기)만으론 두 모델 차이가 안 보였다(동료)
+  if (modelLine) costRows.push(<Text key="k-model" dimColor wrap="wrap">{modelLine}</Text>)
   if (est.kind === 'warm') {
-    const isLate = est.minsLeft !== null && est.minsLeft < t.cacheWarnMin
+    const isLate = est.minsLeft !== null && est.minsLeft < cacheWarnFor(t, est.ttlMin)
+    // 유지 시간을 기록에서 못 쟀으면(첫 요청 전 등) 설정 · 문서 기본값으로 짐작한 값 — 그렇다고 적는다
+    const guessNote = u.cacheTtlMeasured === false ? L(' 추정', ' est.') : ''
     costRows.push(
       row(
         ui,
         'k-call',
         L('다음 요청', 'Next request'),
-        `~${fmtUsd(est.perCallUsd)}`,
+        `~${fmtUsd(est.perCallUsd + (u.perCallExtraUsd ?? 0))}`,
         est.minsLeft === null ? (
           <Text dimColor>{L('캐시 남은 시간 모름', 'cache time left unknown')}</Text>
         ) : (
           <Text>
             <Text dimColor>{L('캐시 ', 'cache ')}</Text>
-            <Text {...(isLate ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}분 남음`, `${est.minsLeft}m left`)}</Text>
+            <Text {...(isLate ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}/${est.ttlMin}분 남음`, `${est.minsLeft}/${est.ttlMin}m left`)}</Text>
+            {guessNote ? <Text dimColor>{guessNote}</Text> : null}
             <Text {...(isLate ? { color: 'red' } : { dimColor: true })}>{L(` · 넘기면 ~${fmtUsd(est.rewriteUsd)}`, ` · after that ~${fmtUsd(est.rewriteUsd)}`)}</Text>
           </Text>
         ),
@@ -1034,7 +1053,7 @@ export function drawNow(
     )
   }
   if (est.kind === 'cold') {
-    const c = inputs ? coldCompact(u.contextTokens, inputs, u.model) : null
+    const c = inputs ? coldFor(u, inputs) : null
     const win = c !== null && c.compactUsd < c.continueUsd
     costRows.push(
       row(
@@ -1071,13 +1090,105 @@ export function drawNow(
       {isFolded ? <Text bold color={LEVEL_TEXT[level]}>{`${u.contextEstimated ? '~' : ''}${fmtTokens(u.contextTokens)}`}</Text> : null}
       {isFolded && u.costUsd !== null ? <Text dimColor>{' · '}</Text> : null}
       {u.costUsd !== null ? <Text>{L('이 세션 누적 비용 ', 'Session total ')}</Text> : null}
-      {u.costUsd !== null ? <Text bold>{fmtUsd(u.costUsd)}</Text> : null}
+      {u.costUsd !== null ? sessionUsd(ui, u.costUsd, colors) : null}
     </Text>
   )
   return section(ui, 's-now', nowTitle(), [ctxTile, costEl], hint, true, '🧠', fold)
 }
 
 export const nowTitle = () => L('컨텍스트 · 비용', 'Context · cost')
+
+/**
+ * 간략 모드 맨 위 "비용 요약" 카드(12): 금액 요약만 자세히 — 이 세션 누적(제목 줄) · 끝난 질문들의 합과 질문당 평균 · 그중
+ * 메인 / 🤖 에이전트 / ⚙ 앱 자체 요청 · 지금 한 줄(바의 비용 줄과 같은 글) · 컴팩트 판단 한 줄. 그 아래는 질문별 비용 카드
+ * (진행 중 질문 · 지난 질문). 컨텍스트 막대 · 컴팩트 시점 · 흐름 그래프 · 컴팩트 효과 · 요율 줄은 자세히에서만(사이드
+ * 패널 정보가 너무 많다)
+ */
+/** 이 세션 금액 — 바와 같은 색(설정의 세션 금액 기준) */
+function sessionUsd(ui: Ui, usd: number, colors: readonly [number, number, number]) {
+  const color = sessionColorOf(usd, colors)
+  return (
+    <ui.Text bold {...(color ? { color } : {})}>
+      {fmtUsd(usd)}
+    </ui.Text>
+  )
+}
+
+export function drawSummary(
+  ui: Ui,
+  u: Usage | null,
+  sums: readonly TurnSummary[],
+  nowLine: unknown,
+  decideEl: unknown,
+  extra: unknown = null,
+  fold?: Fold,
+  colors: readonly [number, number, number] = SESSION_COLORS_DEFAULT,
+) {
+  const { Box, Text } = ui
+  const total = sums.reduce((s, t) => s + t.cost.usd, 0)
+  const agentUsd = sums.reduce((s, t) => s + (agentSum(t.details)?.usd ?? 0), 0)
+  const appUsd = sums.reduce((s, t) => s + (t.appUsd ?? 0), 0)
+  const label = (text: string) => (
+    <Box width={8} flexShrink={0}>
+      <Text dimColor>{text}</Text>
+    </Box>
+  )
+  const line = (key: string, name: string, body: unknown) => (
+    <Box key={key} columnGap={1}>
+      {label(name)}
+      <Box flexShrink={1} minWidth={0}>
+        {body}
+      </Box>
+    </Box>
+  )
+  const questions =
+    sums.length === 0 ? (
+      <Text dimColor>{L('아직 끝난 질문이 없습니다.', 'No finished questions yet.')}</Text>
+    ) : (
+      <Text wrap="wrap">
+        <Text>{L(`${sums.length}개 `, `${sums.length} · `)}</Text>
+        <Text bold>{fmtUsd(total)}</Text>
+        <Text dimColor>{L(' · 질문당 평균 ', ' · avg per question ')}</Text>
+        <Text>{fmtUsd(total / sums.length)}</Text>
+      </Text>
+    )
+  // 메인 / 에이전트 / 앱 자체 — 에이전트 · 앱 자체 요청이 있을 때만(없으면 전부 메인이라 같은 값을 또 적는 셈)
+  const split =
+    agentUsd > 0 || appUsd >= APP_MIN_USD ? (
+      <Text wrap="wrap" dimColor>
+        {[
+          L(`메인 ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`, `main ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`),
+          agentUsd > 0 ? withIcon('🤖', L(`에이전트 ${fmtUsd(agentUsd)}`, `agents ${fmtUsd(agentUsd)}`)) : null,
+          appUsd >= APP_MIN_USD ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd)}`, `app's own ${fmtUsd(appUsd)}`)) : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </Text>
+    ) : null
+  const hint =
+    u && u.costUsd !== null ? (
+      <Text>
+        <Text>{L('이 세션 누적 비용 ', 'Session total ')}</Text>
+        {sessionUsd(ui, u.costUsd, colors)}
+      </Text>
+    ) : undefined
+  return section(
+    ui,
+    's-summary',
+    L('비용 요약', 'Cost summary'),
+    [
+      line('m-q', L('질문', 'Questions'), questions),
+      split ? line('m-split', '', split) : null,
+      extra ? line('m-extra', '', extra) : null,
+      nowLine ? line('m-now', L('지금', 'Now'), nowLine) : null,
+      decideEl ? line('m-decide', '', decideEl) : null,
+    ],
+    hint,
+    true,
+    '💰',
+    fold,
+  )
+}
 
 /**
  * 컴팩트 카드: 컴팩트 시점(상태 말 · 구간 안 위치 막대) → 지금 컴팩트하면(아낌 · 비용 · 본전) 한 줄 → 미룬 비용 한 줄 →
@@ -1126,7 +1237,7 @@ export function drawCompactCard(ui: Ui, parts: FlowParts, effEl: unknown, fold?:
 export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null, nowMs: number) {
   const { Box, Text } = ui
   if (!u) return null
-  const est = estimate(u.contextTokens, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom))
+  const est = estimateFor(u, nowMs)
   if (est.kind === 'unpriced') return null
   const r = est.rates
   const n = (v: number) => (v < 1 ? v.toFixed(2) : String(v))

@@ -1,28 +1,56 @@
-import type { BandShow, CompactInputs, CostParts, LiveTurn, TurnSummary, Usage } from '../types'
-import { coldCompact, estimate, fmtTokens, fmtUntil, fmtUsd, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, thresholds } from './cost'
+import type { BandShow, CompactInputs, CostParts, LiveTurn, StepDetail, TurnSummary, Usage } from '../types'
+import { cacheWarnFor, coldFor, estimateFor, fmtTokens, fmtUntil, fmtUsd, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, sessionColorOf, thresholds } from './cost'
 import { L, plural } from './i18n'
-import { DEFAULT_SETTINGS } from './settings'
-import { limitName } from './text'
+import { SCREEN_VIEWS, SESSION_COLORS_DEFAULT } from './settings'
+import { agentNote, limitName } from './text'
 import { bar } from './ui-common'
 import type { Ui } from './ui-common'
 
-/** 입력창 위 띠의 줄들 — 한도 · 예상(요청당 · 컨텍스트 · 캐시) · 지난 질문. 칸마다 설정(bandShow)으로 뺄 수 있다 */
+/** 입력창 위 띠의 줄들 — 한도 · 예상(이 세션 · 요청당 · 컨텍스트 · 캐시) · 지난 질문. 칸마다 화면 보기 값(bandShow)으로 뺄 수 있다 */
 
-/** 최소화 · 컴팩트할 때만 보기의 한 줄 칸: 요청당 · 컨텍스트 · 컴팩트 구간(캐시 남은 분은 뺀다) */
-export const MIN_SHOW: BandShow = { ...DEFAULT_SETTINGS.bandShow, cache: false }
+/** 최소(한 줄) 바의 칸: 그 화면의 이 세션 · 요청당 · 컨텍스트 · 컴팩트 구간만(한도 · 캐시 남은 분 · 질문 줄 · 질문 평균은 뺀다) */
+export function minShowOf(show: BandShow): BandShow {
+  return { ...show, fiveHour: false, sevenDay: false, resets: false, cache: false, lastTurn: false, sessionAvg: false }
+}
+
+/** 기본 화면(기본 프리셋)의 칸 — 그리기 함수의 기본 인자 */
+const BASIC_SHOW = SCREEN_VIEWS.basic.bandShow
+
+/**
+ * 비용 줄 맨 앞 "이 세션 $12.34". 최대 · 최소 두 크기에서 같은 자리, 식은
+ * 캐시 줄 앞에도. 색은 설정의 세션 금액 기준(기본 $10 노랑 · $50 주황 · $100 빨강). 질문 평균 칸이 켜져 있으면 뒤에
+ * "(질문 8개 · 평균 $1.54)". 금액을 모르면(엔진이 비용 장부를 안 줌) null
+ */
+function sessionPart(ui: Ui, u: Usage, show: BandShow, colors: readonly [number, number, number]) {
+  const { Text } = ui
+  if (!show.session || u.costUsd === null) return null
+  const color = sessionColorOf(u.costUsd, colors)
+  const avg = show.sessionAvg && u.questionsAvg ? u.questionsAvg : null
+  return (
+    <Text>
+      <Text dimColor>{L('이 세션 ', 'Session ')}</Text>
+      <Text bold {...(color ? { color } : {})}>
+        {fmtUsd(u.costUsd)}
+      </Text>
+      {avg ? <Text dimColor>{L(` (질문 ${avg.count}개 · 평균 ${fmtUsd(avg.avgUsd)})`, ` (${plural(avg.count, 'question')} · avg ${fmtUsd(avg.avgUsd)})`)}</Text> : null}
+    </Text>
+  )
+}
 
 /**
  * 띠 윗줄: 세션 한도. 계정 전체 값이라 다른 세션이 쓴 것도 들어 있다. 5시간 · 7일 · 리셋 시간은 칸마다 뺄 수 있고(그 밖의
  * 한도 — 지출 한도 등 — 는 늘 보인다), 다 빠지면 null
  */
-export function drawLimitsLine(ui: Ui, surface: string, u: Usage, nowMs: number, show: BandShow = DEFAULT_SETTINGS.bandShow) {
+export function drawLimitsLine(ui: Ui, surface: string, u: Usage, nowMs: number, show: BandShow = BASIC_SHOW) {
   const { Box, Text } = ui
   const shown = u.rateLimits.filter(r => (r.kind === 'five_hour' ? show.fiveHour : r.kind === 'seven_day' ? show.sevenDay : true))
   if (shown.length === 0) return null
   return (
     <Box columnGap={3} flexWrap="wrap">
+      {/* 한도 하나(이름 · 막대 · % · 리셋)는 줄지 않고 통째로 다음 줄로 — 좁은 터미널(패널을 연 CLI, 바 ~68칸)에서 칸마다
+          짓눌려 "5 / 시 / 간" 처럼 글자가 세로로 쪼개졌다(2026-10-12 CLI 확인) */}
       {shown.map(r => (
-        <Box key={`bl-${r.kind}`} columnGap={1} alignItems="center">
+        <Box key={`bl-${r.kind}`} columnGap={1} alignItems="center" flexShrink={0}>
           <Text dimColor>{limitName(r.kind)}</Text>
           {bar(ui, surface, r.percentUsed, limitHex(r.percentUsed), 64, L(`${limitName(r.kind)} 한도 ${r.percentUsed}%`, `${limitName(r.kind)} limit ${r.percentUsed}%`))}
           <Text {...(r.percentUsed >= 90 ? { color: 'red' } : r.percentUsed >= 70 ? { color: 'yellow' } : {})}>
@@ -36,10 +64,32 @@ export function drawLimitsLine(ui: Ui, surface: string, u: Usage, nowMs: number,
 }
 
 /**
- * 띠 아랫줄 왼쪽: 지금 입력하면 드는 값. 한 줄을 넘으면 끝을 자른다. show 로 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시 칸을
- * 뺀다(식은 캐시 줄은 경고라 컨텍스트 칸만 따른다) — 다 빠지면 null
+ * 띠 아랫줄 왼쪽: 이 세션 금액과 지금 입력하면 드는 값. 한 줄을 넘으면 끝을 자른다. show 로 이 세션 · 요청당 · 컨텍스트 ·
+ * 컴팩트 구간 · 캐시 칸을 뺀다(식은 캐시 줄은 경고라 컨텍스트 칸만 따른다) — 다 빠지면 null
  */
-export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: CompactInputs | null, show: BandShow = DEFAULT_SETTINGS.bandShow) {
+export function drawEstimateLine(
+  ui: Ui,
+  u: Usage,
+  nowMs: number,
+  inputs: CompactInputs | null,
+  show: BandShow = BASIC_SHOW,
+  colors: readonly [number, number, number] = SESSION_COLORS_DEFAULT,
+) {
+  const { Text } = ui
+  const session = sessionPart(ui, u, show, colors)
+  const rest = drawCostRest(ui, u, nowMs, inputs, show)
+  if (!session) return rest
+  return (
+    <Text wrap="truncate-end">
+      {session}
+      {rest ? <Text dimColor> · </Text> : null}
+      {rest}
+    </Text>
+  )
+}
+
+/** 비용 줄의 이 세션 뒤: 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시(또는 식은 캐시 경고) */
+function drawCostRest(ui: Ui, u: Usage, nowMs: number, inputs: CompactInputs | null, show: BandShow) {
   const { Text } = ui
   const level = levelOf(u.contextTokens)
   const ctx = !show.context ? null : u.contextEstimated ? (
@@ -62,7 +112,7 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
         <Text>{t.isRange ? `${fmtTokens(t.ctxWarn)}~${fmtTokens(t.ctxCut)}` : fmtTokens(t.ctxCut)}</Text>
       </Text>
     )
-  const est = estimate(u.contextTokens, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom))
+  const est = estimateFor(u, nowMs)
   if (est.kind === 'unpriced')
     return !ctx && !show.range ? null : (
       <Text wrap="truncate-end">
@@ -79,7 +129,7 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
     // 있어 빼기로 안 읽힌다. 손해만 색이 없어 이득과 짝이 안 맞았다). 드는 값(소비 · 컴팩트 값)엔 색 없음.
     // 데스크톱 띠는 truncate-end 를 안 지키고 줄을 바꾼다 — 짧게(그래서 컴팩트 구간은 이 줄엔 안 붙인다).
     // 같은 계산: 컴팩트 버튼의 "바로 컴팩트 권장"(coldCompact · 지난 컴팩트 실측 크기). 이어 가기 = 전체 다시 쓰기
-    const c = inputs ? coldCompact(u.contextTokens, inputs, u.model) : null
+    const c = inputs ? coldFor(u, inputs) : null
     const isWin = c !== null && c.compactUsd < c.continueUsd
     const gap = c === null ? 0 : Math.abs(c.continueUsd - c.compactUsd)
     // 모델을 바꿨을 땐 "모델 바뀜" 만 — 모델 이름은 입력창 아래 · 앱 팝업 · 질문별 비용에 있고 띠에선 줄만 길게 했다
@@ -99,17 +149,17 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
       </Text>
     )
   }
+  // 캐시 남은 분은 늘 — 컴팩트 직후(첫 요청 전)도 컴팩트 시각부터 센다(register.tsx refreshUsage). "42/60분" = 남은 분 / 유지
+  // 시간. 노랑 기준도 그 유지 시간 것
   const hasCache = show.cache && est.minsLeft !== null
-  // 컴팩트 뒤 첫 요청 전: 캐시가 없다 — 분 대신 "다음 요청이 새로 씀"(컴팩트 시각부터 세면 캐시가 있는 것처럼 보였다)
-  const isNewCache = show.cache && u.isAfterCompact === true
-  if (!show.perRequest && !ctx && !show.range && !hasCache && !isNewCache) return null
+  if (!show.perRequest && !ctx && !show.range && !hasCache) return null
   return (
     <Text wrap="truncate-end">
       {show.perRequest ? <Text dimColor>{L('요청당 ', 'Per request ')}</Text> : null}
-      {/* 요청 1회 = 컨텍스트 × 읽기 요율 — 색은 컨텍스트 색과 같다 */}
+      {/* 요청당 = 지금 크기 × 읽기 요율 + 요청마다 읽기 말고 드는 실측 값(새로 쓰기 · 출력, 9a), 못 쟀으면 읽기만 — 색은 컨텍스트 색 */}
       {show.perRequest ? (
         <Text bold color={LEVEL_TEXT[level]}>
-          ~{fmtUsd(est.perCallUsd)}
+          ~{fmtUsd(est.perCallUsd + (u.perCallExtraUsd ?? 0))}
         </Text>
       ) : null}
       {show.perRequest && ctx ? <Text dimColor> · </Text> : null}
@@ -117,9 +167,8 @@ export function drawEstimateLine(ui: Ui, u: Usage, nowMs: number, inputs: Compac
       {at(!show.perRequest && !ctx)}
       {hasCache ? <Text dimColor>{show.perRequest || ctx || show.range ? L(' · 캐시 ', ' · cache ') : L('캐시 ', 'Cache ')}</Text> : null}
       {hasCache ? (
-        <Text {...(est.minsLeft! < thresholds().cacheWarnMin ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}분`, `${est.minsLeft}m`)}</Text>
+        <Text {...(est.minsLeft! < cacheWarnFor(thresholds(), est.ttlMin) ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}/${est.ttlMin}분`, `${est.minsLeft}/${est.ttlMin}m`)}</Text>
       ) : null}
-      {isNewCache ? <Text dimColor>{L(' · 캐시 없음(다음 요청이 새로 씀)', ' · no cache yet (the next request writes it)')}</Text> : null}
     </Text>
   )
 }
@@ -141,15 +190,21 @@ export function drawLastTurnLine(ui: Ui, last: TurnSummary | null, now: LiveTurn
   // 작업 중엔 이번 질문이 지금까지 쓴 값(요청이 끝날 때마다 늘어난다)
   // 합 · 요청 수 — 요청마다 든 값은 질문별 비용 패널에(진행 중 질문은 맨 위에 동작별로).
   // 읽기 · 쓰기 · 출력 내역은 질문별 비용 패널에 있다 — 띠에선 흐린 괄호가 길기만 하고 안 읽혔다
-  const line = (head: string, cost: CostParts, steps: number, rewriteUsd: number | undefined) => (
+  // 에이전트 몫은 따로(🤖 $ · 요청 N회 · 도는 중) — 질문 값엔 이미 더해져 있지만 얼마가 에이전트인지 안 보였다. 질문이
+  // 끝난 뒤 도는 백그라운드 에이전트도 "지난 질문" 줄에서 도는 중 → 끝남
+  const line = (head: string, cost: CostParts, steps: number, rewriteUsd: number | undefined, details: readonly StepDetail[] | undefined) => {
+    const agents = agentNote(details)
+    return (
     <Text wrap="truncate-end">
       <Text dimColor>{head}</Text>
       <Text bold>{fmtUsd(cost.usd)}</Text>
       <Text dimColor>{L(` · 요청 ${steps}회`, ` · ${plural(steps, 'request')}`)}</Text>
+      {agents ? <Text>{agents}</Text> : null}
       {rewriteNote(ui, rewriteUsd)}
     </Text>
-  )
-  if (now && now.steps > 0) return line(L('진행 중 질문 ', 'This question '), now.cost, now.steps, now.rewriteUsd)
+    )
+  }
+  if (now && now.steps > 0) return line(L('진행 중 질문 ', 'This question '), now.cost, now.steps, now.rewriteUsd, now.details)
   if (!last) return null
-  return line(L('지난 질문 ', 'Last question '), last.cost, last.steps, last.rewriteUsd)
+  return line(L('지난 질문 ', 'Last question '), last.cost, last.steps, last.rewriteUsd, last.details)
 }
