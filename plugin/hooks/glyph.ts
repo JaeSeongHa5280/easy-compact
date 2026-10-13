@@ -6,8 +6,16 @@
  */
 let isTerminal = false
 
+let isDesktop = true
+
 export function setSurface(surface: string): void {
   isTerminal = surface === 'terminal'
+  isDesktop = surface === 'desktop'
+}
+
+/** 지금 그리는 표면이 데스크톱 앱인가 — 장식 아이콘을 Svg 로 그리는 자리(VS Code 등은 그림 글자) */
+export function onDesktop(): boolean {
+  return isDesktop
 }
 
 /** 지금 그리는 표면이 터미널인가(그림 글자 대신 글을 고르는 자리) */

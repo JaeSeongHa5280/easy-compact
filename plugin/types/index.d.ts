@@ -81,7 +81,41 @@ export type Settings = {
   paneAutoOpen: boolean
   /** 사용량 패널: 모든 데스크톱 세션 같이 열고 닫기(기본 끔) — 사람이 연 · 닫은 것을 떠 있는 다른 데스크톱 세션이 따라 한다. 터미널은 늘 혼자 */
   paneShared: boolean
+  /**
+   * 바 비용 줄에 오늘 · 이번 달 사용량(기본 끔, 모든 화면 공통): 이 PC 의 모든 세션 기록(하위 에이전트 포함)의 요청 합을 공식 요율로
+   * 센 API 정가 환산 — 앱 자체 요청(다음 질문 제안 · 컴팩트 요청 등)은 기록에 없어 빠져 "~". 구독이어도 API 요금제여도 같은 자리
+   *
+   */
+  spendToday: boolean
+  spendMonth: boolean
 }
+
+/** 오늘 · 이번 달 사용량(달러) — atMs 에 잰 값. tools/scan-spend.mjs 결과를 cost.ts spendUsd 로 센 것 */
+export type SpendTotals = { atMs: number; today: number; month: number }
+
+/**
+ * 설정 탭 easy-compact 칸(업데이트, 마켓 설치본만 — 2026-10-14 사용자 1~3안 · 자동 확인 없음). phase: idle(아직) · checking(마켓 받는 중) ·
+ * latest · newer(받아 둔 마켓 사본이 더 새 판) · updating · done(받음 — 앱을 다시 켜면 적용) · failed. own = 이 판, market = 마켓 사본 판,
+ * marketAt = 사본을 받은 때(known_marketplaces.json lastUpdated)
+ */
+export type UpdateState = {
+  phase: 'idle' | 'checking' | 'latest' | 'newer' | 'updating' | 'done' | 'failed'
+  own: string | null
+  market: string | null
+  marketAt: string | null
+  /** 실패한 명령의 마지막 출력 줄(펼쳐 보기) · 어느 단계였나(확인 = 마켓 받기, 업데이트) */
+  error?: string
+  failedOn?: 'check' | 'apply'
+  /** 업데이트 뒤 첫 실행(3안): 이 판으로 업데이트됨 — [닫기] 하면 null */
+  updatedTo?: string | null
+  /** 받아 둔 마켓 사본 CHANGELOG 에서 뽑은 판별 바뀐 것 — [바뀐 것 ▸] */
+  changes?: Record<string, ChangeGroup[]>
+  /** 펼침: 새 판의 바뀐 것 · 오류 원문 · 업데이트 알림의 바뀐 것 */
+  open?: { changes?: boolean; error?: boolean; note?: boolean }
+}
+
+/** CHANGELOG 한 판의 한 절(바뀜 · 새로 생김 · 뺌 · 고침) — 항목은 굵은 머리만 */
+export type ChangeGroup = { head: string; items: string[] }
 
 /**
  * 화면 프리셋: 간단(처음 쓰는 분 · 정보 최소) · 자세히(AI 를 잘 아는 분 · 정보 전부) · 커스텀(다 고름). 0.4.0 의 기본('basic')은
@@ -419,8 +453,12 @@ declare module 'claude-code' {
        * 제목 줄에 지금 값만(캐시 경고는 접지 않는다). 세션마다 따로
        */
       settingsOpen: Record<string, boolean>
-      /** 사용량 카드 펼침(간략 보기): 접으면 제목 줄의 요약만. 처음엔 다 펼침 */
+      /** 사용량 카드 펼침: 접으면 제목 줄의 요약만. 패널을 열 때 이 세션 카드는 펼침 · 질문별 비용은 접힘(CARDS_OPEN_DEFAULT) */
       cardsOpen: { now: boolean; history: boolean; compact: boolean }
+      /** 오늘 · 이번 달 사용량(설정에서 켰을 때만 잰다) — 못 쟀으면 null */
+      spend: SpendTotals | null
+      /** 업데이트 칸 상태(설치본만) */
+      update: UpdateState
       /** 설정의 직접 쓴 문구 입력칸에 치는 중인 글(Enter 전). 화면을 다시 그려도 친 글이 남게 칸 값으로 다시 준다 */
       tidyDraft: string | null
       /**

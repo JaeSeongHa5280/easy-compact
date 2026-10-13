@@ -4,6 +4,32 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.5.0] — 2026-10-14
+
+### Added
+- **Check for updates** — an *easy-compact* section at the bottom of the Settings tab: **[Check for updates]** → if there is a new version, **[What changed ▸]** · **[Update]** → *restart the app to use it*. Only when you press it does Claude Code fetch the marketplace from GitHub (`claude plugin marketplace update` · `claude plugin update` — easy-compact itself never goes online). If the marketplace copy already on this PC is newer at startup, the Settings tab gets a dot (**⚙ Settings •**); the first time you start after updating, the usage pane opens with one line, *Updated to 0.5.0* (close it and it stays gone). No automatic checks. Marketplace installs only.
+- **Today · this month** (option, off by default) — Settings → Screen → Details → All screens → **All usage** [Today] [This month]. When on, the bar's cost row shows `Today ~$65 · This month ~$788` after *This session*: every session on this PC (subagents included) at API list prices — not your subscription bill or limits; app-internal requests are not in the transcripts, hence `~`. The first time it reads this month's transcripts once (a few seconds), after that only changed files — when an answer ends and every 5 minutes. Needs Node.js.
+- **Icons** — the glyphs on card titles, the bar's compact button, confirm cards, hold and cold cache (💰 🧾 🗜 🧊 🔄 ⏸) are now one set of line icons (desktop). Emoji looked different on every OS and font, so one screen mixed styles. Text inside buttons and the terminal are unchanged.
+
+### Changed
+- **Fits the pane and the window** — desktop column math now follows the app's own renderer (1 column = one character of the body font). Cards fill the pane and bars and graphs grow to the card width (they stopped at 320px, leaving wide panes empty on the right). When space runs out nothing breaks mid-word; the least important cells go first — bar: compact range → per request → shorter cache → this month → today; question row: agents → request count; if it still does not fit the button reads *Compact*. Settings cost table: vs optimum → if the cache goes cold → one question → one read.
+- **Name column** — in name–value rows the name column fits the longest name in that card; when the values get too narrow they move below the names.
+- **One meaning per color** — card titles in the normal text color (teal on the gray title band was hard to read), progress (saving · compacting) blue, a single yellow, net loss red, ★ optimum green, and the cache-expired / model-changed dot red. The color legend line at the bottom of the pane is gone.
+- **One pick button** — tabs, choices, views, prompts and language all use the same button; the picked one is filled. No ✓ on desktop (it widened only the picked button and pushed its neighbor), ✓ in the terminal.
+- **Names** — bar size *Max · Min* → **Full · One line**, and the first card is **This session** in both views (running total next to the title). The view switch sits at the right end of the pane's tab row: `View [Simple][Detailed]`.
+- **"Now" in the simple view is one decision line** — state + one number + what to do (room left · good time · overdue · cache expired · little to save). The separate verdict line is gone.
+- **The cold-cache bar shows the state only** — 🧊 cache expired · context (🔄 if the model changed), and the button reads *Compact now advised*. The money part (next request ~$ · compacting now costs ~$ less or more) lives in the tooltip, the confirm card and the pane.
+- **Cost per question starts folded** — when the usage pane opens, This session and Compact are open.
+- **The applied value sits in the card's title band** — the *Applied* cell at the end of the settings cost table shrank to one character and stood on end when narrow. Compact timing labels sit outside, next to their own tick.
+- Screen descriptions in Settings are one line each.
+- **No tooltips on terminal buttons** — a bright chip covered the button and made it hard to click. The pane button always uses its short form.
+- **Easy Compact dims while an answer runs** — same name, so its width stays put.
+
+### Fixed
+- **A finished question's cost changed when you sent the next one** — requests the app sends on its own after an answer (titles, summaries…) count toward that question for 30 seconds only, then it is fixed; anything later goes to the next question's ⚙ line.
+- The bar size description listed the wrong cells for the one-line bar.
+- In a narrow settings preview, the limits row's reset text overlapped the window buttons.
+
 ## [0.4.1] — 2026-10-13
 
 ### Changed

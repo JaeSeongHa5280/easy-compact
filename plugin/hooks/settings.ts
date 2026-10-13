@@ -186,6 +186,9 @@ export const DEFAULT_SETTINGS: Settings = {
   paneAutoOpen: false,
   // 같이 열고 닫기는 처음부터 켬
   paneShared: true,
+  // 오늘 · 이번 달 사용량은 처음엔 끔 — 늘 볼 값이 아니라 옵션
+  spendToday: false,
+  spendMonth: false,
 }
 
 /**
@@ -204,19 +207,17 @@ export function screenName(p: ScreenPreset): string {
   return p === 'simple' ? L('간단', 'Simple') : p === 'detail' ? L('자세히', 'Detailed') : L('커스텀', 'Custom')
 }
 
-/** 프리셋 풀이(설정 탭) — 누구에게 권하나 · 무엇이 보이나 */
+/**
+ * 프리셋 풀이(설정 탭) — 누구에게 · 무엇. 짧게 한 줄: 예전 풀이(약 40자 넘는 문단)는 패널 폭을 밀어 끝선을 바꿨고, 무엇이 보이는지는
+ * 바로 아래 미리보기가 이미 보여 준다(2026-10-14 uxi W7 안 A — 셋 다 같은 길이로). 대상은 그대로: 간단 = 처음 쓰는 분, 자세히 = AI
+ * 비용 구조를 아는 분
+ */
 export function screenUse(p: ScreenPreset): string {
   return p === 'simple'
-    ? L(
-        '처음 쓰는 분, 토큰 · 캐시 같은 AI 비용 이야기가 낯선 분, 꼭 필요한 것만 보고 싶은 분께 권합니다. 이 세션에 얼마 썼는지와 컴팩트할 때만 알려 줍니다 — 바는 한 줄(이 세션 금액 · 컨텍스트 · 캐시 · 이지 컴팩트), 패널은 간략. 이지 컴팩트 버튼이 노랑 · 빨강으로 깜빡이면 컴팩트할 때입니다.',
-        'For first-time users, anyone new to AI costs like tokens and cache, or anyone who wants only the essentials. It tells you what this session has cost and when to compact — one bar row (session cost, context, cache, Easy Compact) and the Simple pane. When the Easy Compact button pulses yellow or red, it is time to compact.',
-      )
+    ? L('처음 쓸 때 · 꼭 필요한 것만', 'For starting out · essentials only')
     : p === 'detail'
-      ? L(
-          'AI 를 잘 아는 분 — 컨텍스트가 클수록 요청마다 비싸지고, 캐시가 식으면 전체를 다시 쓰는 구조를 아는 분께 권합니다. Easy Compact 가 아는 것을 모두 보여 줍니다: 바에 한도 · 요청당 값 · 컴팩트 구간 · 질문 줄, 패널에 흐름 그래프 · 컴팩트 효과 · 모델 견줌 · 질문의 동작별 내역, 설정에 크기별 비용표 전체.',
-          'For people who know how AI costs work — every request gets pricier as the context grows, and a cold cache rewrites everything. Shows everything Easy Compact knows: limits, per-request cost, compact range and the question row on the bar; the flow graph, compact effects, model comparison and per-step detail in the pane; the full cost table in settings.',
-        )
-      : L('커스텀: 아래 세부를 다 직접 고릅니다(캐시 유지 시간 포함).', 'Custom: choose every detail below yourself (cache lifetime included).')
+      ? L('AI 비용 구조를 아는 분 · 전부 보기', 'If you know how AI costs work · everything')
+      : L('세부를 직접 고름 · 캐시 유지 시간 포함', 'Pick each detail yourself · cache lifetime too')
 }
 
 /** "간단" · "basic" · "커스텀" 등 → 화면 프리셋. 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
@@ -298,7 +299,7 @@ export function infoName(i: InfoLevel): string {
 /** 정보량 한 줄 풀이(설정 탭 세부) */
 export function infoUse(i: InfoLevel): string {
   return i === 'lean'
-    ? L('꼭 필요한 것만: 패널은 간략으로 시작, 설정의 컴팩트 시점은 크기 구간 · 판정만, 캐시 칸 없음, 컴팩트 문구는 고르기만, 답변 끝 질문 비용은 금액 · 요청 수 한 줄, 에이전트는 개수만(답변 끝 · 작업 중 줄).', 'Essentials only: the pane starts Simple, compact timing shows sizes and verdicts, no cache section, compact text shows the choices, the question cost after each answer as one line (cost and request count), agents as a count (after answers and while working).')
+    ? L('꼭 필요한 것만: 패널은 간단으로 시작, 설정의 컴팩트 시점은 크기 구간 · 판정만, 캐시 칸 없음, 컴팩트 문구는 고르기만, 답변 끝 질문 비용은 금액 · 요청 수 한 줄, 에이전트는 개수만(답변 끝 · 작업 중 줄).', 'Essentials only: the pane starts Simple, compact timing shows sizes and verdicts, no cache section, compact text shows the choices, the question cost after each answer as one line (cost and request count), agents as a count (after answers and while working).')
     : L('Easy Compact 가 아는 것을 모두: 패널은 자세히로 시작(그래프 · 컴팩트 효과 · 질문 동작별), 비용표 · 계산 값, 캐시 유지 시간 · 정하는 곳 · 대가, 컴팩트 단계 · 보내는 글 전체, 에이전트 금액, 답변 끝 질문 비용의 [▸ 자세히]로 그 질문의 나눔 · 동작별 값까지.', 'Everything Easy Compact knows: the pane starts Detailed (graphs, compact effects, per-step questions), the cost table and inputs, cache lifetime, source and trade-offs, the compact steps and full text, agent costs, and [▸ Details] on the question cost after each answer for its split and per-step costs.')
 }
 
@@ -307,8 +308,12 @@ export function paneModeOf(v: Pick<ScreenView, 'info'>): PaneMode {
   return v.info === 'full' ? 'detail' : 'simple'
 }
 
+/**
+ * 패널 보기 이름 = 화면 프리셋과 같은 말(간단 · 자세히) — "간략" 이 "간단" 과 따로 있어 같은 것인지 맞춰 봐야 했다(2026-10-14 uxi W1 안 A).
+ * 명령 별칭 "간략" 은 그대로 받는다
+ */
 export function paneModeName(m: PaneMode): string {
-  return m === 'simple' ? L('간략', 'Simple') : L('자세히', 'Detailed')
+  return m === 'simple' ? L('간단', 'Simple') : L('자세히', 'Detailed')
 }
 
 /** 한도 묶음(5시간 · 7일 · 리셋까지 남은 시간) 한꺼번에 켜고 끄기 — 설정 탭 한도 줄 [✓ 한도 전체]. 화면 프리셋은 그대로 */
@@ -345,16 +350,19 @@ export function paneStateText(s: Settings): string {
 
 export const BAND_MODES: readonly BandMode[] = ['full', 'min']
 
-/** 띠 크기 이름(설정 탭 버튼 · 명령 답) */
+/**
+ * 띠 크기 이름(설정 탭 버튼 · 명령 답): 전체 · 한 줄 — 보이는 것 그대로. "최소" 가 정보량 "최소" 와 겹쳤고 README 는 이미 "한 줄 /
+ * 전체" 라 화면과 설명서 말이 달랐다(2026-10-14 uxi W1 안 A). 명령 별칭 최대 · 최소는 그대로 받는다
+ */
 export function bandModeName(m: BandMode): string {
-  return m === 'full' ? L('최대', 'Full') : L('최소', 'Minimized')
+  return m === 'full' ? L('전체', 'Full') : L('한 줄', 'One line')
 }
 
-/** 띠 크기 한 줄 풀이(설정 탭) */
+/** 띠 크기 한 줄 풀이(설정 탭) — 한 줄 바는 한도 · 컴팩트 구간 · 질문 줄을 빼고 캐시는 남긴다(ui-band minShowOf) */
 export function bandModeUse(m: BandMode): string {
   return m === 'full'
-    ? L('최대: 한도 · 비용 · 질문 세 줄과 이지 컴팩트 버튼. 칸은 아래 상세 조정에서 뺄 수 있습니다.', 'Full: limits, cost and question rows with the Easy Compact button. Hide parts in the details below.')
-    : L('최소: 요청당 · 컨텍스트 · 컴팩트 구간 한 줄과 사용량 패널 · 이지 컴팩트 버튼.', 'Minimized: one line of per request, context and compact range, plus the Usage pane and Easy Compact buttons.')
+    ? L('전체: 한도 · 비용 · 질문 줄과 이지 컴팩트 버튼. 칸은 화면 → 세부에서 뺄 수 있습니다.', 'Full: limits, cost and question rows with the Easy Compact button. Hide parts under Screen → Details.')
+    : L('한 줄: 이 세션 · 요청당 · 컨텍스트 · 캐시 한 줄과 이지 컴팩트 · 사용량 패널 버튼.', 'One line: session, per request, context and cache, plus the Easy Compact and Usage pane buttons.')
 }
 
 /**
@@ -619,6 +627,9 @@ export function normalizeSettings(raw: unknown): Settings {
   const paneAutoOpen = typeof r.paneAutoOpen === 'boolean' ? r.paneAutoOpen : false
   const paneShared = typeof r.paneShared === 'boolean' ? r.paneShared : DEFAULT_SETTINGS.paneShared
   const questionHover = typeof (r as { questionHover?: unknown }).questionHover === 'boolean' ? (r as { questionHover: boolean }).questionHover : DEFAULT_SETTINGS.questionHover
+  // 오늘 · 이번 달 사용량(0.5.0 새 칸) — 없으면 끔
+  const spendToday = (r as { spendToday?: unknown }).spendToday === true
+  const spendMonth = (r as { spendMonth?: unknown }).spendMonth === true
   const custom = normalizeView((r as { custom?: unknown }).custom)
   // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)
   const rawScreen = (r as { screen?: unknown }).screen
@@ -643,7 +654,7 @@ export function normalizeSettings(raw: unknown): Settings {
           : screen === 'custom'
             ? limitFrom(rawCustomShow, ALL_LIMITS)
             : ALL_LIMITS
-    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared }
+    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth }
   }
   // 화면이 없는 저장값 = 0.4.0 전부터 쓰던 사람: 칸(bandShow) · 패널 보기(paneMode — 없으면 자세히)를 옮긴다. 한도 칸은 한도 줄로,
   // 비용 · 질문 줄 칸을 다 켰으면(손대지 않음) 간단 — 업데이트 뒤 첫 화면. 하나라도 껐으면 고른 것이라 그 칸 ·
@@ -657,7 +668,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const allOn = (Object.keys(oldShow) as (keyof CostShow)[]).every(k => oldShow[k])
   const migrated: Pick<Settings, 'screen' | 'custom'> =
     allOn ? { screen: 'simple', custom } : { screen: 'custom', custom: { ...SCREEN_VIEWS.detail, bandShow: oldShow, info: oldPane === 'simple' ? 'lean' : 'full' } }
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared }
+  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth }
 }
 
 /** 저장값 안의 객체(아니면 빈 객체) */

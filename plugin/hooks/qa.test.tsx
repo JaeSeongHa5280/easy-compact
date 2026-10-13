@@ -5,13 +5,17 @@ import { expect, mock, test } from 'claude-code/testing'
 // 그려(그릴 수 있는지는 표면 표가 검증한다) 공통 규칙을 본다:
 //   ① 화면 글에 undefined · NaN · Infinity · [object Object] 가 없다
 //   ② 영어 화면에 한글이 없다(언어 줄 이름 · 한국어 버튼만 두 언어)
-//   ③ 권하지 않는 동안(흐린 버튼) 🗜 는 회색, 권하면 파랑 — 확인창을 열어도(바 · 카드 제목) 그대로
-//   ④ 캐시가 식었으면 확인창은 캐시 만료 카드이고, 바의 다시 쓰기 금액 = 카드의 이어 가기 금액
+//   ③ 권하지 않는 동안(흐린 버튼) 🗜(캡슐 꼴 Svg)는 회색 #9aa0a8, 권하면 파랑 — 확인창을 열어도(바 · 카드 제목) 그대로
+//   ④ 캐시가 식었으면 확인창은 캐시 만료 카드이고, 바 설명 칩의 다음 요청 금액 = 카드의 이어 가기 금액(데스크톱)
 //   ⑤ 한도 줄이 없으면(API 키 세션) 비용 줄이 맨 윗줄
 // 칠한 화면의 폭(터미널 넘침) · 데스크톱 겹침은 시험 도구가 칠하지 않아 못 본다 — 층 ②(브라우저) · ③(CLI 실물)
 
-type State = 'normal' | 'warn' | 'coldWin' | 'coldLoss' | 'switched' | 'afterCompact' | 'api' | 'working' | 'agent' | 'tidying'
-const STATES: State[] = ['normal', 'warn', 'coldWin', 'coldLoss', 'switched', 'afterCompact', 'api', 'working', 'agent', 'tidying']
+/**
+ * extras = 0.5.0 새 화면(2026-10-14 QA 자체 점검에서 더함 — QA 가 기본 끔 · 설치본 전용 화면을 하나도 안 거쳤다): 오늘 · 이번 달 켬 ·
+ * 마켓 설치본 흉내(EASY_COMPACT_FAKE_INSTALL) · 전부터 쓰던 사람(업데이트 뒤 첫 실행 알림) — 알림 · 바뀐 것 · 업데이트 칸 네 상태까지
+ */
+type State = 'normal' | 'warn' | 'coldWin' | 'coldLoss' | 'switched' | 'afterCompact' | 'api' | 'working' | 'agent' | 'tidying' | 'extras'
+const STATES: State[] = ['normal', 'warn', 'coldWin', 'coldLoss', 'switched', 'afterCompact', 'api', 'working', 'agent', 'tidying', 'extras']
 const SURFACES: RenderSurface[] = ['desktop', 'terminal']
 const LANGS = ['ko', 'en'] as const
 /**
@@ -39,12 +43,23 @@ const CTX: Record<State, number> = {
   working: 150_000,
   agent: 150_000,
   tidying: 260_000,
+  extras: 120_000,
+}
+const CFG = '/home/test/.claude'
+const MARKET = `${CFG}/plugins/marketplaces/easy-compact`
+const CHANGELOG = {
+  ko: ['# 변경 기록', '', '## [0.5.1] — 2026-10-20', '', '### 고침', '- **업데이트 칸 글이 꺾이던 것**', '', '## [0.5.0] — 2026-10-14', '', '### 새로 생김', '- **업데이트 확인** — 설정 탭 맨 아래.', '- **오늘 · 이번 달 사용량**(옵션)'].join('\n'),
+  en: ['# Changelog', '', '## [0.5.1] — 2026-10-20', '', '### Fixed', '- **The update section wrapping**', '', '## [0.5.0] — 2026-10-14', '', '### Added', '- **Check for updates** — at the bottom of Settings.', '- **Today · this month** (option)'].join('\n'),
+}
+/** 뒤에서 도는 일(켤 때 판 읽기 · claude 명령)을 잠깐 기다린다 */
+async function waitFor(check: () => Promise<boolean>) {
+  for (let i = 0; i < 50 && !(await check()); i++) await new Promise(resolve => setTimeout(resolve, 10))
 }
 const ANSWER = 'QA answer, last sentence — one question ends right here.'
 const BAD = /undefined|NaN|Infinity|\[object Object\]/
 const HANGUL = /[가-힣]/
-/** 영어 화면에서도 두 언어로 두는 글(언어 줄) */
-const BOTH = new Set(['언어 · Language', '[한국어]'])
+/** 영어 화면에서도 두 언어로 두는 글(언어 줄) — 터미널 고르기 버튼은 안 고른 쪽도 ✓ 자리 빈칸("[  한국어]") */
+const BOTH = new Set(['언어 · Language', '[한국어]', '[  한국어]'])
 
 type Ui = { findAll: (q: { type: string }) => Promise<{ text?: unknown; props: Record<string, unknown> }[]> }
 
@@ -68,7 +83,12 @@ async function rules(ui: Ui, lang: 'ko' | 'en', where: string): Promise<void> {
 
 /** 상태 하나의 세계: 기록 파일 · 엔진 값 · 저장소 · 모델. 모델은 바꿀 수 있게 돌려준다 */
 function world(on: On, s: State, lang: 'ko' | 'en') {
-  mock.env(on, { EASY_COMPACT_LANG: lang, HOME: '/home/test' })
+  const isExtras = s === 'extras'
+  mock.env(on, {
+    EASY_COMPACT_LANG: lang,
+    HOME: '/home/test',
+    ...(isExtras ? { EASY_COMPACT_FAKE_INSTALL: JSON.stringify({ configDir: CFG, marketplace: 'easy-compact' }) } : {}),
+  })
   const isCold = s === 'coldWin' || s === 'coldLoss'
   const base = Date.now() - (isCold ? 2 * 24 * 3600_000 : 20 * 60_000)
   const at = (min: number) => new Date(base + min * 60_000).toISOString()
@@ -78,10 +98,42 @@ function world(on: On, s: State, lang: 'ko' | 'en') {
     JSON.stringify({ type: 'assistant', timestamp: at(min), message: { id, model: 'claude-opus-5-5', usage: { input_tokens: 10, output_tokens: 500, cache_read_input_tokens: read, cache_creation_input_tokens: write } } })
   const lines = [line('a', 47_594, 12_396, 0), line('b', ctx - 2_010, 2_000, 1)]
   if (s === 'afterCompact') lines.push(JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: at(2), compactMetadata: { trigger: 'manual', preTokens: ctx } }))
-  const store = new Map<string, unknown>()
-  const env = { model: 'claude-opus-5-5', submitted: [] as string[] }
+  // extras: 전부터 쓰던 사람(설정은 있고 본 판은 없음 → 업데이트 알림), 오늘 · 이번 달 켬
+  const store = new Map<string, unknown>(isExtras ? [['settings', { spendToday: true, spendMonth: true }]] : [])
+  const env = { model: 'claude-opus-5-5', submitted: [] as string[], market: '0.5.0' }
   on('fs.list', async () => ({ value: [] }))
-  on('fs.read', async () => ({ value: lines.join('\n') }))
+  on('fs.read', async (_$, e) => {
+    if (isExtras) {
+      // 엔진은 /home/test 를 Windows 에선 C:/home/test 로 푼다
+      const p = String(e.path).replace(/\\/g, '/').replace(/^[A-Za-z]:/, '')
+      if (p.endsWith('/.claude-plugin/plugin.json') && !p.startsWith(MARKET)) return { value: JSON.stringify({ name: 'easy-compact', version: '0.5.0' }) }
+      if (p === `${MARKET}/.claude-plugin/marketplace.json`) return { value: JSON.stringify({ plugins: [{ name: 'easy-compact', version: env.market }] }) }
+      if (p === `${CFG}/plugins/known_marketplaces.json`) return { value: JSON.stringify({ 'easy-compact': { lastUpdated: new Date(Date.now() - 3 * 86_400_000).toISOString() } }) }
+      if (p === `${MARKET}/CHANGELOG.ko.md`) return { value: CHANGELOG.ko }
+      if (p === `${MARKET}/CHANGELOG.md`) return { value: CHANGELOG.en }
+    }
+    return { value: lines.join('\n') }
+  })
+  if (isExtras) {
+    on('store.keys', async () => ({ value: [...store.keys()] }))
+    on('session.surfaces', async () => ({ value: ['desktop', 'terminal'] }))
+    on('command.register', async (_$, e) => ({ value: { command: e.name } }))
+    on('session.start', async (_$, e) => ({ cwd: e.cwd }))
+    on('process.run', async (_$, e) => {
+      const args = e.argv.slice(1).join(' ')
+      if (args === 'plugin marketplace update easy-compact') {
+        env.market = '0.5.1'
+        return { value: { exitCode: 0, stdout: '✔ Successfully updated marketplace: easy-compact', stderr: '' } }
+      }
+      if (args === 'plugin update easy-compact@easy-compact') return { value: { exitCode: 0, stdout: '✔ updated', stderr: '' } }
+      if (e.argv.some(x => String(x).includes('scan-spend'))) {
+        const d = new Date()
+        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        return { value: { exitCode: 0, stdout: JSON.stringify({ days: { [day]: { 'claude-opus-5-5': { S: [0, 1_000_000, 10_000_000, 0, 0] } } }, files: 1, scanned: 1 }), stderr: '' } }
+      }
+      return { value: { exitCode: 1, stdout: '', stderr: '' } }
+    })
+  }
   on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: Date.now(), isLink: false } }))
   on('session.id', async () => ({ value: `qa-${s}` }))
   on('session.cwd', async () => ({ value: 'D:/Claude' }))
@@ -152,6 +204,8 @@ for (const s of STATES)
         for (const w of widthsFor(surface))
           test(`QA ${s} · ${surface} · ${lang} · ${band} · ${w.band}칸`, async ($, on) => {
             const env = world(on, s, lang)
+            // extras: 켤 때 일(판 읽기 · 오늘 · 이번 달 재기)은 session.start 에서
+            if (s === 'extras') await $.session.start({ cwd: 'D:/Claude', surface, isInteractive: true })
             const step = async (turnId: string, agentId?: string) => {
               for await (const _ of $.turn.step({ turnId, index: 0, model: env.model, messageCount: 1, ...(agentId ? { agentId } : {}) })) {
                 // 결과만 필요하다
@@ -162,7 +216,7 @@ for (const s of STATES)
             await $.command.run({ command: 'easy-compact', args: band === 'simple' ? 'screen simple' : 'screen detail' })
             if (band !== 'simple') await $.command.run({ command: 'easy-compact', args: band })
             // 끝난 질문 하나(캐시가 식은 상태는 질문을 돌리면 다시 살아나 돌리지 않는다)
-            const hasTurn = s === 'normal' || s === 'warn' || s === 'api' || s === 'switched' || s === 'tidying'
+            const hasTurn = s === 'normal' || s === 'warn' || s === 'api' || s === 'switched' || s === 'tidying' || s === 'extras'
             if (hasTurn) {
               await $.turn.start({ text: 'question', turnId: 't1' })
               await step('t1')
@@ -183,6 +237,11 @@ for (const s of STATES)
             }
             const props = { hasSurvey: false, isWorking, maxRows: 10, bodyColumns: w.band }
             const bar = await $.ui.mount({ plugin: 'easy-compact', surface, component: 'AbovePrompt', props })
+            // extras: 넓은 바(140칸)엔 오늘 · 이번 달 칸이 뜬다(좁으면 빠질 수 있다 — 빼는 순서는 band.test)
+            if (s === 'extras' && w.band === 140) {
+              await waitFor(async () => (await bar.find({ key: 'c-today' })) !== undefined)
+              expect(await bar.find({ key: 'c-today' })).not.toBe(undefined)
+            }
             await rules(bar, lang, 'bar')
             // 고른 바 모양이 걸렸나 — 최소 · 간단은 한 줄(b-r1)뿐, 자세히 최대는 질문 줄(b-r3)까지
             expect((await bar.find({ key: 'b-r3' })) === undefined).toBe(band !== 'full')
@@ -191,7 +250,8 @@ for (const s of STATES)
 
             // ⑤ 한도 없으면 비용 줄이 맨 윗줄(최대 바)
             if (s === 'api' && band === 'full') {
-              expect(JSON.stringify(await bar.find({ key: 'b-r1' }))).toMatch(lang === 'ko' ? /요청당 / : /Per request /)
+              // 비용 줄은 폭에 맞춰 칸을 뺀다(좁은 터미널은 요청당도 빠진다) — 늘 남는 "이 세션" 칸으로 본다
+              expect(JSON.stringify(await bar.find({ key: 'b-r1' }))).toMatch(lang === 'ko' ? /이 세션 / : /Session /)
               expect(await bar.find({ key: 'b-r2' })).toBe(undefined)
             }
 
@@ -199,7 +259,7 @@ for (const s of STATES)
             const button = await bar.find({ key: 'compact' })
             const isNotNow = button?.props.dimColor === true
             const iconLook = async () => JSON.stringify(await bar.find({ key: 'compact-icon' }))
-            if (surface === 'desktop' && button) expect(await iconLook()).toContain(isNotNow ? '"dimColor":true' : '"color":"#4c9be8"')
+            if (surface === 'desktop' && button) expect(await iconLook()).toContain(isNotNow ? '#9aa0a8' : '#4c9be8')
 
             if (isWorking) {
               // 작업 중 표시 · 바는 못 누르는 글
@@ -207,18 +267,21 @@ for (const s of STATES)
               const spinner = await $.ui.mount({ plugin: 'easy-compact', surface, component: 'Spinner', props: { word: 'Working', message: null, suffix: '…', mode: 'requesting' } })
               await rules(spinner, lang, 'spinner')
             } else if (button) {
-              // ④ 바의 다시 쓰기 금액(식은 캐시)
+              // ④ 바의 다음 요청 금액(식은 캐시) — 바 비용 줄은 상태만(uxi B1 안 A)이라 금액은 데스크톱 이지 컴팩트 설명 칩에.
+              // 터미널은 칩이 없어(누르는 자리를 덮었다) 카드 종류만 본다
               const isCold = s === 'coldWin' || s === 'coldLoss' || s === 'switched'
-              // 영어엔 "소비" 가 없어 이 세션 금액($1.00, 비용 줄 맨 앞)과 꼴이 같다 — 그 값은 뺀다
-              const rewrite = isCold ? String((await bar.find({ type: 'Text', text: lang === 'ko' ? /^\$\d+\.\d\d 소비$/ : /^\$(?!1\.00$)\d+\.\d\d$/ }))?.text ?? '').replace(' 소비', '') : ''
+              const tip = isCold && surface === 'desktop' ? String((await bar.find({ type: 'Text', text: lang === 'ko' ? /다음 요청 ~\$\d+\.\d\d/ : /next request ~\$\d+\.\d\d/ }))?.text ?? '') : ''
+              const rewrite = (tip.match(/~(\$\d+\.\d\d)/) ?? [])[1] ?? ''
               await bar.press({ key: 'compact' })
               await rules(bar, lang, 'card')
               const card = (await bar.find({ key: 'confirm-cold' })) ?? (await bar.find({ key: 'confirm' }))
               expect(card).not.toBe(undefined)
               if (isCold) {
                 expect(await bar.find({ key: 'confirm' })).toBe(undefined)
-                expect(rewrite).toMatch(/^\$\d+\.\d\d$/)
-                expect(JSON.stringify(card)).toContain(`~${rewrite}`)
+                if (surface === 'desktop') {
+                  expect(rewrite).toMatch(/^\$\d+\.\d\d$/)
+                  expect(JSON.stringify(card)).toContain(`~${rewrite}`)
+                }
                 // 손해(그냥 이어 가는 편이 쌈)면 컴팩트 버튼 없이 이어 가라는 안내, 이득이면 ▶ 바로 컴팩트
                 const isLossCard = JSON.stringify(card).includes(lang === 'ko' ? '그냥 이어 가는 편이 쌈' : 'continuing as is is cheaper')
                 if (isLossCard) {
@@ -233,9 +296,10 @@ for (const s of STATES)
                 if (s === 'coldWin') expect(JSON.stringify(card)).toContain(lang === 'ko' ? ' 이득' : 'saves ')
               }
               if (surface === 'desktop') {
-                expect(await iconLook()).toContain(isNotNow ? '"dimColor":true' : '"color":"#4c9be8"')
-                const title = await bar.find({ type: 'Text', text: /^(🗜|🧊|🔄)$/ })
-                expect(title?.props.dimColor === true).toBe(isNotNow)
+                expect(await iconLook()).toContain(isNotNow ? '#9aa0a8' : '#4c9be8')
+                // 카드 제목 아이콘(캡슐 꼴 Svg): 권하지 않는 동안 회색 — 2026-10-14 uxi 아이콘 안 A
+                const title = JSON.stringify(await bar.find({ key: 'card-icon' }))
+                expect(title.includes('#9aa0a8')).toBe(isNotNow)
               }
               if (s === 'tidying') {
                 await bar.press({ key: 'compact-tidy' })
@@ -254,13 +318,36 @@ for (const s of STATES)
             // 사용량 패널 · 설정 탭(펼친 것 · 상세 조정까지)
             await $.command.run({ command: 'easy-compact', args: 'usage' })
             const pane = await $.ui.mount({ plugin: 'easy-compact', surface, component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: w.pane, placement: 'dock' } })
+            // 질문별 비용은 열 때 접혀 있다(fb A6) — 질문 줄 글도 규칙을 보게 펼친다
+            if (await pane.find({ key: 'fold-s-history', text: '▸' })) await pane.press({ key: 'fold-s-history' })
             await rules(pane, lang, 'usage')
+            if (s === 'extras') {
+              // 업데이트 뒤 첫 실행 알림 · 바뀐 것(마켓 사본 CHANGELOG — 화면 언어의 파일)
+              await waitFor(async () => (await pane.find({ key: 'upd-note' })) !== undefined)
+              expect(await pane.find({ key: 'upd-note' })).not.toBe(undefined)
+              await pane.press({ key: 'upd-note-changes' })
+              expect(await pane.find({ key: 'upd-note-list' })).not.toBe(undefined)
+              await rules(pane, lang, 'update-note')
+            }
             await $.command.run({ command: 'easy-compact', args: 'settings' })
             for (const k of ['set-screen', 'set-window', 'set-compact', 'set-tidy', 'set-cache', 'set-lang']) {
               if (await pane.find({ key: `fold-${k}`, text: '▸' })) await pane.press({ key: `fold-${k}` })
             }
             if (!(await pane.find({ key: 'info-row' })) && (await pane.find({ key: 'screen-more' }))) await pane.press({ key: 'screen-more' })
             await rules(pane, lang, 'settings')
+            if (s === 'extras') {
+              // 업데이트 칸 네 상태: 평소 → [업데이트 확인] → 새 판(설정 탭 •) · 바뀐 것 → [업데이트] → 받음
+              expect(await pane.find({ key: 'upd-check' })).not.toBe(undefined)
+              await pane.press({ key: 'upd-check' })
+              await waitFor(async () => (await pane.find({ key: 'upd-apply' })) !== undefined)
+              expect(String((await pane.find({ key: 'pane-settings' }))?.props.label ?? '')).toContain('•')
+              await pane.press({ key: 'upd-changes' })
+              await rules(pane, lang, 'update-newer')
+              await pane.press({ key: 'upd-apply' })
+              await waitFor(async () => (await pane.find({ key: 'upd-apply' })) === undefined)
+              expect(JSON.stringify(await pane.find({ key: 'set-update' }))).toContain('0.5.1')
+              await rules(pane, lang, 'update-done')
+            }
             // 커스텀 세부(버튼 · 색 −/+ · 캐시 유지 시간 고르기)도 같은 규칙
             await pane.press({ key: 'screen-custom' })
             await rules(pane, lang, 'settings')

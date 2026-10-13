@@ -57,6 +57,32 @@ export function cellsOf(text: string): number {
 }
 
 /**
+ * 데스크톱에 그린 글 폭 어림 — 본문 글꼴 1ch(= Box 폭 한 칸, 13px 에서 7.84px) 단위. 한글 · 넓은 글자 1.66(맑은 고딕 13px),
+ * 그림 글자 2.1, 화살표 · 도형 기호 1.3, 숫자 · 대문자 · $ ~ 1, 소문자 0.85, 공백 · 구두점 0.45 — render 도구 보정(2026-10-14, 실물
+ * 스크린샷 4장 대조: 엔진 렌더러가 Box 폭 · 간격을 ch 로 그린다). 맥(Apple SD Gothic Neo)은 한글이 조금 좁아 넉넉한 쪽.
+ * 터미널은 cellsOf(칸이 정확하다)
+ */
+export function textCh(text: string): number {
+  let w = 0
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!
+    if (c >= 0x1f300) w += 2.1
+    else if (isWide(c)) w += 1.66
+    else if (c >= 0x2190 && c <= 0x2bff) w += 1.3
+    else if (/[0-9A-Z$~%#@&]/.test(ch)) w += 1
+    else if (/[a-z]/.test(ch)) w += 0.85
+    else if (/[\s·.,:;'"()[\]|/\-]/.test(ch)) w += 0.45
+    else w += 0.9
+  }
+  return w
+}
+
+/** 표면에 맞는 글 폭(칸): 터미널은 칸 수 그대로, 데스크톱은 ch 어림을 올림 */
+export function widthOf(text: string, isTerminal: boolean): number {
+  return isTerminal ? cellsOf(text) : Math.ceil(textCh(text))
+}
+
+/**
  * 칸 수에 맞게 자른다(넘치면 끝에 …). 버튼 이름처럼 줄을 안 바꾸는 글에 쓴다 — 데스크톱은 그런 글이 길면
  * 패널 안쪽 틀을 그만큼 넓혀, 다른 글까지 넓어진 틀에서 줄을 바꾸고 패널 밖으로 잘렸다
  */

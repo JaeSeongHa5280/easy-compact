@@ -1,10 +1,10 @@
 import type { EngineInterface } from 'claude-code'
 import type { StepDetail } from '../types'
-import { barSvg, CTX_MARK_PAD, ctxBarSvg, fmtTokens, fmtUsd, modelName, pulseSvg, REWRITE_NOTE_USD, textBar, thresholds } from './cost'
+import { barSvg, CTX_MARK_PAD, ctxBarSvg, fmtTokens, fmtUsd, modelName, pulseSvg, REWRITE_NOTE_USD, textBar } from './cost'
 import { L } from './i18n'
-import { iconOf, withIcon } from './glyph'
+import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
 import { barCells } from './cells'
-import { cellsOf, fitCells, compactStepText } from './text'
+import { cellsOf, fitCells, compactStepText, widthOf } from './text'
 
 /**
  * 화면 공통 조각 — 카드 · 줄 · 칸 · 막대 · 색.
@@ -30,8 +30,11 @@ export function questionScope(atMs: number): string {
   return `q-${Math.round(atMs)}`
 }
 
-/** 설정 비용표의 "★ 최적" · "★ 추천" 금색 — 노랑(컴팩트하기 좋은 때)과 갈리게 더 진하게 */
-export const STAR_HEX = '#f5b301'
+/**
+ * 설정 비용표의 "★ 최적" · "★ 추천" 색 = 초록(최적 = 좋음, 판정 "좋음" 과 같은 색). 금색 #f5b301 은 주의 노랑(컴팩트하기 좋은 때)과
+ * 헷갈렸다(2026-10-14 uxi C14 — 노랑은 뜻 하나)
+ */
+export const STAR_COLOR = 'green'
 
 /**
  * 비용표 최적 대비 색 문턱(%): 넘으면 노랑 · 빨강, 빨강 = 비추천. 공식 값이 아니라 정한 값(설정 화면에 가정으로 적는다) —
@@ -136,12 +139,13 @@ export function ctxBar(
  * 패널 한 줄: 이름 칸(고정 폭) · 값 · 흐린 설명을 왼쪽부터. 데스크톱 패널은 오른쪽 끝이
  * 몇 칸 잘려 보여서 값을 오른쪽 끝에 붙이지 않는다. 좁으면 설명이 다음 줄로 넘어간다
  */
-export function row(ui: Ui, key: string, label: string, value: string, note?: unknown, color?: string, noteColor?: string) {
+export function row(ui: Ui, key: string, label: string, value: string, note?: unknown, color?: string, noteColor?: string, labelW = nameColW([label])) {
   const { Box, Text } = ui
+  // 이름 칸 = 이름 폭 + 1(예전 12칸 고정), 이름은 기본 글색 — 이름-값 줄은 어디서나 한 꼴(이름 보통 · 값 굵게, 2026-10-14 uxi C)
   return (
     <Box key={key} columnGap={1}>
-      <Box width={12} flexShrink={0}>
-        <Text dimColor>{label}</Text>
+      <Box width={labelW} flexShrink={0}>
+        <Text>{label}</Text>
       </Box>
       <Box flexShrink={1} minWidth={0}>
         <Text wrap="wrap">
@@ -157,38 +161,40 @@ export function row(ui: Ui, key: string, label: string, value: string, note?: un
 }
 
 /**
- * 색 읽는 법 한 줄. 금액 문턱은 없다 — 요청 값은 컨텍스트 색(강조 · 권장 크기)을 따르고, 질문 값은 시킨 일의 양이라
- * 색 없이(cost.ts). 기준은 패널 위 설정 탭에서 바꾼다(예전엔 여기 펼치는 버튼이 있었다)
+ * 데스크톱 패널 · 바의 가로 한 칸(Box 폭 1 · 간격 1) = 본문 글꼴 1ch = 7.84px(13px anthropic-sans 의 '0' 폭). 앱 웹 번들의 엔진
+ * 렌더러가 width · margin · padding · columnGap 을 ch 로 그리고, bodyColumns = floor(안쪽 폭 ÷ 1ch) — 2026-10-14 render 도구 보정
+ * (실물 스크린샷 4장과 대조, uxi_results/easy-compact/render/README.md). 예전 가정(그림 칸당 6px · "Box 한 칸 ≈ 12px")은 틀려
+ * 막대 · 그래프가 카드 안쪽 3/4 남짓에서 멈췄고(fb A1), 글 자르는 폭은 실제보다 넓게 잡혀 오른쪽 1할을 비워 둬야 했다
  */
-export function legend(ui: Ui, key: string) {
-  const { Text } = ui
-  const t = thresholds()
-  return (
-    <Text key={key} wrap="wrap">
-      <Text dimColor>{L('색: ', 'Colors: ')}</Text>
-      <Text color="yellow">{L('노랑', 'yellow')}</Text>
-      <Text dimColor>
-        {L(
-          ` ${fmtTokens(t.ctxWarn)}부터${t.isRange ? '(컴팩트하기 좋은 구간)' : ''}, `,
-          ` from ${fmtTokens(t.ctxWarn)}${t.isRange ? ' (good time to compact)' : ''}, `,
-        )}
-      </Text>
-      <Text color="red">{L('빨강', 'red')}</Text>
-      <Text dimColor>
-        {L(
-          ` ${fmtTokens(t.ctxCut)}부터(${t.isRange ? '컴팩트 구간 지남' : '컴팩트 권장'}). 캐시를 다시 쓰는 요청도 빨강입니다. 기준은 설정 탭에서 바꿉니다.`,
-          ` from ${fmtTokens(t.ctxCut)} (${t.isRange ? 'past the compact range' : 'compact advised'}). Requests that rewrite the cache are red too. Change the thresholds in the Settings tab.`,
-        )}
-      </Text>
-    </Text>
-  )
+export const CH_PX = 7.84
+
+/** 데스크톱 그림(Svg) 폭 상한 — 넓은 패널에서 막대 · 그래프가 끝없이 길어지지 않게(읽기 좋은 최대 폭). 예전 320 은 64칸부터 멈췄다 */
+export const SVG_MAX_PX = 640
+
+/**
+ * 이름-값 줄의 값 기둥이 이 칸 수보다 좁으면 이름을 값 위에 쌓는다 — 값 · 버튼 자리가 20칸 남짓이면 줄마다 꺾였다(fb A2). 카드마다
+ * 이름 폭이 달라 쌓는 패널 폭도 다르다(이름 두 글자 카드는 약 34칸, 설정 칸들은 약 40칸 아래). 패널이 넓으면 그림 · 카드가 폭을 따라
+ * 늘어나고(1칸 = 1ch), 비용표는 열을 뺀다
+ */
+export const MIN_VALUE_COLS = 24
+
+/** cols = 패널 글 폭(칸), nameW = 이름 칸 폭 — 카드 테두리 · 여백(CARD_INSET)과 사이 한 칸을 빼고 값 기둥이 MIN_VALUE_COLS 보다 좁으면 쌓는다 */
+export function isStackedFor(cols: number | null, nameW: number): boolean {
+  return cols !== null && cols - CARD_INSET - nameW - 1 < MIN_VALUE_COLS
 }
 
 /**
- * 질문별 비용의 칸 폭. 데스크톱은 Box 폭 한 칸(약 12px)이 글자 한 칸(약 8.5px)보다 넓어, 터미널 칸 수를 그대로 쓰면
- * 금액 칸이 비고(7칸 = 84px 에 "$0.57" 45px) 글이 패널 끝보다 한참 앞에서 잘렸다(2026-10-11 스크린샷).
- * amountW = 금액 칸(Box 칸), textScale = Box 칸 하나에 드는 글자 칸 수 — 자르는 폭에 곱한다. 넘치면 패널 틀이
- * 넓어지니(버튼 글은 줄을 안 바꾼다) 실제(약 1.4)보다 낮게 1.25
+ * 이름 칸 폭(이름-값 줄의 이름 칸): 그 카드에서 가장 긴 이름 + 1 — 고정 칸(8 · 12 · 16)은 짧은 이름엔 비고 영어 긴 이름은
+ * 두 줄로 꺾였다(2026-10-14 uxi C · fb A2). 터미널은 칸 수, 데스크톱은 ch 어림(textCh)
+ */
+export function nameColW(names: readonly string[]): number {
+  return Math.max(...names.filter(n => n !== '').map(n => widthOf(n, onTerminal())), 2) + 1
+}
+
+/**
+ * 질문별 비용의 칸 폭. amountW = 금액 칸(Box 칸), textScale = Box 칸 하나에 드는 글자 칸 수(cellsOf 기준 — 한글 2칸) — 자르는
+ * 폭에 곱한다. 데스크톱 1ch(7.84px)에 한글 반 글자(6.5px) · 라틴 한 글자(약 6.7px)가 드니 약 1.15 — 넘치면 줄이 바뀌니 조금 낮게 1.1
+ * (예전 1.25 는 "Box 한 칸 ≈ 12px" 가정에서 나와 글이 칸보다 넓었다 — 2026-10-14 보정)
  */
 // leadW = 줄 맨 앞 칸(금액 + 그 아래 시간 "23시간 전" 9글자): 데스크톱 7칸 ≈ 84px, 터미널 9칸
 // iconW = 열기 아이콘 칸(▸ / ▾ 버튼) — 아이콘은 금액 왼쪽. 데스크톱 4칸 ≈ 40px, 터미널은 버튼이 "[ ▸ ]" 다섯 칸이라
@@ -198,7 +204,7 @@ export type Grid = { amountW: number; leadW: number; textScale: number; iconW: n
 
 export const TERMINAL_GRID: Grid = { amountW: 7, leadW: 9, textScale: 1, iconW: 5, iconTop: true }
 
-export const DESKTOP_GRID: Grid = { amountW: 5, leadW: 7, textScale: 1.25, iconW: 4, iconTop: false }
+export const DESKTOP_GRID: Grid = { amountW: 5, leadW: 7, textScale: 1.1, iconW: 4, iconTop: false }
 
 export function gridOf(surface: string): Grid {
   return surface === 'desktop' ? DESKTOP_GRID : TERMINAL_GRID
@@ -287,7 +293,8 @@ export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, 
  * 컴팩트 단계 표시 — 띠 버튼 자리와 질문별 비용의 진행 중 줄이 같은 꼴(깜빡이는 점 · 글 색 · 글)을 쓴다.
  * 같은 순간을 띠는 "● 저장 중 → 끝나면 컴팩트", 패널은 "진행 중 🗜 저장하고 컴팩트 — 저장 턴" 으로 달리 보였다
  */
-const PHASE_HEX = { tidying: '#e0b040', compacting: '#4c9be8' } as const
+// 진행은 진행 색 하나(파랑) — 저장 중이 노랑이면 "주의" 로 읽혔다(2026-10-14 uxi 색 표: 노랑은 좋은 때 · 주의만)
+const PHASE_HEX = { tidying: '#4c9be8', compacting: '#4c9be8' } as const
 
 /**
  * 단계 표시(없으면 null) — 컴팩트 중 글엔 어떤 컴팩트인지(compactKind): "🗜 바로 컴팩트 중…". 뒤에 붙던 "요약을 만들고
@@ -296,10 +303,11 @@ const PHASE_HEX = { tidying: '#e0b040', compacting: '#4c9be8' } as const
 export function phaseLook(phase: unknown, kind: unknown, hasIcon = true): { hex: string; color: string; text: string } | null {
   // 바는 🗜 를 따로 파랗게 그려 글엔 빼고 받는다(hasIcon = false)
   const icon = (text: string) => (hasIcon ? withIcon('🗜', text) : text)
-  if (phase === 'tidying') return { hex: PHASE_HEX.tidying, color: 'yellow', text: icon(L('저장 중 → 끝나면 컴팩트', 'Saving → then compact')) }
+  // 글자색은 테마 suggestion(밝은 · 어두운 테마 둘 다 읽히는 파랑) — 점 · 🗜 의 고정 파랑과 같은 계열
+  if (phase === 'tidying') return { hex: PHASE_HEX.tidying, color: ACCENT, text: icon(L('저장 중 → 끝나면 컴팩트', 'Saving → then compact')) }
   if (phase !== 'compacting') return null
   const name = typeof kind === 'string' && kind ? kind : L('컴팩트', 'Compact')
-  return { hex: PHASE_HEX.compacting, color: 'cyan', text: icon(L(`${name} 중…`, `${name} in progress…`)) }
+  return { hex: PHASE_HEX.compacting, color: ACCENT, text: icon(L(`${name} 중…`, `${name} in progress…`)) }
 }
 
 /** 보통 진행 중 질문의 깜빡이는 점(ACCENT 와 비슷한 파랑) */
@@ -325,8 +333,9 @@ export function usdCell(ui: Ui, usd: number, bold = false, width = 7) {
 }
 
 /**
- * 패널 큰 구획(컨텍스트 · 비용 · 질문별 비용)의 테두리: 둥근 회색 — 앱 입력창 테두리와 같은 테마 색이라 튀지 않고 덩어리만 나눈다.
- * 파란 테두리는 컴팩트 확인 카드(결정할 것)에만 쓴다 — 다 파랗면 그 뜻이 묻힌다
+ * 패널 큰 구획(이 세션 · 질문별 비용 · 컴팩트)의 테두리: 둥근 회색 — 앱 입력창 테두리와 같은 테마 색이라 튀지 않고 덩어리만 나눈다.
+ * 파랑은 easy-compact 가 직접 보이는 것에만: 컴팩트 확인 카드(결정할 것 — 테마 suggestion) · 답변 끝 질문 비용 칩 · 바의 🗜 ·
+ * 진행(저장 중 · 컴팩트 중). 다 파랗면 그 뜻이 묻힌다(2026-10-14 uxi 파란 테두리 안 A — 칩이 생기며 "확인 카드에만" 이 낡았다)
  */
 export const CARD = { borderStyle: 'round', borderColor: 'promptBorder', paddingX: 1 } as const
 
@@ -345,8 +354,69 @@ export const CARD_INSET = 4
  */
 export const TILE = CARD
 
-/** 타일 안 막대 폭(px)이 줄어드는 만큼: 타일 안쪽 칸 수 × 칸당 px(패널 막대 폭 계산과 같은 6) */
+/** 타일 안 막대 폭(px)이 줄어드는 만큼: 타일 안쪽 칸 수 × 칸당 px — 터미널 칸 그림은 6px 가 한 칸, 데스크톱은 1ch = CH_PX */
 export const TILE_PX = CARD_INSET * 6
+
+export function tilePxOf(surface: string): number {
+  return surface === 'desktop' ? Math.round(CARD_INSET * CH_PX) : TILE_PX
+}
+
+/**
+ * 고르기 버튼 하나(탭 · 고르기 · 보기 토글 · 문구 · 언어가 같이 쓴다): 고른 쪽 = 주 버튼(채움), 안 고른 쪽 = 흐린 보조 버튼.
+ * 데스크톱은 ✓ 없이 채움만 — ✓ 를 붙이니 고른 버튼만 두 칸 넓어져 옆 버튼이 밀렸다(fb A4, 2026-10-14 uxi 고른 표시 안 A). 채움 ·
+ * 보조 차이가 이미 크다. 터미널은 주 버튼이 글자색만 달라 "✓ " 를 두고, 안 고른 쪽은 같은 폭 빈칸(칸이 정확해 폭이 안 바뀐다).
+ * 엔진 Button 엔 "고름" 상태 속성이 없어(d.ts ButtonProps) 데스크톱 화면 읽기 프로그램엔 채움이 안 읽힌다 — 알고 둔 한계
+ */
+export function pickButton(ui: Ui, key: string, label: string, isOn: boolean, onPress: () => void) {
+  const { Button } = ui
+  const text = onTerminal() ? `${isOn ? '✓' : ' '} ${label}` : label
+  return isOn ? <Button key={key} label={text} variant="primary" onPress={onPress} /> : <Button key={key} label={text} variant="secondary" dimColor onPress={onPress} />
+}
+
+/**
+ * 장식 아이콘(버튼 밖) — 캡슐 꼴 선 아이콘(2026-10-14 uxi 아이콘 안 A). 이모지는 글꼴 ·
+ * 운영체제마다 생김새가 달라 한 화면 안에서도 그림체가 섞였다. 16칸 판에 1.5px 선, 14px 로 그린다. 버튼 안(📊 · ▸ · ✕ 등)은 엔진이
+ * 글만 받아 그대로 글(d.ts ButtonProps). Svg 안은 테마 색이 안 먹어 hex — 제목 띠 위는 회색 #9aa0a8 만(띠 #484848 위 3.47:1,
+ * 상태 색 아이콘은 띠 밖에서만 — 빨강은 띠 위 2.44:1 로 미달). 데스크톱만, 터미널은 아이콘 없이(그림 글자는 칸이 어긋난다 — glyph.ts),
+ * 그 밖 표면(Svg 없음)은 예전 그림 글자
+ */
+const ICON_PATHS = {
+  session: '<rect x="1.75" y="4.75" width="12.5" height="6.5" rx="3.25"/><rect x="3.4" y="6.4" width="5.6" height="3.2" rx="1.6" fill="@" stroke="none"/>',
+  questions: '<rect x="1.75" y="2.25" width="12.5" height="3" rx="1.5"/><rect x="1.75" y="6.5" width="9" height="3" rx="1.5"/><rect x="1.75" y="10.75" width="5.5" height="3" rx="1.5"/>',
+  compact: '<rect x="4.6" y="4.75" width="6.8" height="6.5" rx="3.25"/><path d="M1.4 5.2 3.6 8 1.4 10.8M14.6 5.2 12.4 8 14.6 10.8"/>',
+  cold: '<rect x="1.75" y="4.75" width="12.5" height="6.5" rx="3.25"/><path d="M8 6.1v3.8M6.35 7.05l3.3 1.9M6.35 8.95l3.3-1.9"/>',
+  switch: '<rect x="1.75" y="2.5" width="8.5" height="4.5" rx="2.25"/><rect x="5.75" y="9" width="8.5" height="4.5" rx="2.25"/><path d="M12.3 4.75h1.95v2.1M3.7 11.25H1.75v-2.1"/>',
+  held: '<rect x="1.75" y="4.75" width="12.5" height="6.5" rx="3.25"/><path d="M6.8 6.6v2.8M9.2 6.6v2.8"/>',
+  update: '<rect x="1.75" y="8.25" width="12.5" height="5.5" rx="2.75"/><path d="M8 1.9v5M5.8 4.1 8 1.9l2.2 2.2"/>',
+} as const
+
+export type IconName = keyof typeof ICON_PATHS
+
+/** Svg 를 못 그리는 표면의 그림 글자(예전 아이콘) */
+const ICON_GLYPH: Record<IconName, string> = { session: '💰', questions: '🧾', compact: '🗜', cold: '🧊', switch: '🔄', held: '⏸', update: '⬆' }
+
+/** 장식 아이콘 기본 회색 — 제목 띠 · 쉬는 상태(어두운 · 밝은 바탕 둘 다 읽히는 중간 회색) */
+export const ICON_GRAY = '#9aa0a8'
+
+export const ICON_PX = 14
+
+export function iconSvg(name: IconName, hex: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${ICON_PX}" height="${ICON_PX}" viewBox="0 0 16 16" fill="none" stroke="${hex}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name].split('@').join(hex)}</svg>`
+}
+
+/**
+ * 장식 아이콘 하나: 데스크톱은 Svg, 터미널은 없음(null), 그 밖은 그림 글자. glyphLook = 그림 글자일 때 글 색(예전과 같게)
+ */
+export function decoIcon(ui: Ui, name: IconName, hex: string, alt: string, key?: string, glyphLook: { color?: string; dimColor?: boolean } = {}) {
+  const Svg = onDesktop() ? (ui as unknown as { Svg?: SvgElement }).Svg : undefined
+  if (Svg) return <Svg key={key ?? `icon-${name}`} source={iconSvg(name, hex)} alt={alt} width={ICON_PX} height={ICON_PX} />
+  const glyph = iconOf(ICON_GLYPH[name])
+  return glyph ? (
+    <ui.Text key={key ?? `icon-${name}`} {...glyphLook}>
+      {glyph}
+    </ui.Text>
+  ) : null
+}
 
 /** 카드 접기: 제목 줄 맨 앞 ▾ / ▸ 버튼. 접으면 제목 줄(그 카드의 요약)만 남는다 */
 export type Fold = { isOpen: boolean; onToggle: () => void }
@@ -369,7 +439,7 @@ export function section(
   children: unknown[],
   hint?: unknown,
   isCard = false,
-  icon?: string,
+  icon?: IconName,
   fold?: Fold,
 ) {
   const { Box, Text } = ui
@@ -379,10 +449,10 @@ export function section(
       {/* 카드 제목 아래는 한 칸 — 컴팩트 확인 카드처럼 제목과 내용을 띄운다 */}
       <Box columnGap={1} alignItems="center" flexWrap="wrap" marginBottom={isCard && isOpen ? 1 : 0} {...(isCard ? TITLE_BAND : {})}>
         {fold ? foldButton(ui, key, fold) : null}
-        {icon && iconOf(icon) ? <Text>{iconOf(icon)}</Text> : null}
-        <Text bold color="cyan">
-          {title}
-        </Text>
+        {/* 제목 띠 위 아이콘은 회색 하나(색은 띠 밖에서만) */}
+        {icon ? decoIcon(ui, icon, ICON_GRAY, title, `${key}-icon`) : null}
+        {/* 제목은 기본 글색 굵게 — 청록은 회색 띠 위에서 대비가 3.66:1 이라 덜 읽혔다(2026-10-14 uxi E1). 색은 제목 앞 아이콘이 맡는다 */}
+        <Text bold>{title}</Text>
         {/* 카드 제목 옆 설명은 보통 색("API 정가 환산"), 설정 안 작은 제목 옆은 흐리게 */}
         {hint ? <Text {...(isCard ? {} : { dimColor: true })}>{hint}</Text> : null}
       </Box>

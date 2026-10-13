@@ -521,16 +521,23 @@ export function timingSvg(
   const line = (v: number, color: string) =>
     `<rect x="${(x(v) - 1.5).toFixed(1)}" y="0" width="3" height="${barY * 2 + barH}" rx="1" fill="${color}"/>`
   body += line(marks.warn, LEVEL_HEX.warn) + line(marks.cut, LEVEL_HEX.cut)
-  // 이름: 시작은 막대 왼쪽 끝에 왼쪽 정렬, 끝은 막대 오른쪽 끝에 오른쪽 정렬 — 어느 선인지는 색(노랑 · 빨강)으로 잇는다.
-  // 예전엔 선 옆에 붙였는데 좁은 패널에선 끝 이름이 오른쪽 자리가 모자라 선 왼쪽으로 뒤집혀 시작 이름과 겹쳤다("250k 좋은3때k
-  // 늦어짐", 동료). 둘이 그래도 닿으면(아주 좁음) 크기만 남긴다
+  // 이름은 제 눈금 곁에, 바깥쪽으로: 시작 이름은 노랑 선 왼쪽에 붙여(오른쪽 정렬), 끝 이름은 빨강 선 오른쪽에 붙여(왼쪽 정렬) — 둘이
+  // 서로 멀어지는 쪽으로 뻗어 안 겹친다. 막대 끝을 넘으면 끝에 맞춘다. 거쳐 온 꼴: 선 옆(같은 쪽)은 좁은 패널에서 끝 이름이 왼쪽으로
+  // 뒤집혀 "250k 좋은3때k 늦어짐" 으로 겹쳤고(동료), 막대 양 끝 고정은 넓은 패널(그림 폭 = 카드 폭, 2026-10-14)에서 이름이 눈금에서
+  // 멀리 떨어졌다(fb E1). 그래도 닿으면 양 끝, 나란히 안 들면(아주 좁음) 크기만 남긴다
   const fontPx = 10
   const textW = (s: string) => [...s].reduce((w, ch) => w + (ch.charCodeAt(0) >= 0x1100 ? fontPx : fontPx * 0.6), 0)
   const y = TIMING_H - 2
   const text = (at: number, anchor: string, color: string, s: string) =>
     `<text x="${at.toFixed(1)}" y="${y}" text-anchor="${anchor}" font-size="${fontPx}" font-family="sans-serif" fill="${color}">${escapeXml(s)}</text>`
   const [warnName, cutName] = timingNames(marks.warnName, marks.cutName, width, textW)
-  body += text(0, 'start', LEVEL_HEX.warn, warnName) + text(width, 'end', LEVEL_HEX.cut, cutName)
+  let warnEnd = Math.max(textW(warnName), x(marks.warn) - 3)
+  let cutStart = Math.min(width - textW(cutName), x(marks.cut) + 3)
+  if (warnEnd + NAME_GAP > cutStart) {
+    warnEnd = textW(warnName)
+    cutStart = width - textW(cutName)
+  }
+  body += text(warnEnd, 'end', LEVEL_HEX.warn, warnName) + text(cutStart, 'start', LEVEL_HEX.cut, cutName)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${TIMING_H}" viewBox="0 0 ${width} ${TIMING_H}">${body}</svg>`
 }
 
@@ -568,6 +575,9 @@ export const AXIS_H = 13
 
 const escapeXml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/** 흐름 그래프 막대 수 상한 — 예전 그림 폭 상한 320px 에서 나오던 최대(약 88개)와 같게 */
+export const FLOW_MAX_BARS = 90
+
 export function flowSvg(
   points: readonly CtxPoint[],
   marks: readonly number[],
@@ -584,7 +594,9 @@ export function flowSvg(
   let top = t.ctxCut
   for (const p of points) if (p.ctx > top) top = p.ctx
   top *= 1.05
-  const bars = Math.max(1, Math.min(n, Math.floor(plotW / 3)))
+  // 막대 수는 폭 ÷ 3px, 많아야 FLOW_MAX_BARS — 넓은 패널(그림 폭 상한 640px, 2026-10-14)에서 막대를 늘리면 막대 하나 ≈ 120자라
+  // 패널 그리기 크기(직렬화 ~10만 자 한도, size.test)를 넘었다. 넓으면 막대가 굵어진다
+  const bars = Math.max(1, Math.min(n, Math.floor(plotW / 3), FLOW_MAX_BARS))
   const per = n / bars
   const bw = plotW / bars
   const yOf = (v: number) => height - (v / top) * (height - 1)

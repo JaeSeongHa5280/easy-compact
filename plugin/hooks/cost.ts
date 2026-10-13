@@ -47,6 +47,43 @@ export function ratesFor(model: string, promptTokens = 0): Rates | null {
   return row.long && promptTokens > row.long.over ? row.long.rates : row.base
 }
 
+/**
+ * 오늘 · 이번 달 사용량 재료(tools/scan-spend.mjs 출력): 날짜("YYYY-MM-DD", 이 PC 지역 시각) → 모델 → 크기 묶음(S = 프롬프트 10만
+ * 이하, L = 넘음) → [입력, 출력, 캐시 읽기, 5분 쓰기, 1시간 쓰기] 토큰
+ */
+export type SpendDays = Record<string, Record<string, Partial<Record<'S' | 'L', number[]>>>>
+
+/** 날짜 범위(from ~ to, "YYYY-MM-DD" 포함)의 API 정가 환산 합 — 요율을 모르는 모델은 뺀다. L 묶음은 긴 프롬프트 요율이 있으면 그 요율 */
+export function spendUsd(days: SpendDays, from: string, to: string): number {
+  let usd = 0
+  for (const [day, byModel] of Object.entries(days)) {
+    if (day < from || day > to) continue
+    for (const [model, tiers] of Object.entries(byModel)) {
+      for (const [tier, t] of Object.entries(tiers)) {
+        const r = ratesFor(model, tier === 'L' ? Number.MAX_SAFE_INTEGER : 0)
+        if (!r || !t) continue
+        usd += ((t[0] ?? 0) * r.input + (t[1] ?? 0) * r.output + (t[2] ?? 0) * r.read + (t[3] ?? 0) * r.write5m + (t[4] ?? 0) * r.write1h) / 1e6
+      }
+    }
+  }
+  return usd
+}
+
+/** 이 PC 지역 날짜 "YYYY-MM-DD" — tools/scan-spend.mjs 와 같은 꼴 */
+export function localDay(ms: number): string {
+  const d = new Date(ms)
+  const two = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
+}
+
+/** 이번 달 1일 0시(이 PC 지역 시각, ms) */
+export function monthStartMs(ms: number): number {
+  const d = new Date(ms)
+  d.setDate(1)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
 /** 긴 프롬프트 요율이 붙는 경계(토큰). 없는 모델이면 null — 지금은 Haiku 5.5(10만 초과 5배)뿐 */
 export function longTierOver(model: string): number | null {
   return PRICE_TABLE.find(r => r.match.test(model))?.long?.over ?? null
@@ -344,7 +381,8 @@ export function coldFor(
  * 이 세션 금액의 색(설정 sessionColors — 기본 $10 · $50 · $100): 넘으면 노랑 · 주황 · 빨강, 그 아래는 기본 글색(undefined).
  * 금액 문턱을 없앴던 까닭(위 머리말)은 기준이 습관 통계였기 때문 — 이 값은 사람이 정하는 경고선이다
  */
-export const SESSION_HEX = { yellow: '#d6b03a', orange: '#e8833a', red: '#e05555' } as const
+// 노랑은 hex 하나(#e0a030 — 막대 · 시점 · 한도와 같은 노랑, 2026-10-14 uxi 색 표). 예전 #d6b03a 는 노랑 다섯 벌 중 하나였다
+export const SESSION_HEX = { yellow: '#e0a030', orange: '#e8833a', red: '#e05555' } as const
 
 export function sessionColorOf(usd: number, colors: readonly [number, number, number]): string | undefined {
   if (usd >= colors[2]) return SESSION_HEX.red
@@ -440,9 +478,9 @@ export function levelOf(contextTokens: number): Level {
 /** 컨텍스트 글자 색: 강조 · 권장을 넘었을 때만(그 아래는 색 없음 — 어디나 색이면 정작 노랑 · 빨강이 묻힌다) */
 export const LEVEL_TEXT: Record<Level, string | undefined> = { ok: undefined, warn: 'yellow', cut: 'red' }
 
-/** 한도 막대 색: 70% 까지 파랑, 90% 까지 주황, 그 위 빨강 */
+/** 한도 막대 색: 70% 까지 보통(막대 기본 #6b8db8 — 예전 #5b8def 는 파랑이 한 벌 더였다), 90% 까지 노랑, 그 위 빨강 — LEVEL_HEX 와 같은 세 색 */
 export function limitHex(percent: number): string {
-  return percent >= 90 ? '#e05555' : percent >= 70 ? '#e0a030' : '#5b8def'
+  return percent >= 90 ? '#e05555' : percent >= 70 ? '#e0a030' : '#6b8db8'
 }
 
 /** 막대 색: 기준 아래는 차분한 파랑(초록이면 "좋다" 로 읽혀 색이 늘어난다), 넘으면 노랑 · 빨강 */

@@ -1,4 +1,4 @@
-import type { CostShow, Optimal, ScreenView, Settings, Source, TidyStyleId, TtlConfig } from '../types'
+import type { ChangeGroup, CostShow, Optimal, ScreenView, Settings, Source, TidyStyleId, TtlConfig, UpdateState } from '../types'
 import { cacheWarnFor, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_HEX, ttlName, writeRate } from './cost'
 import {
   BAND_MODES,
@@ -48,20 +48,25 @@ import { L } from './i18n'
 import type { Lang } from './i18n'
 import {
   ACCENT,
-  STAR_HEX,
+  STAR_COLOR,
   PEN_WARN_PCT,
   PEN_BAD_PCT,
   penColorOf,
   isNotRecommended,
   penVerdict,
   phaseLook,
+  pickButton,
   pulseDot,
   CARD,
   CARD_INSET,
+  decoIcon,
+  LIVE_HEX,
+  nameColW,
+  isStackedFor,
   section,
 } from './ui-common'
 import type { Fold } from './ui-common'
-import { cellsOf } from './text'
+import { cellsOf, widthOf } from './text'
 import type { Ui } from './ui-common'
 
 /** ⚙ 설정 탭 — 컴팩트 시점(구간 · 직접 지정)과 컴팩트 문구 */
@@ -100,6 +105,10 @@ export type SettingsActions = {
   setPaneOption: (key: 'paneAutoOpen' | 'paneShared', isOn: boolean) => void
   /** 캐시 유지 시간(커스텀만): 사용자 설정 파일의 promptCacheTtl — null = 자동(키를 지움) */
   setTtl: (value: '5m' | '1h' | null) => void
+  /** 업데이트 칸(설치본만): [업데이트 확인] · [업데이트] · 펼침(바뀐 것 · 오류 원문) */
+  checkUpdate: () => void
+  applyUpdate: () => void
+  toggleUpdate: (key: 'changes' | 'error' | 'note') => void
 }
 
 /** 설정 탭 캐시 칸의 재료: 이 세션 유지 시간(분) · 기록에서 쟀나 · 무엇이 정하나 */
@@ -136,13 +145,8 @@ export function drawSettings(
   const inputs = opt?.inputs ?? null
   const modelId = opt?.model ?? ''
   const model = opt?.model ? modelName(opt.model) : L('이 모델', 'this model')
-  // 고르기 버튼(방식 · 시작 · 끝 · 문구): 고른 것은 ✓ 와 주 버튼
-  const pick = (key: string, label: string, isOn: boolean, onPress: () => void) =>
-    isOn ? (
-      <Button key={key} label={`✓ ${label}`} variant="primary" onPress={onPress} />
-    ) : (
-      <Button key={key} label={label} variant="secondary" dimColor onPress={onPress} />
-    )
+  // 고르기 버튼(방식 · 시작 · 끝 · 문구): 고른 것은 주 버튼(채움) — 공용 pickButton(데스크톱 ✓ 없음 · 터미널 ✓)
+  const pick = (key: string, label: string, isOn: boolean, onPress: () => void) => pickButton(ui, key, label, isOn, onPress)
 
   // 컴팩트 시점은 고르는 값(cmpDraft)으로 그리고 [적용] 을 눌러야 저장한다 — 누르자마자 바뀌어 고르는 도중에도 띠 · 색이
   // 따라 움직였다
@@ -196,13 +200,9 @@ export function drawSettings(
   // 읽기 1회 · 질문 1개 · 캐시 식으면 · 최적 대비 % · 계산 값 풀이는 자세히에서
   const isLean = viewOf(s).info === 'lean'
   const ctxColor = ctxNow === null ? undefined : ctxNow >= appliedT.ctxCut ? 'red' : ctxNow >= appliedT.ctxWarn ? 'yellow' : undefined
-  const appliedRow = (
+  // 적용 중인 값은 카드 제목 띠로 옮겼다(접든 펴든 늘 — 표 줄 끝 "적용 중" 칸 대신, 2026-10-14 uxi 1.1). 여기엔 지금 크기 · 읽기 1회만
+  const appliedRow = !(ctxNow !== null && ctxNow > 0) ? null : (
     <Box key="cmp-applied" columnGap={1} alignItems="center" flexWrap="wrap">
-      <Text>{L('적용 중', 'Applied')}</Text>
-      <Text bold color={ACCENT}>
-        {appliedText}
-      </Text>
-      {ctxNow !== null && ctxNow > 0 ? <Text dimColor>·</Text> : null}
       {ctxNow !== null && ctxNow > 0 ? <Text>{L('현재 컨텍스트', 'Current context')}</Text> : null}
       {ctxNow !== null && ctxNow > 0 ? (
         <Text bold {...(ctxColor ? { color: ctxColor } : {})}>
@@ -237,23 +237,51 @@ export function drawSettings(
       </Box>
     </Box>
   ) : null
-  // 설명은 이름 칸 + 짧은 풀이 한 줄씩 — 한 문단 긴 글은 읽히지 않았다
-  const TERM_W = 12
-  const term = (key: string, name: string, desc: unknown, nameColor?: string) => (
-    // 터미널은 풀이가 두 줄이면 이름이 가운데(둘째 줄)로 내려가 엇갈려 보였다 — 첫 줄에 맞춘다
-    <Box key={key} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'}>
-      {cell('t', TERM_W, <Text {...(nameColor ? { color: nameColor, bold: true } : {})}>{name}</Text>)}
-      <Box flexShrink={1} minWidth={0} columnGap={1} flexWrap="wrap">
-        {typeof desc === 'string' ? (
-          <Text dimColor wrap="wrap">
-            {desc}
-          </Text>
-        ) : (
-          desc
-        )}
+  // 설명은 이름 칸 + 짧은 풀이 한 줄씩 — 한 문단 긴 글은 읽히지 않았다.
+  // 이름 칸 = 그 카드에서 가장 긴 이름 + 1(termW — 카드마다 그리기 직전에 정한다). 예전 12칸 고정은 짧은 이름엔 비고 영어 긴 이름은
+  // 두 줄로 꺾였다(2026-10-14 uxi C · fb A2). 좁은 패널이면 이름을 위에 쌓는다 — 값 · 버튼 자리가 15칸 남짓으로 줄었다
+  let termW = 12
+  // 이름을 쌓을지는 그 카드 이름 폭(termW)으로 — 그리는 때마다 본다
+  const stacked = () => isStackedFor(cols, termW)
+  const descEl = (desc: unknown) =>
+    typeof desc === 'string' ? (
+      <Text dimColor wrap="wrap">
+        {desc}
+      </Text>
+    ) : (
+      desc
+    )
+  const term = (key: string, name: string, desc: unknown, nameColor?: string) =>
+    stacked() ? (
+      <Box key={key} flexDirection="column">
+        <Text {...(nameColor ? { color: nameColor, bold: true } : {})}>{name}</Text>
+        <Box columnGap={1} flexWrap="wrap">
+          {descEl(desc)}
+        </Box>
       </Box>
-    </Box>
-  )
+    ) : (
+      // 터미널은 풀이가 두 줄이면 이름이 가운데(둘째 줄)로 내려가 엇갈려 보였다 — 첫 줄에 맞춘다
+      <Box key={key} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'}>
+        {cell('t', termW, <Text {...(nameColor ? { color: nameColor, bold: true } : {})}>{name}</Text>)}
+        <Box flexShrink={1} minWidth={0} columnGap={1} flexWrap="wrap">
+          {descEl(desc)}
+        </Box>
+      </Box>
+    )
+  // 컴팩트 시점 칸의 이름들 — 이 칸을 그리는 동안의 이름 칸 폭
+  termW = nameColW([
+    L('★ 추천', '★ Suggested'),
+    L('비추천', 'Not advised'),
+    L('최적보다', 'Over best'),
+    L('읽기 1회', 'One read'),
+    L('질문 1개', 'Question'),
+    L('캐시 식으면', 'Cold cache'),
+    L('★ 최적', '★ Best'),
+    L('계산 값', 'Inputs'),
+    model,
+    L('기본 구간', 'Default range'),
+    L('색', 'Colors'),
+  ])
   // 색 문턱 설명: 노랑 · 빨강 글자에 그 색. 문턱(+10 · +50%)은 잰 값이 아니라 정한 규칙이라 "가정" 을 달지 않는다 — 숫자가
   // 그대로 보인다. 추정인 건 최적 쪽이라 "예상 최적"
   const colorDesc = (lead: string, warn: string, bad: string, tail: string) => [
@@ -291,7 +319,7 @@ export function drawSettings(
           ),
         )
       : null
-  const starLine = inputs && opt ? term('cmp-how', L('★ 최적', '★ Best'), L('읽기 + 컴팩트 비용이 가장 적은 크기(공식 요율 · 이 세션 값)', 'Size with the lowest read + compact cost (official rates · this session)'), STAR_HEX) : null
+  const starLine = inputs && opt ? term('cmp-how', L('★ 최적', '★ Best'), L('읽기 + 컴팩트 비용이 가장 적은 크기(공식 요율 · 이 세션 값)', 'Size with the lowest read + compact cost (official rates · this session)'), STAR_COLOR) : null
   const capLine = capNote ? term('cmp-cap', model, capNote.trim()) : null
   // 간단 화면의 풀이는 한 줄 — 비용 칸 · 계산 값은 자세히 화면에
   // 글은 키로 못 찾아(시험 · 다른 mod) 상자에 키를 단다
@@ -366,24 +394,31 @@ export function drawSettings(
       const read = usdAt(size, 'read')
       return read !== null ? Q_STEPS * (read + qExtra) : null
     }
-    // 터미널이 좁으면 "캐시 식으면" 칸을 뺀다 — 줄이 넘어가면 표가 두 줄씩 갈라져 못 읽었다. 판정 말 · "적용 중" 까지 한 줄에
-    // 드는지: 카드 안 폭(테두리 · 여백 4) − 줄 테두리 2
-    const tailW = Math.max(cellsOf(L('★ 최적', '★ Best')), cellsOf(penVerdict(PEN_BAD_PCT + 1)!.word)) + 1 + cellsOf(L('적용 중', 'Applied'))
-    // 터미널 폭이 모자라면 "캐시 식으면" 을 먼저, 그래도 모자라면 "질문 1개" 를 뺀다(질문 1개가 모델 차이를 더 잘 보여 남긴다)
-    const fits = (w: number) => !isTerminal || cols === null || cols - CARD_INSET - 2 >= w
-    const baseW = BAND_W + USD_W + PEN_W + tailW + 4
-    const showQ = !isLean && fits(baseW + Q_W + 1)
-    const showCold = !isLean && fits(baseW + USD_W + 1 + (showQ ? Q_W + 1 : 0))
+    // 줄 하나가 카드 안에 들게 열을 뺀다 — 터미널은 칸, 데스크톱은 ch(1칸 = 1ch, 렌더러 보정 2026-10-14). 예전엔 데스크톱은 늘 든다고
+    // 봐(fits 늘 true) 75칸 패널에서 줄이 넘쳤고, 마지막 "적용 중" 칸이 한 글자 폭까지 줄어 세로로 섰다(fb A2). "적용 중" 칸은 없앴다 —
+    // 카드 맨 위 "적용 중" 줄이 같은 말을 한다. 빼는 순서(2026-10-14 uxi 1.1): 최적보다 더 듦(판정 말이 요약) → 캐시 식으면 → 질문 1개 →
+    // 읽기 1회. 드는지: 카드 안 폭(테두리 · 여백 4) − 줄 테두리 2
+    const tailW = Math.max(widthOf(L('★ 최적', '★ Best'), isTerminal), widthOf(penVerdict(PEN_BAD_PCT + 1)!.word, isTerminal))
+    const fits = (w: number) => cols === null || cols - CARD_INSET - 2 >= w
+    const gapsOf = (n: number) => n - 1
+    const rowW = (withRead: boolean, withQ: boolean, withCold: boolean, withPen: boolean) => {
+      const cells = [BAND_W, withRead ? USD_W : 0, withQ ? Q_W : 0, withCold ? USD_W : 0, withPen ? PEN_W : 0, tailW].filter(x => x > 0)
+      return cells.reduce((sum, x) => sum + x, 0) + gapsOf(cells.length)
+    }
+    const showPen = !isLean && fits(rowW(true, true, true, true))
+    const showCold = !isLean && fits(rowW(true, true, true, false))
+    const showQ = !isLean && fits(rowW(true, true, false, false))
+    const showRead = !isLean && fits(rowW(true, false, false, false))
     const usd2 = (x: number | null, y: number | null) => (x === null || y === null ? '—' : `${fmtUsd(x)}~${fmtUsd(y).slice(1)}`)
     // 고른 줄은 둥근 테두리, 나머지는 같은 자리만큼 안쪽 여백 — 칸이 어긋나지 않게
     const rowBox = (isOn: boolean) => (isOn ? { borderStyle: 'round' as const, borderColor: ACCENT } : { paddingX: 1 })
     const head = (
       <Box key="cmp-t-head" columnGap={1} marginTop={1} paddingX={1}>
         {cell('h-band', BAND_W, <Text dimColor>{L('크기 구간', 'Size range')}</Text>)}
-        {isLean ? null : cell('h-read', USD_W, <Text dimColor>{L('읽기 1회', 'One read')}</Text>)}
+        {showRead ? cell('h-read', USD_W, <Text dimColor>{L('읽기 1회', 'One read')}</Text>) : null}
         {showQ ? cell('h-q', Q_W, <Text dimColor wrap="wrap">{L(`질문 1개(${Q_STEPS}회 가정)`, `Question (${Q_STEPS} req assumed)`)}</Text>) : null}
         {showCold ? cell('h-cold', USD_W, <Text dimColor>{L('캐시 식으면', 'Cold cache')}</Text>) : null}
-        {isLean ? null : cell('h-pen', PEN_W, <Text dimColor>{L('최적보다 더 듦', 'Over best')}</Text>)}
+        {showPen ? cell('h-pen', PEN_W, <Text dimColor>{L('최적보다 더 듦', 'Over best')}</Text>) : null}
       </Box>
     )
     const bandRows = RANGE_BANDS.map(([a, b], i) => {
@@ -406,13 +441,13 @@ export function drawSettings(
               onPress={() => edit({ ...d, rangeStart: a, rangeEnd: b })}
             />,
           )}
-          {isLean ? null : cell('read', USD_W, <Text bold={isOn} dimColor={!isOn}>{usd2(usdAt(a, 'read'), usdAt(b, 'read'))}</Text>)}
+          {showRead ? cell('read', USD_W, <Text bold={isOn} dimColor={!isOn}>{usd2(usdAt(a, 'read'), usdAt(b, 'read'))}</Text>) : null}
           {showQ ? cell('q', Q_W, <Text bold={isOn} dimColor={!isOn}>{usd2(qAt(a), qAt(b))}</Text>) : null}
           {showCold ? cell('cold', USD_W, <Text bold={isOn} dimColor={!isOn}>{usd2(usdAt(a, 'write1h'), usdAt(b, 'write1h'))}</Text>) : null}
-          {isLean ? null : cell('pen', PEN_W, <Text bold={isOn} dimColor={!isOn && !penColor} {...(penColor ? { color: penColor } : {})}>{pens}</Text>)}
+          {showPen ? cell('pen', PEN_W, <Text bold={isOn} dimColor={!isOn && !penColor} {...(penColor ? { color: penColor } : {})}>{pens}</Text>) : null}
           {/* 최적이 든 띠엔 금색 "★ 최적" — 흐린 ★ 하나는 눈에 안 띄었다. 나머지는 판정 말(좋음 · 보통 · 비추천) */}
           {i === starAt ? (
-            <Text key="star" bold color={STAR_HEX}>
+            <Text key="star" bold color={STAR_COLOR}>
               {L('★ 최적', '★ Best')}
             </Text>
           ) : verdict ? (
@@ -420,14 +455,8 @@ export function drawSettings(
               {verdict.word}
             </Text>
           ) : null}
-          {/* 저장된 구간엔 "적용 중" — 다른 띠를 고르는 동안 실제 적용 구간이 표에 안 보였다 */}
-          {s.follow && s.rangeStart === a && s.rangeEnd === b ? (
-            <Box key={`cmp-on-${a}`}>
-              <Text bold color={ACCENT}>
-                {L('적용 중', 'Applied')}
-              </Text>
-            </Box>
-          ) : null}
+          {/* "적용 중" 칸은 없앴다 — 줄 끝 칸이 한 글자 폭까지 줄어 세로로 섰다(fb A2). 적용 중인 구간은 카드 제목 띠(늘)와 고르는
+              동안의 "A → B 로 바꿀까요?" 줄이 말한다(2026-10-14 uxi 1.1) */}
         </Box>
       )
     })
@@ -450,7 +479,7 @@ export function drawSettings(
                   // 띠 버튼과 같은 고르기 표시 — "이 구간으로" 만으론 버튼처럼 안 생겼다
                   <Button key="cmp-recommend-pick" label={L('◉ 이 구간 고르기', '◉ Pick this range')} variant="secondary" onPress={() => edit({ ...d, rangeStart: starBand[0], rangeEnd: starBand[1] })} />,
                 ],
-            STAR_HEX,
+            STAR_COLOR,
           )
         : null
     // 비추천: 최적 대비가 PEN_BAD_PCT 를 넘는 띠(이 세션 값) — 고정 크기(40만 등) 대신 세션 사실로. 최적 위는 "N 이상",
@@ -630,11 +659,7 @@ export function drawSettings(
     'set-compact',
     L('컴팩트 시점', 'Compact timing'),
     rows,
-    summary(
-      'compact',
-      appliedText,
-      d.follow ? L('노랑 = 컴팩트하기 좋은 때, 빨강 = 늦어짐', 'yellow = good time to compact, red = overdue') : L('빨강 = 정한 크기', 'red = the set size'),
-    ),
+    summary('compact', appliedText, L(`적용 중 ${appliedText}`, `Applied: ${appliedText}`)),
     true,
     undefined,
     fold('compact'),
@@ -656,12 +681,23 @@ export function drawSettings(
             : L('자동(구독 요금제 사용량 안 1시간 · API 키 · 사용량 초과 5분)', 'automatic (1 h within a subscription plan · 5 min on an API key or over the plan)')
   // 환경 변수가 정하면 설정 파일을 바꿔도 안 먹는다(엔진 순서) — 버튼 대신 까닭
   const isEnvFixed = cfg?.source === 'force5m' || cfg?.source === 'env'
+  // 캐시 칸의 이름들
+  termW = nameColW([
+    L('지금', 'Now'),
+    L('이 세션에선', 'Here'),
+    L('유지 시간', 'Lifetime'),
+    L('정하는 곳', 'Set by'),
+    L('1시간 캐시', '1 hour cache'),
+    L('5분 캐시', '5 min cache'),
+    L('바꾸기', 'Change'),
+    L('지금 크기', 'Now'),
+  ])
   const warnRow = (key: string, forTtl: number) => {
     const v = forTtl < 60 ? s.cacheWarnMin5m : s.cacheWarnMin
     const isNow = forTtl === (ttl < 60 ? 5 : 60)
     return (
       <Box key={key} columnGap={1} alignItems="center">
-        {cell('t', TERM_W, <Text {...(isNow ? { bold: true } : { dimColor: true })}>{L(`${ttlName(forTtl)} 캐시`, `${ttlName(forTtl)} cache`)}</Text>)}
+        {cell('t', termW, <Text {...(isNow ? { bold: true } : { dimColor: true })}>{L(`${ttlName(forTtl)} 캐시`, `${ttlName(forTtl)} cache`)}</Text>)}
         <Button key={`${key}-down`} label="−" variant="secondary" onPress={() => save(nudgeCache(s, -1, forTtl))} />
         <Box width={5} flexShrink={0} justifyContent="center">
           <Text bold={isNow}>{L(`${v}분`, `${v} min`)}</Text>
@@ -797,9 +833,11 @@ export function drawSettings(
     : usesCustom(s)
       ? customUse()
       : L(`${customUse()} 비어 있으면 일반 문구를 보냅니다.`, `${customUse()} While empty, the Normal text is sent.`)
+  // 단계 이름 칸 = 가장 긴 "④ 컴팩트" + 1(예전 9칸 고정)
+  const stepW = nameColW([`① ${L('확인', 'Check')}`, `② ${L('저장', 'Save')}`, `③ ${L('답', 'Reply')}`, `④ ${L('컴팩트', 'Compact')}`])
   const step = (key: string, mark: string, name: string, text: string, isFixed: boolean) => (
     <Box key={key} columnGap={1}>
-      <Box width={9} flexShrink={0}>
+      <Box width={stepW} flexShrink={0}>
         <Text {...(isFixed ? { dimColor: true } : { color: 'cyan' })}>{`${mark} ${name}`}</Text>
       </Box>
       <Box flexShrink={1} minWidth={0}>
@@ -880,17 +918,28 @@ export function drawSettings(
     { id: 'cost', name: L('비용 줄', 'Cost row') },
     { id: 'turn', name: L('질문 줄', 'Question row') },
   ] as const
-  const detailRow = (key: string, name: string, picks: unknown, gap = 1) => (
-    <Box key={key} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'} marginTop={gap}>
-      {cell('t', TERM_W, <Text>{name}</Text>)}
-      <Box flexShrink={1} minWidth={0} columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
-        {picks}
+  // 화면 칸 세부의 이름들
+  termW = nameColW([L('정보량', 'Detail level'), L('비용 줄', 'Cost row'), L('질문 줄', 'Question row'), L('한도 줄', 'Limits row'), L('세션 금액 색', 'Session cost'), L('전체 사용량', 'All usage'), L('질문 강조', 'Highlight')])
+  const detailRow = (key: string, name: string, picks: unknown, gap = 1) =>
+    stacked() ? (
+      <Box key={key} flexDirection="column" marginTop={gap}>
+        <Text>{name}</Text>
+        <Box columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
+          {picks}
+        </Box>
       </Box>
-    </Box>
-  )
-  // 줄 이름 칸 아래 풀이 글은 고르기 버튼과 같은 자리에서 시작 — 이름 칸 밑에서 시작해 줄이 안 맞아 보였다
+    ) : (
+      <Box key={key} columnGap={1} alignItems={isTerminal ? 'flex-start' : 'center'} marginTop={gap}>
+        {cell('t', termW, <Text>{name}</Text>)}
+        <Box flexShrink={1} minWidth={0} columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
+          {picks}
+        </Box>
+      </Box>
+    )
+  // 줄 이름 칸 아래 풀이 글은 고르기 버튼과 같은 자리에서 시작 — 이름 칸 밑에서 시작해 줄이 안 맞아 보였다.
+  // 이름을 위에 쌓았으면 들이지 않는다
   const useLine = (key: string, text: string) => (
-    <Box key={key} paddingLeft={TERM_W + 1}>
+    <Box key={key} paddingLeft={stacked() ? 0 : termW + 1}>
       <Text dimColor wrap="wrap">
         {text}
       </Text>
@@ -943,6 +992,18 @@ export function drawSettings(
       )),
     ),
     useLine('colors-use', L('바 · 패널의 "이 세션" 금액이 이 값을 넘으면 그 색.', 'The "Session" cost on the bar and pane takes this color above each value.')),
+    // 오늘 · 이번 달 사용량(0.5.0, 사용자 2026-10-14: 입력창 위에 일일 · 이번 달 전체 사용량을 옵션으로) — 따로 켜고 끈다(기본 끔)
+    detailRow('spend-row', L('전체 사용량', 'All usage'), [
+      pick('spend-today', L('오늘', 'Today'), s.spendToday, () => save({ ...s, spendToday: !s.spendToday })),
+      pick('spend-month', L('이번 달', 'This month'), s.spendMonth, () => save({ ...s, spendMonth: !s.spendMonth })),
+    ]),
+    useLine(
+      'spend-use',
+      L(
+        '바 비용 줄에 이 PC 모든 세션의 금액(API 정가 환산). 세션 기록에 없는 앱 자체 요청은 빠져 "~". 켜면 처음 한 번 이번 달 기록을 읽습니다.',
+        'Adds the cost of every session on this PC to the bar (API list prices). App-internal requests are not in the transcripts, hence "~". The first time, it reads this month’s transcripts once.',
+      ),
+    ),
     // 질문 강조 — 마우스 올림은 데스크톱에만 있어 터미널에선 줄을 뺀다
     isTerminal
       ? null
@@ -1019,17 +1080,20 @@ export function drawSettings(
 
   // 바 · 패널(창 상태): 바의 창 버튼(— / □ · ✕) · 입력창 아래 버튼과 같은 값이라 어느 화면에서든 바꾼다. 컴팩트할 때 자동으로
   // 펴기 = 옛 자동 숨김(⇲ — ✕ 와 같아 보여 뺐다, 사용자 2026-10-13)
+  // 바 · 패널 칸의 이름들 — 이 칸 줄들은 아래 windowSection 안에서 그린다
+  const windowW = nameColW([L('바 크기', 'Bar size'), L('바 접기', 'Bar'), L('컴팩트할 때', 'When compacting'), L('패널 자동', 'Pane auto'), L('패널 같이', 'Pane sync')])
   const paneOn = (key: 'paneAutoOpen' | 'paneShared', onName: string) =>
     [false, true].map(isOn =>
       pick(`${key === 'paneAutoOpen' ? 'pane-auto' : 'pane-sync'}-${isOn ? 'on' : 'off'}`, isOn ? onName : L('끄기', 'Off'), s[key] === isOn, () => act.setPaneOption(key, isOn)),
     )
+  termW = windowW
   const windowSection = section(ui, 'set-window', L('바 · 패널', 'Bar · pane'), [
     detailRow('band-mode-row', L('바 크기', 'Bar size'), BAND_MODES.map(m => pick(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m }))), 0),
     // 한도 줄 · 질문 줄이 없는 화면(간단 등)은 바가 한 줄 — 최소 · 최대가 같다(바의 [—] 도 빠진다)
     useLine(
       'band-use',
       s.screen === 'simple' || (!bandShowOf(s).lastTurn && !s.limitShow.fiveHour && !s.limitShow.sevenDay)
-        ? L('지금 화면은 바가 한 줄이라 최소 · 최대가 같습니다.', 'With this screen the bar is one row, so Minimal and Full look the same.')
+        ? L('지금 화면은 바가 한 줄이라 전체 · 한 줄이 같습니다.', 'With this screen the bar is one row, so Full and One line look the same.')
         : bandModeUse(s.band),
     ),
     detailRow('band-fold-row', L('바 접기', 'Bar'), [false, true].map(f => pick(`fold-${f ? 'on' : 'off'}`, foldName(f), s.bandFolded === f, () => save(setFolded(s, f))))),
@@ -1038,7 +1102,7 @@ export function drawSettings(
       pick('autoopen-off', L('끄기', 'Off'), !s.bandAutoOpen, () => save({ ...s, bandAutoOpen: false })),
     ]),
     useLine('band-autoopen-use', bandAutoUse(s.bandAutoOpen)),
-    // 이름 칸은 12칸(TERM_W) — "패널 자동 열기" · "패널 같이 여닫기" 는 터미널에서 두 줄로 꺾여 짧게(리뷰)
+    // 이름 칸은 이 칸에서 가장 긴 이름 + 1(windowW) — "패널 자동 열기" · "패널 같이 여닫기" 는 터미널에서 두 줄로 꺾여 짧게(리뷰)
     detailRow('pane-auto-row', L('패널 자동', 'Pane auto'), paneOn('paneAutoOpen', L('새 세션에서 열기', 'In new sessions'))),
     useLine('pane-auto-use', paneAutoUse(s.paneAutoOpen)),
     // 같이 여닫기는 데스크톱 세션끼리 — 터미널 세션의 패널은 자기 것만이라 터미널에선 줄을 뺀다
@@ -1088,6 +1152,8 @@ export function drawSettingsView(
   cache: CacheInfo | null = null,
   preview: unknown = null,
   hasLimits: boolean | null = null,
+  upd: UpdateState | null = null,
+  nowMs = 0,
 ) {
   const { Box, Button, Text } = ui
   const look = phaseLook(phase, kind)
@@ -1095,12 +1161,7 @@ export function drawSettingsView(
   // 아직 모르면 그냥 "자동" — "자동(?)" 은 고장처럼 보였다
   const autoName = autoLang === 'ko' ? '한국어' : autoLang === 'en' ? 'English' : null
   const autoLabel = autoName ? L(`자동(${autoName})`, `Auto (${autoName})`) : L('자동', 'Auto')
-  const langPick = (key: string, label: string, choice: Settings['lang']) =>
-    s.lang === choice ? (
-      <Button key={key} label={`✓ ${label}`} variant="primary" onPress={() => act.setLang(choice)} />
-    ) : (
-      <Button key={key} label={label} variant="secondary" dimColor onPress={() => act.setLang(choice)} />
-    )
+  const langPick = (key: string, label: string, choice: Settings['lang']) => pickButton(ui, key, label, s.lang === choice, () => act.setLang(choice))
   // 설정 탭의 칸은 모두 같은 테두리 카드(사용량 탭과 같은 꼴) — 언어 줄만 맨몸으로 떠 있었다.
   // 한 번 정하면 끝이라 맨 아래, 접힌 제목 줄엔 지금 언어
   const langName = s.lang === 'ko' ? '한국어' : s.lang === 'en' ? 'English' : autoLabel
@@ -1147,6 +1208,159 @@ export function drawSettingsView(
       )}
       {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, preview, hasLimits)}
       {langRow}
+      {/* 업데이트 칸은 맨 아래 — 마켓 설치본만(폴더로 불러온 개발본은 upd 가 null) */}
+      {upd ? drawUpdateCard(act, ui, upd, nowMs, surface) : null}
+    </Box>
+  )
+}
+
+/** 마켓을 받아 둔 때 → "오늘" · "N일 전"(모르면 null) */
+function agoText(iso: string | null, nowMs: number): string | null {
+  const at = iso ? Date.parse(iso) : Number.NaN
+  if (!Number.isFinite(at) || nowMs <= 0) return null
+  const days = Math.floor((nowMs - at) / 86_400_000)
+  if (days <= 0) return L('오늘', 'today')
+  return L(`${days}일 전`, `${days} ${days === 1 ? 'day' : 'days'} ago`)
+}
+
+/** CHANGELOG 한 판의 바뀐 것(펼친 꼴): 절 이름은 흐리게, 항목은 "· " 로 */
+function changesList(ui: Ui, key: string, groups: ChangeGroup[]) {
+  const { Box, Text } = ui
+  return (
+    <Box key={key} flexDirection="column" marginTop={1}>
+      {groups.map((g, gi) => (
+        <Box key={`${key}-g${gi}`} flexDirection="column" marginTop={gi > 0 ? 1 : 0}>
+          {g.head ? <Text dimColor>{g.head}</Text> : null}
+          {g.items.map((item, ii) => (
+            <Text key={`${key}-g${gi}-${ii}`} wrap="wrap">
+              {`· ${item}`}
+            </Text>
+          ))}
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+/**
+ * 설정 탭 맨 아래 easy-compact 칸(마켓 설치본만, 2026-10-14 사용자 1~3안 · 자동 확인 없음): 지금 판 · 마지막 확인과
+ * [업데이트 확인] → 새 판이면 [바뀐 것 ▸] [업데이트] → "앱을 다시 켜면 적용". 확인 · 업데이트는 Claude Code 명령(claude plugin …)이
+ * 하고 그때만 마켓 저장소(GitHub)를 받는다 — 이 mod 는 통신하지 않는다(README 약속). 실패면 까닭 한 줄 + [다시 시도], 명령 출력은 펼쳐 보기.
+ * 상태 글 색: 진행 = 파랑(저장 중 · 컴팩트 중과 같은 점), 최신 · 받음 = 초록, 실패 = 빨강 — 제목 띠 아이콘은 다른 카드처럼 회색
+ */
+export function drawUpdateCard(act: SettingsActions, ui: Ui, upd: UpdateState, nowMs: number, surface: string) {
+  const { Box, Button, Text } = ui
+  const btn = (key: string, label: string, onPress: () => void, isMain = false) =>
+    isMain ? <Button key={key} label={label} variant="primary" onPress={onPress} /> : <Button key={key} label={label} variant="secondary" onPress={onPress} />
+  const checkBtn = btn('upd-check', L('업데이트 확인', 'Check for updates'), act.checkUpdate)
+  const changes = upd.market ? upd.changes?.[upd.market] : undefined
+  const busy = (key: string, text: string) => [
+    <Box key={`${key}-dot`} flexShrink={0} alignItems="center">
+      {pulseDot(ui, surface, LIVE_HEX, text)}
+    </Box>,
+    <Text key={key} color={ACCENT}>
+      {text}
+    </Text>,
+  ]
+  const ago = agoText(upd.marketAt, nowMs)
+  let row: unknown[]
+  switch (upd.phase) {
+    case 'checking':
+      row = busy('upd-busy', L('새 판 확인 중…', 'Checking for a new version…'))
+      break
+    case 'updating':
+      row = busy('upd-busy', L('업데이트 중…', 'Updating…'))
+      break
+    case 'latest':
+      row = [
+        <Text key="upd-state" color="green">
+          {L(`최신 판입니다(${upd.own ?? '?'})`, `Up to date (${upd.own ?? '?'})`)}
+        </Text>,
+        checkBtn,
+      ]
+      break
+    case 'newer':
+      row = [
+        <Text key="upd-state" bold>
+          {L(`새 판 ${upd.market} 있음`, `New version ${upd.market}`)}
+        </Text>,
+        changes ? btn('upd-changes', `${L('바뀐 것', 'What changed')} ${upd.open?.changes ? '▾' : '▸'}`, () => act.toggleUpdate('changes')) : null,
+        btn('upd-apply', L('업데이트', 'Update'), act.applyUpdate, true),
+      ]
+      break
+    case 'done':
+      row = [
+        <Text key="upd-state" color="green" wrap="wrap">
+          {L(`${upd.market ?? ''} 받음 — 앱을 다시 켜면 적용됩니다`, `${upd.market ?? ''} downloaded — restart the app to use it`)}
+        </Text>,
+      ]
+      break
+    case 'failed':
+      row = [
+        <Text key="upd-state" color="red" wrap="wrap">
+          {!upd.error
+            ? L('claude 명령을 못 찾았습니다 — README 의 새 판 받기를 보세요', 'claude command not found — see Updating in the README')
+            : upd.failedOn === 'apply'
+              ? L('업데이트 못 함 — git · 네트워크를 확인하세요', 'Update failed — check git and your network')
+              : L('확인 못 함 — git · 네트워크를 확인하세요', 'Check failed — check git and your network')}
+        </Text>,
+        btn('upd-retry', L('다시 시도', 'Try again'), upd.failedOn === 'apply' ? act.applyUpdate : act.checkUpdate),
+        upd.error ? btn('upd-error', `${L('명령 출력', 'Output')} ${upd.open?.error ? '▾' : '▸'}`, () => act.toggleUpdate('error')) : null,
+      ]
+      break
+    default:
+      row = [ago ? <Text key="upd-state">{L(`마지막 확인 ${ago}`, `Last checked ${ago}`)}</Text> : null, checkBtn]
+  }
+  // 누를 수 있는 [업데이트 확인] 곁에만 — 통신은 Claude Code 가 그때만 한다는 풀이
+  const canCheck = upd.phase === 'idle' || upd.phase === 'latest' || (upd.phase === 'failed' && upd.failedOn !== 'apply')
+  return section(
+    ui,
+    'set-update',
+    'easy-compact',
+    [
+      <Box key="upd-row" columnGap={1} alignItems="center" flexWrap="wrap">
+        {row}
+      </Box>,
+      upd.phase === 'newer' && upd.open?.changes && changes ? changesList(ui, 'upd-changes-list', changes) : null,
+      upd.phase === 'failed' && upd.open?.error && upd.error ? (
+        <Box key="upd-error-text">
+          <Text dimColor wrap="wrap">
+            {upd.error}
+          </Text>
+        </Box>
+      ) : null,
+      canCheck ? (
+        <Text key="upd-net" dimColor wrap="wrap">
+          {L(
+            '[업데이트 확인] 을 누를 때만 Claude Code 가 GitHub 에서 마켓을 받아 옵니다 — easy-compact 는 스스로 통신하지 않습니다.',
+            'Only when you press [Check for updates] does Claude Code fetch the marketplace from GitHub — easy-compact itself never goes online.',
+          )}
+        </Text>
+      ) : null,
+    ],
+    upd.own ?? undefined,
+    true,
+    'update',
+  )
+}
+
+/**
+ * 업데이트 뒤 첫 실행(3안): 사용량 패널 맨 위 한 줄 카드 "N 판으로 업데이트됨 · [바뀐 것 ▸] [닫기]" — 닫으면 다시 안 보인다
+ * (본 판을 저장소에 적는다). 바뀐 것은 받아 둔 마켓 사본의 CHANGELOG(네트워크 없음), 없으면 버튼을 뺀다
+ */
+export function drawUpdateNote(ui: Ui, upd: UpdateState, act: { toggle: () => void; close: () => void }) {
+  const { Box, Button, Text } = ui
+  const v = upd.updatedTo ?? ''
+  const changes = upd.changes?.[v]
+  return (
+    <Box key="upd-note" flexDirection="column" marginTop={1} {...CARD}>
+      <Box key="upd-note-row" columnGap={1} alignItems="center" flexWrap="wrap">
+        {decoIcon(ui, 'update', LIVE_HEX, L('업데이트', 'Update'), 'upd-note-icon')}
+        <Text>{L(`${v} 판으로 업데이트됨`, `Updated to ${v}`)}</Text>
+        {changes ? <Button key="upd-note-changes" label={`${L('바뀐 것', 'What changed')} ${upd.open?.note ? '▾' : '▸'}`} variant="secondary" onPress={act.toggle} /> : null}
+        <Button key="upd-note-close" label={L('닫기', 'Close')} variant="secondary" onPress={act.close} />
+      </Box>
+      {upd.open?.note && changes ? changesList(ui, 'upd-note-list', changes) : null}
     </Box>
   )
 }

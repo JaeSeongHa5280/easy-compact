@@ -95,14 +95,15 @@ test('컴팩트 시점 막대: 회색 상주 → 지금까지 채움, 구간 시
   // 세로선 3px — 1 · 2px 은 막대 색에 묻혔다
   expect(svg).toContain('<rect x="298.5" y="0" width="3" height="16" rx="1" fill="#e0a030"/>')
   expect(svg).toContain('<rect x="398.5" y="0" width="3" height="16" rx="1" fill="#e05555"/>')
-  // 이름: 시작은 막대 왼쪽 끝에 왼쪽 정렬, 끝은 오른쪽 끝에 오른쪽 정렬 — 선과는 색으로 잇는다. 예전엔 선 옆이라 좁은
-  // 패널에서 끝 이름이 왼쪽으로 뒤집혀 "250k 좋은3때k 늦어짐" 으로 겹쳤다(동료)
-  expect(svg).toContain('<text x="0.0" y="28" text-anchor="start" font-size="10" font-family="sans-serif" fill="#e0a030">300k 좋은 때</text>')
-  expect(svg).toContain('<text x="500.0" y="28" text-anchor="end" font-size="10" font-family="sans-serif" fill="#e05555">400k 늦어짐</text>')
-  // 좁아도(250px) 둘은 양 끝이라 안 겹친다. 그보다 좁아 나란히 안 들면(120px) 크기만
+  // 이름은 제 눈금 곁에 바깥쪽으로: 시작은 노랑 선(300) 왼쪽에 오른쪽 정렬, 끝은 빨강 선(400) 오른쪽에 왼쪽 정렬 — 서로 멀어지는
+  // 쪽이라 안 겹친다. 예전 선 옆(같은 쪽)은 좁은 패널에서 "250k 좋은3때k 늦어짐" 으로 겹쳤고(동료), 막대 양 끝 고정은 넓은 패널에서
+  // 이름이 눈금에서 멀었다(fb E1, 2026-10-14)
+  expect(svg).toContain('<text x="297.0" y="28" text-anchor="end" font-size="10" font-family="sans-serif" fill="#e0a030">300k 좋은 때</text>')
+  expect(svg).toContain('<text x="403.0" y="28" text-anchor="start" font-size="10" font-family="sans-serif" fill="#e05555">400k 늦어짐</text>')
+  // 좁으면(250px) 끝 이름은 막대 오른쪽 끝에 맞춘다(눈금 200 + 이름 60 > 250). 나란히 안 들면(120px) 크기만
   const narrow = timingSvg(230_000, 80_000, names, '#6b8db8', 250)
-  expect(narrow).toContain('x="0.0" y="28" text-anchor="start" font-size="10" font-family="sans-serif" fill="#e0a030">300k 좋은 때<')
-  expect(narrow).toContain('x="250.0" y="28" text-anchor="end" font-size="10" font-family="sans-serif" fill="#e05555">400k 늦어짐<')
+  expect(narrow).toContain('x="147.0" y="28" text-anchor="end" font-size="10" font-family="sans-serif" fill="#e0a030">300k 좋은 때<')
+  expect(narrow).toContain('x="190.0" y="28" text-anchor="start" font-size="10" font-family="sans-serif" fill="#e05555">400k 늦어짐<')
   const tiny = timingSvg(230_000, 80_000, names, '#6b8db8', 120)
   expect(tiny).toContain('fill="#e0a030">300k</text>')
   expect(tiny).toContain('fill="#e05555">400k</text>')
