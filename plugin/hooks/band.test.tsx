@@ -232,7 +232,9 @@ test('사용량 패널이 데스크톱 표면에서 그려진다(값이 없을 �
   const pv = JSON.stringify(await ui.find({ key: 'screen-preview' }))
   expect(pv).toContain('아래 견본은 예시 값입니다 — 첫 질문이 끝나면 이 세션 값으로 바뀝니다.')
   expect(pv).toContain('아래 견본은 예시 값입니다 — 첫 답변이 끝나면 이 세션 값으로 바뀝니다.')
-  expect(pv).toContain('이 세션 $3.40')
+  // 바 이름표는 "세션"(0.5.1 — 옆 이름표 오늘 · 이번 달 · 요청당과 나란), 패널 첫 카드 제목은 "이 세션" 그대로
+  expect(pv).toContain('세션 $3.40')
+  expect(pv).not.toContain('이 세션 $')
   expect(pv).toContain('이 질문 $0.36 · 요청 4회')
 })
 
@@ -1762,7 +1764,7 @@ test('패널 간략 모드(12): 비용 요약(세션 · 질문 · 메인/🤖 ·
   const band = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'AbovePrompt', props: BAND })
   expect(await band.find({ text: '~$0.21' })).not.toBe(undefined)
   // 비용 줄 맨 앞 이 세션 금액. 질문 평균(0.4.0 자세히)은 뺐다 — 자리만 차지했고 패널 비용 요약에 있다
-  expect(await band.find({ type: 'Text', text: '이 세션 ' })).not.toBe(undefined)
+  expect(await band.find({ type: 'Text', text: /^세션 $/ })).not.toBe(undefined)
   expect(await band.find({ type: 'Text', text: '$3.50' })).not.toBe(undefined)
   expect(await band.find({ text: / \(질문 3개/ })).toBe(undefined)
 
@@ -3476,7 +3478,7 @@ test('설정 탭: 화면 프리셋 셋(간단 · 자세히 · 커스텀) — 프
   // 프리셋 셋(간단 · 자세히 · 커스텀 — 0.4.0 의 기본은 뺐다), 고른 것의 대상 풀이, 바 미리보기. 세부도 펼침
   for (const p of ['simple', 'detail', 'custom']) expect(await pane.find({ key: `screen-${p}` })).not.toBe(undefined)
   expect(await pane.find({ key: 'screen-basic' })).toBe(undefined)
-  expect(JSON.stringify(await pane.find({ key: 'band-preview' }))).toContain('이 세션 ')
+  expect(JSON.stringify(await pane.find({ key: 'band-preview' }))).toContain('"세션 "')
   // 끝난 질문이 없는 새 세션이면 질문 비용 견본은 예시 값 — 예시라고 적는다
   const pv = JSON.stringify(await pane.find({ key: 'screen-preview' }))
   expect(pv).toContain('아래 견본은 예시 값입니다 — 첫 답변이 끝나면 이 세션 값으로 바뀝니다.')
@@ -3489,7 +3491,7 @@ test('설정 탭: 화면 프리셋 셋(간단 · 자세히 · 커스텀) — 프
   await pane.press({ key: 'screen-simple' })
   expect(saved()).toMatchObject({ screen: 'simple' })
   expect(await pane.find({ text: /^처음 쓸 때 · 꼭 필요한 것만$/ })).not.toBe(undefined)
-  expect(await band.find({ type: 'Text', text: '이 세션 ' })).not.toBe(undefined)
+  expect(await band.find({ type: 'Text', text: /^세션 $/ })).not.toBe(undefined)
   expect(await band.find({ text: '5시간' })).toBe(undefined)
   expect(await band.find({ text: '요청당 ' })).toBe(undefined)
   expect(await band.find({ text: ' · 캐시 만료까지 ' })).not.toBe(undefined)
@@ -3755,11 +3757,110 @@ test('오늘 · 이번 달 사용량(옵션, 기본 끔): 켜면 모든 세션 �
   expect(await band.find({ text: '~$22.00' })).not.toBe(undefined)
   expect(await band.find({ text: '이번 달 ' })).not.toBe(undefined)
   expect(await band.find({ text: first !== today ? '~$42.00' : '~$22.00' })).not.toBe(undefined)
-  // 이 세션 금액 바로 뒤(돈 묶음)
-  const line = JSON.stringify(await band.find({ key: 'b-r1' }))
-  expect(line.indexOf('이 세션 ')).toBeLessThan(line.indexOf('오늘 '))
+  // 세션 금액 바로 뒤(돈 묶음) — 이름표 "세션 "(0.5.1). find 의 text = 그 줄 글을 이어 붙인 것
+  const line = String(((await band.find({ key: 'b-r1' })) as { text?: string } | undefined)?.text ?? '')
+  expect(line.indexOf('세션 ')).toBeGreaterThanOrEqual(0)
+  expect(line.indexOf('세션 ')).toBeLessThan(line.indexOf('오늘 '))
+  expect(line).not.toContain('이 세션 ')
   // 오늘만 끄면 이번 달만
   await pane.press({ key: 'spend-today' })
   expect(await band.find({ key: 'c-today' })).toBe(undefined)
   expect(await band.find({ text: '이번 달 ' })).not.toBe(undefined)
+})
+
+/**
+ * "모든 세션" 줄 시험 세계(0.5.1): 오늘 · 이번 달 도구 출력은 위 시험과 같다(오늘 $22 · 1일 $20 → 이번 달 $42). gate 를 주면 도구가
+ * 그때까지 기다리고(재는 중을 보려고), fail 이면 node 가 1 로 끝난다
+ */
+function spendWorld(on: On, opts: { fail?: boolean; gate?: Promise<void> } = {}) {
+  mock.env(on, { EASY_COMPACT_LANG: 'ko', HOME: '/home/test' })
+  const store = new Map<string, unknown>()
+  const now = Date.now()
+  const two = (n: number) => String(n).padStart(2, '0')
+  const d = new Date(now)
+  const today = `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
+  const first = `${today.slice(0, 8)}01`
+  on('fs.list', async () => ({ value: [] }))
+  on('fs.stat', async () => ({ value: { kind: 'file', size: 1, mtimeMs: now, isLink: false } }))
+  on('session.id', async () => ({ value: 't-all-spend' }))
+  on('session.cwd', async () => ({ value: 'D:/Claude' }))
+  on('session.model', async () => ({ value: 'claude-opus-5-5' }))
+  on('session.usage', async () => ({
+    value: { startedAt: 0, context: { tokens: 100_000, window: 1_000_000, percent: 10 }, rateLimits: [], cost: { usd: 3.2 } },
+  }))
+  on('clock.now', async () => ({ value: now }))
+  on('store.get', async (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', async (_$, e) => {
+    store.set(e.key, e.value)
+    return { value: undefined }
+  })
+  on('ui.panes', async () => ({ value: [] }))
+  on('ui.open', async () => ({ value: { isPlaced: true } }))
+  const ran: string[][] = []
+  on('process.run', async (_$, e) => {
+    ran.push(e.argv)
+    if (opts.gate) await opts.gate
+    if (opts.fail) return { value: { exitCode: 1, stdout: '', stderr: 'SyntaxError: Unexpected token' } }
+    const days: Record<string, unknown> = { [today]: { 'claude-opus-5-5': { S: [0, 1_000_000, 10_000_000, 0, 0] } } }
+    if (first !== today) days[first] = { 'claude-opus-5-5': { L: [0, 1_000_000, 0, 0, 0] } }
+    return { value: { exitCode: 0, stdout: JSON.stringify({ days, files: 2, scanned: 2 }), stderr: '' } }
+  })
+  const waitFor = async (check: () => Promise<boolean>) => {
+    for (let i = 0; i < 50 && !(await check()); i++) await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  return { store, waitFor, scans: () => ran.filter(a => a.some(x => x.includes('scan-spend'))).length, monthText: first !== today ? '~$42.00' : '~$22.00' }
+}
+
+test('패널 맨 위 "모든 세션" 줄(0.5.1): 자세히는 옵션과 무관하게 오늘 · 이번 달, 간단은 설정에서 켠 것만 · 안 켰으면 줄 없음 — 패널을 자세히로 볼 때만 도구를 돌린다', async ($, on) => {
+  // 사용자 확정(2026-10-14): 자세히(정보량 전부)는 세 금액(이 세션 누적 + 오늘 + 이번 달), 간단(정보량 최소)은 켠 사람만 켠 것
+  const w = spendWorld(on)
+  await $.command.run({ command: 'easy-compact', args: '' })
+  await $.command.run({ command: 'easy-compact', args: 'screen simple' })
+  await $.command.run({ command: 'easy-compact', args: 'usage' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
+  // 간단(정보량 최소) · 옵션 끔: 줄도 없고 다른 세션 기록도 안 읽는다
+  expect(await pane.find({ key: 's-all' })).toBe(undefined)
+  expect(w.scans()).toBe(0)
+  // 자세히로 바꾸면 옵션을 안 켰어도 둘 다 — 바로 아래 카드 제목 "이 세션 · 누적 $" 와 짝
+  await pane.press({ key: 'pane-detail' })
+  await w.waitFor(async () => (await pane.find({ key: 'a-today' })) !== undefined)
+  expect(w.scans()).toBeGreaterThan(0)
+  const all = JSON.stringify(await pane.find({ key: 's-all' }))
+  expect(all).toContain('모든 세션')
+  expect(all).toContain('~$22.00')
+  expect(all).toContain(w.monthText)
+  expect(all.indexOf('오늘 ')).toBeLessThan(all.indexOf('이번 달 '))
+  const whole = JSON.stringify(await pane.drawn())
+  expect(whole.indexOf('모든 세션')).toBeLessThan(whole.indexOf('"이 세션"'))
+  // 간단으로 돌아가면(옵션 끔) 줄이 없다
+  await pane.press({ key: 'pane-simple' })
+  expect(await pane.find({ key: 's-all' })).toBe(undefined)
+  // 설정 줄 이름도 "모든 세션"(전체 사용량에서) — 오늘만 켜면 간단 패널에도 오늘만
+  await pane.press({ key: 'pane-settings' })
+  await openSettings(pane)
+  expect(JSON.stringify(await pane.find({ key: 'spend-row' }))).toContain('모든 세션')
+  await pane.press({ key: 'spend-today' })
+  expect(w.store.get('settings')).toMatchObject({ spendToday: true, spendMonth: false })
+  await pane.press({ key: 'pane-usage' })
+  await w.waitFor(async () => (await pane.find({ key: 'a-today' })) !== undefined)
+  expect(await pane.find({ key: 'a-today' })).not.toBe(undefined)
+  expect(await pane.find({ key: 'a-month' })).toBe(undefined)
+})
+
+test('"모든 세션" 줄: 처음 재는 동안 "재는 중…" 으로 자리를 지키고, 도구가 실패하면 못 잼과 까닭 — 값을 지어내지 않는다', async ($, on) => {
+  let release = () => {}
+  const gate = new Promise<void>(resolve => (release = resolve))
+  const w = spendWorld(on, { fail: true, gate })
+  await $.command.run({ command: 'easy-compact', args: '' })
+  await $.command.run({ command: 'easy-compact', args: 'screen simple' })
+  await $.command.run({ command: 'easy-compact', args: 'usage' })
+  const pane = await $.ui.mount({ plugin: 'easy-compact', surface: 'desktop', component: 'Pane', requestId: 'easy-compact', props: { bodyColumns: 60, placement: 'dock' } })
+  await pane.press({ key: 'pane-detail' })
+  // 도구가 아직 안 끝남 — 자리를 지킨다(뒤 카드가 나중에 밀리지 않게)
+  expect(JSON.stringify(await pane.find({ key: 's-all' }))).toContain('재는 중…')
+  release()
+  await w.waitFor(async () => JSON.stringify(await pane.find({ key: 's-all' })).includes('못 잼'))
+  const all = JSON.stringify(await pane.find({ key: 's-all' }))
+  expect(all).toContain('못 잼 — 기록을 읽으려면 Node 14.8 이상이 필요합니다')
+  expect(all).not.toContain('~$')
 })

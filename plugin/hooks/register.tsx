@@ -153,7 +153,9 @@ import {
   drawReference,
   drawSummary,
   decisionLine,
+  drawAllSpend,
 } from './ui-usage'
+import type { AllSpendLine } from './ui-usage'
 import { draftCompactAt, drawSettingsView, drawUpdateNote } from './ui-settings'
 import { isKorean, L, lang, plural, setLang } from './i18n'
 import { iconOf, setSurface, withIcon } from './glyph'
@@ -431,14 +433,23 @@ async function applyUpdate($: EngineInterface): Promise<void> {
 let spendRunning = false
 
 /**
+ * 오늘 · 이번 달을 잴 때인가 — 바 옵션을 켰거나, 사용량 패널이 열려 있고 자세히 보기일 때(자세히 패널은 옵션과 무관하게 "모든 세션"
+ * 줄을 보인다 — 0.5.1). 옵션을 껐고 패널 자세히도 안 보는 동안엔 다른 세션 기록을 읽지 않는다
+ */
+async function wantsSpend($: EngineInterface, s: Settings): Promise<boolean> {
+  if (s.spendToday || s.spendMonth) return true
+  return (await read($, paneView)) !== null && (await paneModeNow($)) === 'detail'
+}
+
+/**
  * 오늘 · 이번 달 사용량을 잰다: tools/scan-spend.mjs(node)가 이 PC 의 모든 세션 기록(하위 에이전트 포함)의 요청 토큰을 날짜 · 모델별로
  * 합하고(파일마다 크기 · 시각 캐시 — 처음 켤 때만 이번 달 기록을 다 읽는다, 이 PC 1.4GB 4초), 값은 공식 요율표로 센다(cost.ts
  * spendUsd). 엔진 값(session.usage)은 이 세션 것뿐이라 다른 세션 · 이번 달 합을 줄 수 없다(d.ts 확인). minGapMs 안에 쟀으면 건너뛰고,
- * 끈 동안엔 안 돈다. 네트워크 없음 — 이 PC 파일만 읽는다
+ * 잴 때가 아니면(wantsSpend) 안 돈다 — isWanted 는 패널이 지금 "모든 세션" 줄을 그리려는 때. 네트워크 없음 — 이 PC 파일만 읽는다
  */
-async function refreshSpend($: EngineInterface, minGapMs = 30_000): Promise<void> {
+async function refreshSpend($: EngineInterface, minGapMs = 30_000, isWanted = false): Promise<void> {
   const s = await currentSettings($)
-  if (!s.spendToday && !s.spendMonth) return
+  if (!isWanted && !(await wantsSpend($, s))) return
   if (spendRunning) return
   const nowMs = await $.clock.now()
   const prev = await read($, spend)
@@ -451,14 +462,17 @@ async function refreshSpend($: EngineInterface, minGapMs = 30_000): Promise<void
     )
     if (ran.exitCode !== 0) throw new Error(`exit ${ran.exitCode}`)
     const out = JSON.parse(String(ran.stdout ?? '')) as { days?: SpendDays }
-    if (!out.days) return
+    if (!out.days) throw new Error('no days in output')
     const today = localDay(nowMs)
     const first = `${today.slice(0, 8)}01`
     await update($, spend, () => ({ atMs: nowMs, today: spendUsd(out.days!, today, today), month: spendUsd(out.days!, first, today) }))
+    await update($, spendFailed, () => false)
     $.ui.invalidate('ui.render')
   } catch (err) {
-    // node 가 없거나 기록을 못 읽음 — 칸은 비워 둔다("~" 값을 지어내지 않는다)
+    // node 가 없거나 기록을 못 읽음 — 바 칸은 비워 두고("~" 값을 지어내지 않는다) 패널 "모든 세션" 줄엔 못 잼 · 까닭
     log($, `spend scan failed: ${String((err as Error)?.message ?? err)}`)
+    await update($, spendFailed, () => true)
+    $.ui.invalidate('ui.render')
   } finally {
     spendRunning = false
   }
@@ -652,6 +666,8 @@ const CARDS_OPEN_DEFAULT = { now: true, history: false, compact: true }
 const cardsOpen = atom({ plugin: 'easy-compact', key: 'cardsOpen' } as const, CARDS_OPEN_DEFAULT)
 
 const spend = atom({ plugin: 'easy-compact', key: 'spend' } as const, null)
+
+const spendFailed = atom({ plugin: 'easy-compact', key: 'spendFailed' } as const, false)
 
 const UPDATE_IDLE: UpdateState = { phase: 'idle', own: null, market: null, marketAt: null }
 
@@ -1136,6 +1152,8 @@ async function syncPane($: EngineInterface): Promise<void> {
   if (want === have && isOpen) return
   if (want === 'usage') await refreshUsage($, { categories: false, pushHistory: false })
   await update($, paneView, () => want)
+  // 패널을 열면 "모든 세션" 줄 값을 새로 — 잴 때인지는 wantsSpend(옵션 켬 · 자세히 보기). 기다리지 않는다
+  void refreshSpend($).catch(() => {})
   await $.ui.open({ id: PANE, title: paneTitle() })
   // 알려진 문제: 띠 버튼으로 패널을 연 뒤 패널 안 첫 클릭은 먹지 않는다(두 번 눌러야 함). 첫 클릭이 키보드
   // 포커스를 띠에서 패널로 옮기는 데 쓰이는 앱 동작으로 본다 — 연 뒤 다시 그리기로는 안 고쳐졌고, 포커스는 사람만 줄 수
@@ -1350,6 +1368,8 @@ async function applyCmpDraft($: EngineInterface): Promise<void> {
 async function setPaneMode($: EngineInterface, mode: PaneMode): Promise<void> {
   await update($, paneModeLocal, () => mode)
   $.ui.invalidate('ui.render')
+  // 자세히로 바꾸면 "모든 세션" 줄이 보인다 — 옵션을 껐어도 바로 잰다(타이머를 기다리지 않게)
+  if (mode === 'detail') void refreshSpend($, 5_000).catch(() => {})
 }
 
 /** 이 세션 패널 보기 — 패널 탭으로 바꿨으면 그 값, 아니면 화면 값 */
@@ -1362,6 +1382,18 @@ async function saveSettings($: EngineInterface, next: Settings): Promise<void> {
   await loadSettings($)
   // 오늘 · 이번 달을 켰으면 바로 잰다(타이머를 기다리지 않게)
   if (next.spendToday || next.spendMonth) void refreshSpend($, 5_000).catch(() => {})
+}
+
+/**
+ * 패널 맨 위 "모든 세션" 줄(drawAllSpend): 자세히 보기면 옵션과 무관하게 오늘 · 이번 달 둘 다, 간단이면 설정에서 켠 것만 — 안 켰으면
+ * 줄 없음(정보 최소). 2026-10-14 사용자 확정 규칙. 아직 못 쟀으면 재는 중, 마지막 재기가 실패했으면 못 잼
+ */
+async function allSpendOf($: EngineInterface, s: Settings, mode: PaneMode): Promise<AllSpendLine | null> {
+  const isDetail = mode === 'detail'
+  if (!isDetail && !s.spendToday && !s.spendMonth) return null
+  const got = await read($, spend)
+  if (!got) return { today: null, month: null, state: (await read($, spendFailed)) ? 'failed' : 'measuring' }
+  return { today: isDetail || s.spendToday ? got.today : null, month: isDetail || s.spendMonth ? got.month : null, state: 'ok' }
 }
 
 /** 바 · 미리보기에 보일 오늘 · 이번 달(켠 것만, 못 쟀으면 null — 그 칸을 안 그린다) */
@@ -2941,16 +2973,24 @@ export const register: Register = on => {
       // 읽었다(2026-10-14 uxi D6). 간단엔 모델 견줌 줄을 안 붙인다(정보 최소), 자세히의 이 세션 카드에
       // 업데이트 뒤 첫 실행(3안): 맨 위 한 줄 카드 — [닫기] 하면 끝
       const noteEl = upd?.updatedTo ? drawUpdateNote(ui, upd, { toggle: () => void toggleUpdateOpen($, 'note'), close: () => void closeUpdateNote($) }) : null
+      // 맨 위 "모든 세션" 줄(0.5.1): 자세히 = 늘 오늘 · 이번 달, 간단 = 설정에서 켠 것만 — 바로 아래 "이 세션 · 누적 $" 와 짝.
+      // 아직 아무도 안 쟀으면(모듈 다시 불러옴 등) 지금 잰다 — 도는 중이면 refreshSpend 가 건너뛴다
+      const shownMode = await paneModeNow($)
+      const allLine = await allSpendOf($, sPane, shownMode)
+      if (allLine?.state === 'measuring') void refreshSpend($, 5_000, true).catch(() => {})
+      const allEl = drawAllSpend(ui, allLine)
       body =
-        (await paneModeNow($)) === 'simple' ? (
+        shownMode === 'simple' ? (
           <Box flexDirection="column">
             {noteEl}
+            {allEl}
             {drawSummary(ui, u, allSums, u ? decisionLine(ui, u, allSums, nowMs, inputsNow) : null, null, null, foldOf('now'), colors, cols)}
             {history}
           </Box>
         ) : (
           <Box flexDirection="column">
             {noteEl}
+            {allEl}
             {drawNow(ui, e.surface, u, nowMs, widthPx, perm, inputsNow, foldOf('now'), modelLine, colors)}
             {history}
             {drawCompactCard(ui, flowParts, effEl, foldOf('compact'))}

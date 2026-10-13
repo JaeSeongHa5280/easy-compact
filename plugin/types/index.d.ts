@@ -455,8 +455,10 @@ declare module 'claude-code' {
       settingsOpen: Record<string, boolean>
       /** 사용량 카드 펼침: 접으면 제목 줄의 요약만. 패널을 열 때 이 세션 카드는 펼침 · 질문별 비용은 접힘(CARDS_OPEN_DEFAULT) */
       cardsOpen: { now: boolean; history: boolean; compact: boolean }
-      /** 오늘 · 이번 달 사용량(설정에서 켰을 때만 잰다) — 못 쟀으면 null */
+      /** 오늘 · 이번 달 사용량(설정에서 켰거나 패널 자세히를 볼 때 잰다) — 못 쟀으면 null */
       spend: SpendTotals | null
+      /** 마지막 재기가 실패했나(node 가 없거나 기록을 못 읽음) — 패널 "모든 세션" 줄의 "못 잼" */
+      spendFailed: boolean
       /** 업데이트 칸 상태(설치본만) */
       update: UpdateState
       /** 설정의 직접 쓴 문구 입력칸에 치는 중인 글(Enter 전). 화면을 다시 그려도 친 글이 남게 칸 값으로 다시 준다 */

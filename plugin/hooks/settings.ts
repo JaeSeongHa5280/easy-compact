@@ -470,7 +470,7 @@ export function bandPartName(key: keyof BandShow): string {
     fiveHour: ['5시간', '5h'],
     sevenDay: ['7일', '7d'],
     resets: ['리셋까지 남은 시간', 'Time to reset'],
-    session: ['이 세션 금액', 'Session cost'],
+    session: ['세션 금액', 'Session cost'],
     perRequest: ['요청당', 'Per request'],
     context: ['컨텍스트', 'Context'],
     range: ['컴팩트 구간', 'Compact range'],

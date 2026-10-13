@@ -919,7 +919,7 @@ export function drawSettings(
     { id: 'turn', name: L('질문 줄', 'Question row') },
   ] as const
   // 화면 칸 세부의 이름들
-  termW = nameColW([L('정보량', 'Detail level'), L('비용 줄', 'Cost row'), L('질문 줄', 'Question row'), L('한도 줄', 'Limits row'), L('세션 금액 색', 'Session cost'), L('전체 사용량', 'All usage'), L('질문 강조', 'Highlight')])
+  termW = nameColW([L('정보량', 'Detail level'), L('비용 줄', 'Cost row'), L('질문 줄', 'Question row'), L('한도 줄', 'Limits row'), L('세션 금액 색', 'Session cost'), L('모든 세션', 'All sessions'), L('질문 강조', 'Highlight')])
   const detailRow = (key: string, name: string, picks: unknown, gap = 1) =>
     stacked() ? (
       <Box key={key} flexDirection="column" marginTop={gap}>
@@ -991,17 +991,18 @@ export function drawSettings(
         </Box>
       )),
     ),
-    useLine('colors-use', L('바 · 패널의 "이 세션" 금액이 이 값을 넘으면 그 색.', 'The "Session" cost on the bar and pane takes this color above each value.')),
-    // 오늘 · 이번 달 사용량(0.5.0, 사용자 2026-10-14: 입력창 위에 일일 · 이번 달 전체 사용량을 옵션으로) — 따로 켜고 끈다(기본 끔)
-    detailRow('spend-row', L('전체 사용량', 'All usage'), [
+    useLine('colors-use', L('바 · 패널의 세션 금액이 이 값을 넘으면 그 색.', 'The session cost on the bar and pane takes this color above each value.')),
+    // 오늘 · 이번 달 사용량(0.5.0, 사용자 2026-10-14: 입력창 위에 일일 · 이번 달 전체 사용량을 옵션으로) — 따로 켜고 끈다(기본 끔).
+    // 0.5.1: 줄 이름 "전체 사용량" → "모든 세션"(패널 맨 위 줄 · 카드 "이 세션" 과 짝). 옵션은 바 · 간단 패널에 보일지 — 자세히 패널엔 늘
+    detailRow('spend-row', L('모든 세션', 'All sessions'), [
       pick('spend-today', L('오늘', 'Today'), s.spendToday, () => save({ ...s, spendToday: !s.spendToday })),
       pick('spend-month', L('이번 달', 'This month'), s.spendMonth, () => save({ ...s, spendMonth: !s.spendMonth })),
     ]),
     useLine(
       'spend-use',
       L(
-        '바 비용 줄에 이 PC 모든 세션의 금액(API 정가 환산). 세션 기록에 없는 앱 자체 요청은 빠져 "~". 켜면 처음 한 번 이번 달 기록을 읽습니다.',
-        'Adds the cost of every session on this PC to the bar (API list prices). App-internal requests are not in the transcripts, hence "~". The first time, it reads this month’s transcripts once.',
+        '켜면 바 비용 줄과 간단 패널에도 보입니다. 자세히 패널엔 늘 보입니다. 이 PC 모든 세션의 금액(API 정가 환산)이고, 세션 기록에 없는 앱 자체 요청은 빠져 "~". 처음 한 번 이번 달 기록을 읽습니다.',
+        'When on, also shown on the bar’s cost row and the Simple pane. The Detailed pane always shows them. Cost of every session on this PC (API list prices); app-internal requests are not in the transcripts, hence "~". The first time, it reads this month’s transcripts once.',
       ),
     ),
     // 질문 강조 — 마우스 올림은 데스크톱에만 있어 터미널에선 줄을 뺀다

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.5.0-4c9be8" alt="Version 0.5.0">
+  <img src="https://img.shields.io/badge/version-0.5.1-4c9be8" alt="Version 0.5.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -32,7 +32,7 @@
 | **To update** | Desktop app: **Claude → Check for Updates** (macOS) or **Help → Check for Updates** (Windows), then start a new session. Terminal: `claude update`. Homebrew's `claude-code` follows the slower stable channel and is still too old — use `brew install --cask claude-code@latest`. |
 | **git** | Needed to add the marketplace from GitHub — `git --version` should print a version. macOS: if a developer-tools prompt opens, install them. Windows: [Git for Windows](https://git-scm.com/downloads/win). |
 | **Where it shows** | The Claude desktop app (Code tab) and `claude` in a terminal. Not in the VS Code extension's chat panel, `claude -p`, cloud sessions or WSL sessions. |
-| **Optional** | Node.js 14.8+ — draws the early part of very long sessions (records over 4 MB) that began before you installed, and counts today · this month (option). |
+| **Optional** | Node.js 14.8+ — draws the early part of very long sessions (records over 4 MB) that began before you installed, and counts today · this month (the pane's All sessions line and the bar option). |
 | **Tested on** | Windows 11, desktop app and terminal. Nothing in the code is OS-specific, but macOS and Linux haven't been tried on real machines yet — reports welcome. |
 
 ## Install
@@ -109,16 +109,27 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.5.0
+## What's new in 0.5.1
+
+- **"All sessions" at the top of the usage pane** — `All sessions  Today ~$65 · This month ~$788` (every session on this PC, API list prices), right above **This session · Total $**. The Detailed view always shows it, whatever the option says; the Simple view shows only what you turned on.
+- **Settings row "All sessions"** — All screens → *All usage* is now **All sessions**. When on, today · this month also show on the bar and in the Simple pane.
+- **Korean UI** — the bar's first label is now **세션** (Session), like the English one; the pane's first card keeps **이 세션** (This session).
+
+A 17-second tour is on the [v0.5.1 release page](https://github.com/JaeSeongHa5280/easy-compact/releases/tag/v0.5.1). Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.5.0</b></summary>
 
 - **Fits the pane and the window** — cards fill the pane and bars and graphs grow to the card width. When space runs out nothing breaks mid-word; the least important cells go first (the bar and the settings cost table).
 - **One set of icons, one meaning per color** — line icons replace the glyphs on card titles, the bar and the confirm cards (desktop). Progress is blue, caution a single yellow, loss · overdue · cache expired red, ★ optimum green.
-- **Today · this month** (option, off by default) — Settings → Screen → Details → All screens → **All usage**. When on, the bar shows `Today ~$65 · This month ~$788` (every session on this PC, API list prices).
+- **Today · this month** (option, off by default) — Settings → Screen → Details → All screens → **All usage** (**All sessions** from 0.5.1). When on, the bar shows `Today ~$65 · This month ~$788` (every session on this PC, API list prices).
 - **Update from inside the app** — **[Check for updates]** → **[Update]** at the bottom of the Settings tab. A downloaded new version puts a dot on the Settings tab, and the first start after updating opens the pane with *Updated to 0.5.0 · What changed ▸*.
 - **"Now" in the simple view is one decision line** — state + one number + what to do. Names are tidied too: bar size **Full · One line**, first card **This session**.
 - **Fixed** — a finished question's cost changed when you sent the next one (the app's own requests after an answer now count for 30 seconds only).
 
-A 33-second tour is on the [v0.5.0 release page](https://github.com/JaeSeongHa5280/easy-compact/releases/tag/v0.5.0). Full list: [CHANGELOG](CHANGELOG.md).
+A 33-second tour is on the [v0.5.0 release page](https://github.com/JaeSeongHa5280/easy-compact/releases/tag/v0.5.0).
+
+</details>
 
 <details>
 <summary><b>What's new in 0.4.1</b></summary>
@@ -153,7 +164,7 @@ Claude Code re-reads the whole context on every request — a session at 300k pa
 
 ## Demo · 60 s
 
-https://github.com/user-attachments/assets/2aa98965-e6b6-411c-937b-3bf17a478872
+https://github.com/user-attachments/assets/0926dba9-ce9f-42fe-a3c0-fef808131a56
 
 ## Features
 
@@ -162,7 +173,7 @@ https://github.com/user-attachments/assets/2aa98965-e6b6-411c-937b-3bf17a478872
 <img src="docs/img/band.png" width="900" alt="The Easy Compact bar: plan usage, per-request cost, context, compact range, cache, and this question's cost">
 
 **Context, next-request cost and this question's cost — updated after every request.**
-Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the **Easy Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Easy Compact. Turn on today · this month in Settings to add every session on this PC. For everything, pick **Detailed** under Settings → **Screen**; to choose single parts, **Custom** → **Details** — the bar preview follows as you choose. Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
+Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the **Easy Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Easy Compact. Turn on today · this month in Settings to add every session on this PC — the Detailed usage pane always shows them at the top. For everything, pick **Detailed** under Settings → **Screen**; to choose single parts, **Custom** → **Details** — the bar preview follows as you choose. Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
 
 <img src="docs/img/screen.png" width="520" alt="Settings → Screen: Simple · Detailed · Custom, who each is for, and a preview of the bar and the question-cost chip">
 
@@ -221,7 +232,7 @@ flowchart LR
 
 <img src="docs/img/simple.png" width="900" alt="The Simple screen: a one-line bar and the Simple Usage pane with This session and cost per question">
 
-Open it with **📊** on the bar. **Simple** (detail level Minimal — the Simple screen): **This session** — running total, questions, main / 🤖 / ⚙ and one *now* line (state · one number · what to do) — plus cost per question. **Detailed** (detail level Everything — the Detailed screen): also what another model would have cost, the context bar, compact timing, context flow and what each compact saved. **View [Simple][Detailed]** at the right of the tab row switches for a quick look — closing the pane or visiting Settings returns to your detail level. Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Bar · pane**.
+Open it with **📊** on the bar. **Simple** (detail level Minimal — the Simple screen): **This session** — running total, questions, main / 🤖 / ⚙ and one *now* line (state · one number · what to do) — plus cost per question. **Detailed** (detail level Everything — the Detailed screen): also what another model would have cost, the context bar, compact timing, context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches for a quick look — closing the pane or visiting Settings returns to your detail level. Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Bar · pane**.
 
 ### 6. Terminal too
 
@@ -243,7 +254,7 @@ Whether a folded bar opens by itself is **Open by itself** under Settings → **
 
 <img src="docs/img/fold.png" width="900" alt="After folding the bar: a note that it opens by itself when it is time to compact, and the Easy Compact button below the input">
 
-**There are only two commands: `/easy-compact show` · `hide`** — use `show` to open a folded bar. Everything else is on the bar's buttons and the **⚙ Settings** tab of the 📊 pane. Settings open with only the **Screen** section (Simple · Detailed · Custom) and its Details; the others are folded, with the current value on each title. **All screens**, under Details, holds the limits row, the session-cost colors, All usage (today · this month) and Highlight. The **easy-compact** section at the bottom checks for new versions. The cache lifetime itself (`promptCacheTtl` in your settings file) can be changed only under **Custom** — choosing it without knowing the trade-off just costs more.
+**There are only two commands: `/easy-compact show` · `hide`** — use `show` to open a folded bar. Everything else is on the bar's buttons and the **⚙ Settings** tab of the 📊 pane. Settings open with only the **Screen** section (Simple · Detailed · Custom) and its Details; the others are folded, with the current value on each title. **All screens**, under Details, holds the limits row, the session-cost colors, All sessions (today · this month) and Highlight. The **easy-compact** section at the bottom checks for new versions. The cache lifetime itself (`promptCacheTtl` in your settings file) can be changed only under **Custom** — choosing it without knowing the trade-off just costs more.
 
 **Buttons cost nothing.** Typed commands don't call the model either, but the command and its one-line answer stay in the conversation, so they are re-sent with your next request.
 
@@ -262,7 +273,7 @@ Still stuck? Open an [issue](https://github.com/JaeSeongHa5280/easy-compact/issu
 - **Everything stays on your machine.** easy-compact reads your local session records and never goes online by itself. Only when you press **[Check for updates]** · **[Update]** in Settings does Claude Code (the `claude plugin` commands) fetch the marketplace from GitHub.
 - **Platforms:** built and tested on Windows 11. Nothing in the code is OS-specific, but macOS and Linux haven't been tried on real machines yet — reports welcome.
 - **Desktop app:** right after the pane opens, the first click inside it only moves focus — click once more.
-- Records over 4 MB are read with Node.js (14.8+). Without `node`, a very long session is drawn from when you installed, and the pane says so. Today · this month are counted with Node.js too — without it those cells don't appear.
+- Records over 4 MB are read with Node.js (14.8+). Without `node`, a very long session is drawn from when you installed, and the pane says so. Today · this month are counted with Node.js too — without it those bar cells don't appear and the pane's **All sessions** line says *Not measured* and why. Other sessions' transcripts (token counts only) are read only while that option is on or the usage pane is open in the Detailed view.
 
 ## License
 

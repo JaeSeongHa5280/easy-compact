@@ -74,7 +74,8 @@ import {
   svgOf,
 } from './ui-common'
 import type { Ui, Grid, Fold } from './ui-common'
-import { rewriteNote } from './ui-band'
+import { fitLine, rewriteNote } from './ui-band'
+import type { LineCell } from './ui-band'
 import { L, plural } from './i18n'
 import { iconOf, withIcon } from './glyph'
 import { questionScope, rasterOf } from './ui-common'
@@ -1186,7 +1187,8 @@ export function drawNow(
 
 /**
  * 첫 카드 이름은 간단 · 자세히 둘 다 "이 세션"(아이콘 하나) — 예전엔 같은 자리 · 같은 접기 칸인데 "💰 비용 요약" · "🧠 컨텍스트 ·
- * 비용" 으로 보기마다 이름이 달랐다(2026-10-14 uxi W3 안 A). 바의 "이 세션 $" 와 같은 말, 제목 옆은 "누적 $"
+ * 비용" 으로 보기마다 이름이 달랐다(2026-10-14 uxi W3 안 A). 바의 "세션 $" 와 같은 낱말(바는 옆 이름표와 나란하게 "이" 를 뗌 —
+ * 2026-10-14 uxi 안 A, 홀로 서는 이 제목엔 둠), 제목 옆은 "누적 $". 바로 위 "모든 세션" 줄(drawAllSpend)과 짝
  */
 export const nowTitle = () => L('이 세션', 'This session')
 
@@ -1400,6 +1402,56 @@ export function drawCompactCard(ui: Ui, parts: FlowParts, effEl: unknown, fold?:
     true,
     'compact',
     fold,
+  )
+}
+
+/** 패널 맨 위 "모든 세션" 줄의 값: 보일 금액(안 보일 것은 null) · 상태(값 · 처음 재는 중 · 못 잼) */
+export type AllSpendLine = { today: number | null; month: number | null; state: 'ok' | 'measuring' | 'failed' }
+
+/**
+ * 패널 맨 위 "모든 세션  오늘 ~$ · 이번 달 ~$"(0.5.1 — 2026-10-14 uxi 작은 질문 2): 이 PC 모든 세션의 합(tools/scan-spend.mjs, 앱 자체
+ * 요청은 기록에 없어 "~"). 이 세션 카드(컨텍스트 · 컴팩트 판단 · 이 세션 비용)에 넣으면 이름과 내용이 어긋나 카드 밖 한 줄로 — 바로
+ * 아래 카드 제목 "이 세션 · 누적 $" 와 짝이라 세 금액이 한눈에. 보일 때는 register allSpendOf(자세히 = 늘 둘 다, 간단 = 설정에서 켠
+ * 것만). 꼴은 바 돈 묶음과 같고 좁으면 칸 사이에서만 꺾는다(빼지 않음 — 바와 달리 줄을 늘릴 수 있다). 처음 재는 동안 "재는 중…" 으로
+ * 자리를 지키고(뒤 카드가 안 밀리게), 못 재면 까닭을 쓴다(값을 지어내지 않는다). 들여쓰기는 맨 아래 요율 줄과 같다.
+ */
+export function drawAllSpend(ui: Ui, line: AllSpendLine | null) {
+  const { Box, Text } = ui
+  if (!line) return null
+  const amounts: [string, string, number][] = []
+  if (line.today !== null) amounts.push(['a-today', L('오늘 ', 'Today '), line.today])
+  if (line.month !== null) amounts.push(['a-month', L('이번 달 ', 'This month '), line.month])
+  if (line.state === 'ok' && amounts.length === 0) return null
+  const name = L('모든 세션', 'All sessions')
+  // 띄어쓰기는 칸 앞에 — 칸 뒤 빈칸은 터미널이 줄 끝에서 지울 수 있다(바 칸도 " · " 를 앞에 둔다)
+  const head: LineCell = { key: 'a-name', text: name, el: () => <Text dimColor>{name}</Text> }
+  const stateText =
+    line.state === 'failed'
+      ? L('못 잼 — 기록을 읽으려면 Node 14.8 이상이 필요합니다', 'Not measured — reading transcripts needs Node 14.8+')
+      : L('재는 중…', 'Measuring…')
+  const cells: LineCell[] =
+    line.state === 'ok'
+      ? [
+          head,
+          ...amounts.map(([key, label, usd], j): LineCell => {
+            const lead = j === 0 ? ' ' : ' · '
+            return {
+              key,
+              text: `${lead}${label}~${fmtUsd(usd)}`,
+              el: () => (
+                <Text>
+                  <Text dimColor>{`${lead}${label}`}</Text>
+                  <Text bold>~{fmtUsd(usd)}</Text>
+                </Text>
+              ),
+            }
+          }),
+        ]
+      : [head, { key: 'a-state', text: ` ${stateText}`, el: () => <Text dimColor>{` ${stateText}`}</Text> }]
+  return (
+    <Box key="s-all" flexDirection="column" marginTop={1} paddingX={1}>
+      {fitLine(ui, cells, null).el}
+    </Box>
   )
 }
 

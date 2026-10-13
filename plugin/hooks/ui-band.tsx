@@ -118,18 +118,20 @@ function costCells(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: read
   const { Box, Text } = ui
   const dot = (isFirst: boolean) => (isFirst ? null : <Text dimColor> · </Text>)
   const cells: LineCell[] = []
-  // 비용 줄 맨 앞 "이 세션 $12.34" — 최대 · 최소 두 크기에서 같은 자리, 식은
+  // 비용 줄 맨 앞 "세션 $12.34" — 최대 · 최소 두 크기에서 같은 자리, 식은
+  // 이름표는 "이 세션" 에서 "세션" 으로 줄였다(2026-10-14 uxi 안 A — 옆 이름표 오늘 · 이번 달 · 요청당과 나란, 영어 Session 과 같은 짜임,
+  // 좁은 바에서 칸이 하나 더 남음). 패널 첫 카드 제목은 홀로 서는 머리말이라 "이 세션" 그대로.
   // 캐시 줄 앞에도. 색은 설정의 세션 금액 기준(기본 $10 노랑 · $50 주황 · $100 빨강). 금액을 모르면(엔진이 비용 장부를 안 줌) 없음
   if (show.session && u.costUsd !== null) {
     const usd = u.costUsd
     const color = sessionColorOf(usd, colors)
     cells.push({
       key: 'c-session',
-      text: `${L('이 세션 ', 'Session ')}${fmtUsd(usd)}`,
+      text: `${L('세션 ', 'Session ')}${fmtUsd(usd)}`,
       el: isFirst => (
         <Text>
           {dot(isFirst)}
-          <Text dimColor>{L('이 세션 ', 'Session ')}</Text>
+          <Text dimColor>{L('세션 ', 'Session ')}</Text>
           <Text bold {...(color ? { color } : {})}>
             {fmtUsd(usd)}
           </Text>

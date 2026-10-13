@@ -4,6 +4,16 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.5.1] — 2026-10-14
+
+### Added
+- **"All sessions" line at the top of the usage pane** — `All sessions  Today ~$65 · This month ~$788` (every session on this PC, API list prices), paired with the *This session · Total $* card right below it. The Detailed view (detail level Everything) always shows it, whatever the option says; the Simple view (Minimal) shows only what you turned on (today, this month or both) — and nothing, as before, if you turned neither on. The *This session* card holds this session's context, compact verdict and cost, so the all-session totals get their own line above it. While measuring for the first time it reads *Measuring…*; if it can't measure it says *Not measured* and why (needs Node 14.8+).
+
+### Changed
+- **Settings row "All sessions"** — All screens → *All usage* [Today] [This month] is now **All sessions**. When on, the amounts also show on the bar's cost row and in the Simple pane (the Detailed pane always shows them).
+- **When other sessions' transcripts are read** — only while that option is on or the usage pane is open in the Detailed view (before: only with the option on). Nothing is read while you're not looking at the pane. Only token counts are read; still no network and no tokens used.
+- **Korean UI** — the bar's first label is now **세션** (Session), like the English one, so it lines up with the labels next to it and a narrow bar keeps one more cell. The pane's first card keeps **이 세션** (This session).
+
 ## [0.5.0] — 2026-10-14
 
 ### Added

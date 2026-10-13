@@ -250,8 +250,8 @@ for (const s of STATES)
 
             // ⑤ 한도 없으면 비용 줄이 맨 윗줄(최대 바)
             if (s === 'api' && band === 'full') {
-              // 비용 줄은 폭에 맞춰 칸을 뺀다(좁은 터미널은 요청당도 빠진다) — 늘 남는 "이 세션" 칸으로 본다
-              expect(JSON.stringify(await bar.find({ key: 'b-r1' }))).toMatch(lang === 'ko' ? /이 세션 / : /Session /)
+              // 비용 줄은 폭에 맞춰 칸을 뺀다(좁은 터미널은 요청당도 빠진다) — 늘 남는 "세션" 칸으로 본다
+              expect(JSON.stringify(await bar.find({ key: 'b-r1' }))).toMatch(lang === 'ko' ? /"세션 "/ : /"Session "/)
               expect(await bar.find({ key: 'b-r2' })).toBe(undefined)
             }
 
