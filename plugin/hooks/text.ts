@@ -27,8 +27,36 @@ export function promptHead(text: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(PLUGIN_SENT, '')
-  if (isTidyPrompt(one)) return withIcon('🗜', L('저장하고 컴팩트 — 저장 턴', 'Save & compact — save turn'))
+  if (isTidyPrompt(one)) return withIcon('🗜', L(...TIDY_TURN))
+  // 저장 턴 이름은 기록할 때 그 언어 글로 남는다 — 그릴 때 지금 언어로(L1). 질문 글은 그대로
+  const bare = one.replace(/^🗜\s*/, '')
+  if (bare === TIDY_TURN[0] || bare === TIDY_TURN[1]) return withIcon('🗜', L(...TIDY_TURN))
   return clipText(one, PROMPT_KEEP)
+}
+
+/** 저장 턴 질문 이름(한국어 · 영어) */
+const TIDY_TURN = ['저장하고 컴팩트 — 저장 턴', 'Save & compact — save turn'] as const
+
+/**
+ * mod 가 지어 붙인 이름(한국어 · 영어 짝) — 질문 기록에 그때 언어 글로 남아(질문별 비용 파일 N3), 언어를 바꾼 뒤에도 "답변 작성" · "하위
+ * 에이전트" 가 보였다(L1, 0.6.1 피드백). 그릴 때 짝이 맞으면 지금 언어로. 도구 이름 · 에이전트 작업 이름 · 질문 글은 남이 쓴 글이라 그대로
+ */
+const MOD_LABELS: readonly (readonly [string, string])[] = [
+  ['답변 작성', 'Writing the answer'],
+  ['하위 에이전트', 'subagent'],
+  ['답 뒤 · 다음 질문 제안', 'after the answer · next-prompt suggestion'],
+  ['답 뒤 · 다음 질문 제안 · 메모리 정리 등', 'after the answer · next-prompt suggestion · memory upkeep, etc.'],
+  ['중단 · 도중 끊긴 요청 등', 'stopped · interrupted requests, etc.'],
+  ['질문 도중 · 앱 자체 요청', 'during the question · app requests'],
+  ['앞 답 30초 뒤 ~ 이 질문 시작', 'from 30s after the last answer to this question'],
+  ['컴팩트 미리 계산', 'compact precompute'],
+  ['컴팩트', 'Compact'],
+]
+
+/** mod 가 지은 이름이면 지금 언어로, 아니면 그대로 */
+export function labelNow(label: string): string {
+  for (const [ko, en] of MOD_LABELS) if (label === ko || label === en) return L(ko, en)
+  return label
 }
 
 export function clipText(text: string, n: number): string {
@@ -277,6 +305,26 @@ export function limitName(kind: string): string {
   if (kind === 'seven_day') return L('7일', '7d')
   if (kind === 'spend_limit') return L('지출 한도', 'Spend limit')
   return kind
+}
+
+/** 숫자 꼴(설정 ctxUnit): 크기 281k · % 28%(최대 컨텍스트 대비 — 앱 "11% 사용됨" 과 같은 셈) · 둘 다 281k(28%) */
+export type CtxUnit = 'size' | 'pct' | 'both'
+
+/** 컨텍스트 크기 글(B1, 0.6.1 피드백) — 창(최대 컨텍스트)을 모르면 크기 */
+export function ctxNumText(tokens: number, window: number | null | undefined, unit: CtxUnit): string {
+  const pct = window && window > 0 ? `${Math.round((tokens / window) * 100)}%` : null
+  if (unit === 'pct' && pct) return pct
+  if (unit === 'both' && pct) return `${fmtTokens(tokens)}(${pct})`
+  return fmtTokens(tokens)
+}
+
+/** 컴팩트 구간 · 기준 글 — 같은 숫자 꼴: "250k~300k" · "25~30%" · "250k~300k(25~30%)" */
+export function rangeNumText(t: { isRange?: boolean; ctxWarn: number; ctxCut: number }, window: number | null | undefined, unit: CtxUnit): string {
+  const sizes = t.isRange ? `${fmtTokens(t.ctxWarn)}~${fmtTokens(t.ctxCut)}` : fmtTokens(t.ctxCut)
+  if (!window || !(window > 0) || unit === 'size') return sizes
+  const pct = (n: number) => Math.round((n / window) * 100)
+  const pcts = t.isRange ? `${pct(t.ctxWarn)}~${pct(t.ctxCut)}%` : `${pct(t.ctxCut)}%`
+  return unit === 'pct' ? pcts : `${sizes}(${pcts})`
 }
 
 /** "Opus 5.5 · high" — 모델 이름과 노력도 */

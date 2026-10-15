@@ -237,6 +237,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spendMonth: false,
   bandOrder: ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache'],
   motion: 'system',
+  ctxUnit: 'size',
 }
 
 /** 바 비용 줄 칸 순서의 기본(0.5 묶음 2 N15) — 세션 · 오늘 · 이번 달(돈) → 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시 */
@@ -306,7 +307,7 @@ export function screenUse(p: ScreenPreset): string {
     ? L('처음 쓸 때 · 꼭 필요한 것만', 'For starting out · essentials only')
     : p === 'detail'
       ? L('AI 비용 구조를 아는 분 · 전부 보기', 'If you know how AI costs work · everything')
-      : L('세부를 직접 고름 · 캐시 유지 시간 포함', 'Pick each detail yourself · cache lifetime too')
+      : L('세부를 직접 고름 · 칸마다 켜고 끔', 'Pick each detail yourself · row by row')
 }
 
 /** "간단" · "basic" · "커스텀" 등 → 화면 프리셋. 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
@@ -736,6 +737,9 @@ export function normalizeSettings(raw: unknown): Settings {
   const spendMonth = (r as { spendMonth?: unknown }).spendMonth === true
   const bandOrder = normalizeOrder((r as { bandOrder?: unknown }).bandOrder)
   const motion = (r as { motion?: unknown }).motion === 'reduce' ? 'reduce' : 'system'
+  // B1(0.6.1 피드백): 컨텍스트 · 컴팩트 구간 숫자 꼴 — 크기(281k) · %(최대 컨텍스트 대비 28%) · 둘 다
+  const rawUnit = (r as { ctxUnit?: unknown }).ctxUnit
+  const ctxUnit = rawUnit === 'pct' || rawUnit === 'both' ? rawUnit : 'size'
   const custom = normalizeView((r as { custom?: unknown }).custom)
   // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)
   const rawScreen = (r as { screen?: unknown }).screen
@@ -760,7 +764,7 @@ export function normalizeSettings(raw: unknown): Settings {
           : screen === 'custom'
             ? limitFrom(rawCustomShow, ALL_LIMITS)
             : ALL_LIMITS
-    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion }
+    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit }
   }
   // 화면이 없는 저장값 = 0.4.0 전부터 쓰던 사람: 칸(bandShow) · 패널 보기(paneMode — 없으면 자세히)를 옮긴다. 한도 칸은 한도 줄로,
   // 비용 · 질문 줄 칸을 다 켰으면(손대지 않음) 간단 — 업데이트 뒤 첫 화면. 하나라도 껐으면 고른 것이라 그 칸 ·
@@ -774,7 +778,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const allOn = (Object.keys(oldShow) as (keyof CostShow)[]).every(k => oldShow[k])
   const migrated: Pick<Settings, 'screen' | 'custom'> =
     allOn ? { screen: 'simple', custom } : { screen: 'custom', custom: { ...SCREEN_VIEWS.detail, bandShow: oldShow, info: oldPane === 'simple' ? 'lean' : 'full' } }
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion }
+  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit }
 }
 
 /** 저장값 안의 객체(아니면 빈 객체) */

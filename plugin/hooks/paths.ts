@@ -78,6 +78,17 @@ export function changelogItems(md: string, version: string, maxItems = 20): { he
 }
 
 /**
+ * U1(0.6.1 피드백 "내 판보다 높은 모든 판의 바뀐 것을 판별로"): CHANGELOG 에 적힌 판 가운데 from < v ≤ to 인 것을 새 판부터. from 이
+ * null 이면 to 하나만(본 판을 모를 때 — 0.5.0 전부터 쓰던 사람). 못 읽는 판 이름은 뺀다
+ */
+export function changelogVersionsBetween(md: string, from: string | null, to: string | null): string[] {
+  if (!to) return []
+  const all = [...md.matchAll(/^## \[(\d+\.\d+\.\d+[^\]]*)\]/gm)].map(m => m[1]!)
+  const picked = from === null ? all.filter(v => v === to) : all.filter(v => versionGt(v, from) && !versionGt(v, to))
+  return [...new Set(picked)].sort((a, b) => (versionGt(a, b) ? -1 : versionGt(b, a) ? 1 : 0))
+}
+
+/**
  * easy-compact 이 제대로 도는 가장 낮은 Claude Code 판 — Button 안에 글(자식)을 넣는 기능이 2.1.295 에 들어왔다(변경 기록).
  * 플러그인 매니페스트엔 "최소 엔진 판" 칸이 없어 엔진이 막아 주지 않는다 — 시작할 때 재서 낮으면 바 대신 안내 한 줄
  */

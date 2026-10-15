@@ -4,6 +4,30 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.7.0] — 2026-10-15
+
+### Added
+- **Version button · what changed in each version** — a version button at the right of the pane's tab row (normally a dim `v0.7.0`; *New N* when there is a new version; *What's new in N* on the first start after updating). Press it and the changes of every version above yours open under the tab row (the latest 6), with **[Check for updates]** and **[Update]** — you can check again after updating. The update row at the top of Settings, the new-version card at the top of Overview and the dot (•) on the Settings tab are folded into this button.
+- **Folding settings** — like the app's new side panel, each section folds with the **⌄** / **›** beside its title. Only **Screen** is open at first, and a folded section shows its current value beside the title (*Full · Animations on*, *1 h cache · Cache expires in 30 min* and so on). Overview's *This session*, *Cost per question* and *Compact* use the same headers.
+- **Context number format** — Settings → Bar — every screen → **Context numbers** [Size | % | Both]. The bar's context and compact range, and the gauge chip, show `281k`, `28%` (of the max context — the same as the app's context ring) or both.
+- **Agent character** — on the desktop, a small pixel bug takes the 🤖's place. It walks only while that agent is running and stands still when it's done (always still with **Animations** off or your OS's reduce-motion on). The terminal keeps 🤖.
+
+### Changed
+- **Hovering the gauge or compact button shows the range too** — the chip's first line reads *Context 140k · compact range 200k~250k* (in the number format you picked).
+- **Animations switch** — Settings' *Motion [System | Reduce]* is now an **Animations** on/off switch. Even when on, your OS's reduce-motion setting stops them.
+- **Screen section · Bar — every screen** — the **Screen** section holds only the screen type, the preview and what that screen decides (answer chip details · cost row · question row); what doesn't depend on it (limits row · All sessions · session-cost colors · cost order · context numbers · bar size · animations) moved to **Bar — every screen**, so it's clear what follows the screen type.
+- **? works everywhere** — hover the **?** next to a name for its explanation, press it to keep it open. The **?** in Overview's Compact card can be pressed now (it couldn't before).
+
+### Fixed
+- **The bar's session cost started over from $0 after restarting the app** — each session's cost is kept in the data folder on this PC and counting continues. Older sessions with no kept value start from the sum of their question costs.
+- **The compact button's chip covered the ◔ above it** — a chip such as *Compact now advised* floated over the button and blocked the ◔ button right above. The chip now opens outside, to the left of the gauge and button.
+- **"N downloaded — restart the app to apply" stayed after updating** — after restarting, that line stayed and there was no [Check for updates]. Now it returns to *Up to date* once the versions match, and you can check again any time.
+- **Korean left on the English screen** — the pane title opened by an older version (*사용량*), the change list after switching language, and recorded step names (*답변 작성* · *하위 에이전트*) now show in the current language.
+
+### Removed
+- **Changing the cache lifetime** — the Custom screen's [Automatic · 1 hour · 5 min] edited `promptCacheTtl` in your Claude Code user settings file. That wasn't intended, so it's gone, and easy-compact no longer writes Claude Code's settings. The current lifetime, what sets it and the 1-hour vs 5-minute trade-off are still shown under Settings → **Cache**. A lifetime you picked with an earlier version stays as the `promptCacheTtl` line in your Claude Code user settings (`~/.claude/settings.json`) — delete that line to go back to automatic.
+- **The hook on agent launches** — agent names are now read from Claude Code's agent list. Nothing looks different.
+
 ## [0.6.1] — 2026-10-15
 
 ### Fixed

@@ -2,10 +2,11 @@ import type { EngineInterface } from 'claude-code'
 import type { StepDetail } from '../types'
 import { barSvg, CTX_MARK_PAD, ctxBarSvg, fmtTokens, fmtUsd, levelOf, modelName, pulseSvg, REWRITE_NOTE_USD, textBar, thresholds } from './cost'
 import { gaugeFrac, gaugeSvg, redDepth } from './gauge'
+import { agentCharSvg } from './agent-char'
 import { L } from './i18n'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
 import { barCells } from './cells'
-import { cellsOf, fitCells, compactStepText, widthOf } from './text'
+import { cellsOf, fitCells, compactStepText, labelNow, widthOf } from './text'
 
 /**
  * 화면 공통 조각 — 카드 · 줄 · 칸 · 막대 · 색.
@@ -101,6 +102,56 @@ export function gaugeEl(
 }
 
 export type RasterElement = (props: { key: string; columns: number; rows: number; cells: string }) => unknown
+
+/** 설정 "움직임"(S1) — register 가 설정을 읽을 때 넣는다(thresholds · bandOrder 와 같은 방식). 꺼지면 에이전트 캐릭터도 서 있는 그림 */
+let isMotionOn = true
+
+export function setMotion(on: boolean): void {
+  isMotionOn = on
+}
+
+/**
+ * 에이전트 표시(B4, 0.6.1 피드백): 데스크톱은 🤖 대신 도트 캐릭터 그림 — 그 에이전트가 도는 동안만 걷고(샌드박스 틀 isInteractive — 다시 그려도
+ * 같은 그림이면 앱이 틀을 남겨 움직임이 이어진다), 끝나면 서 있는 기본 모습. 터미널 · 그 밖 표면은 null(글 그대로 — 터미널은 그림 글자 없이)
+ */
+export function agentMark(ui: Ui, key: string, isRunning: boolean) {
+  const Svg = onDesktop() ? (ui as unknown as { Svg?: SvgElement }).Svg : undefined
+  if (!Svg) return null
+  const isWalking = isRunning && isMotionOn
+  return (
+    <Svg
+      key={key}
+      source={agentCharSvg(16, isWalking)}
+      alt={isRunning ? L('에이전트 도는 중', 'Agent running') : L('에이전트', 'Agent')}
+      width={16}
+      height={16}
+      {...(isWalking ? { isInteractive: true as const } : {})}
+    />
+  )
+}
+
+/**
+ * 에이전트 글("🤖 에이전트 1개 …" — text.ts agentPart 등)을 그린다: 데스크톱은 🤖 자리에 도트 캐릭터(agentMark), 그 밖은 글 그대로. prefix =
+ * 앞에 붙는 " · " 같은 글, textProps = 글 꼴(흐림 · 색 · 줄바꿈)
+ */
+export function agentText(ui: Ui, key: string, text: string, isRunning: boolean, textProps: Record<string, unknown> = {}, prefix = '') {
+  const { Box, Text } = ui
+  const ICON = '🤖 '
+  const mark = text.startsWith(ICON) ? agentMark(ui, `${key}-mark`, isRunning) : null
+  if (!mark)
+    return (
+      <Text key={key} {...textProps}>
+        {`${prefix}${text}`}
+      </Text>
+    )
+  return (
+    <Box key={key} flexDirection="row" alignItems="center" columnGap={0.5}>
+      {prefix ? <Text {...textProps}>{prefix}</Text> : null}
+      {mark}
+      <Text {...textProps}>{text.slice(ICON.length)}</Text>
+    </Box>
+  )
+}
 
 /** 칸 그림(Raster)은 터미널만 — 칸마다 글자 · 색(hooks/cells.ts). 없는 엔진이면 글자 막대 · 안내로 */
 export function rasterOf(ui: Ui, surface: string): RasterElement | undefined {
@@ -287,13 +338,15 @@ export function stepText(d: StepDetail): { text: string; note: string } {
   // 메인 요청만 rewrite 가 있다 — 에이전트 · 앱 자체 요청 · 컴팩트 줄엔 없다
   const note = d.rewrite !== undefined && d.rewrite >= REWRITE_NOTE_USD ? L(` · 캐시 다시 씀 ${fmtUsd(d.rewrite)}`, ` · cache rewrite ${fmtUsd(d.rewrite)}`) : ''
   const state = d.done === false ? L(' · 도는 중', ' · running') : d.done === true ? L(' · 끝남', ' · done') : ''
+  // mod 가 지은 이름("답변 작성" · "하위 에이전트" · 앱 자체 요청 이름)은 그릴 때 지금 언어로 — 기록할 때 그 언어로 남았다(L1)
+  const label = labelNow(d.label)
   const text = d.agent
-    ? withIcon('🤖', `${L(`에이전트 요청 ${d.steps ?? 1}회`, `agent requests ×${d.steps ?? 1}`)}${state} · ${d.model ? `${modelName(d.model)} · ` : ''}${d.label}`)
+    ? withIcon('🤖', `${L(`에이전트 요청 ${d.steps ?? 1}회`, `agent requests ×${d.steps ?? 1}`)}${state} · ${d.model ? `${modelName(d.model)} · ` : ''}${label}`)
     : d.app
-      ? withIcon('⚙', `${L('앱 자체 요청', "app's own requests")} · ${d.label}`)
+      ? withIcon('⚙', `${L('앱 자체 요청', "app's own requests")} · ${label}`)
       : d.compact
         ? compactStepText(d.compact, d.usd)
-        : d.label
+        : label
   return { text, note }
 }
 
@@ -309,10 +362,15 @@ export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, 
         <Text dimColor>{j === details.length - 1 && !hasMore ? '└─' : '├─'}</Text>
         {usdCell(ui, d.usd, false, g.amountW)}
         <Box flexShrink={1} minWidth={0}>
-          <Text wrap="truncate-end">
-            {label}
-            {note ? <Text color="warning">{note}</Text> : null}
-          </Text>
+          {/* 에이전트 줄은 데스크톱이면 🤖 대신 도트 캐릭터(B4) — 그 에이전트가 도는 동안 걷는다 */}
+          {d.agent && label.startsWith('🤖 ') && onDesktop() ? (
+            agentText(ui, `${key}-${j}-agent`, label, d.done === false, { wrap: 'truncate-end' })
+          ) : (
+            <Text wrap="truncate-end">
+              {label}
+              {note ? <Text color="warning">{note}</Text> : null}
+            </Text>
+          )}
         </Box>
       </Box>
     )
@@ -506,6 +564,36 @@ export function decoIcon(ui: Ui, name: IconName, hex: string, alt: string, key?:
 /** 카드 접기: 제목 줄 맨 앞 ▾ / ▸ 버튼. 접으면 제목 줄(그 카드의 요약)만 남는다 */
 export type Fold = { isOpen: boolean; onToggle: () => void }
 
+/**
+ * S6(0.6.1 피드백 — 앱이 새로 준 옆 패널 "환경 ⌄ · 컨텍스트 ⌄ · 커넥터 ⌄" 꼴, 캡처 08): 접는 칸 머리 = 작은 흐린 제목 + ⌄(펼침) / ›(접힘),
+ * 제목 줄 전체가 한 버튼(key fold-<칸>). 예전엔 카드 안 제목 왼쪽 ▾ ▸ 칩만 눌렸다. 터미널은 ▾ ▸
+ */
+export function foldHead(ui: Ui, key: string, title: string, fold: Fold) {
+  const { Button } = ui
+  const mark = onTerminal() ? (fold.isOpen ? '▾' : '▸') : fold.isOpen ? '⌄' : '›'
+  return <Button key={`fold-${key}`} label={`${title} ${mark}`} plain dimColor onPress={fold.onToggle} />
+}
+
+/**
+ * 접는 카드(S6): 머리(foldHead + 요약 hint) · 그 아래 둥근 카드 본문. 접으면 머리 줄만 — 요약이 그 칸의 한 줄(현황 "누적 $" · 설정 "지금 값")
+ */
+export function foldCard(ui: Ui, key: string, title: string, fold: Fold, children: unknown[], hint?: unknown) {
+  const { Box, Text } = ui
+  return (
+    <Box key={key} flexDirection="column" marginTop={1}>
+      <Box key={`${key}-head`} columnGap={1} alignItems="center" flexWrap="wrap">
+        {foldHead(ui, key, title, fold)}
+        {hint === undefined || hint === null || hint === '' ? null : <Box key={`${key}-hint`}>{typeof hint === 'string' ? <Text dimColor>{hint}</Text> : hint}</Box>}
+      </Box>
+      {fold.isOpen ? (
+        <Box key={`${key}-card`} flexDirection="column" {...CARD}>
+          {children}
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
+
 /** 카드 접기 버튼 — 질문 줄의 펼치기 아이콘과 같은 꼴. 오른쪽 끝은 데스크톱에서 잘려 맨 앞에 */
 export function foldButton(ui: Ui, key: string, fold: Fold) {
   const { Button } = ui
@@ -545,7 +633,7 @@ export function onOffW(onName = L('켬', 'On')): number {
  * 회색 띠 · 테두리 · 접기 버튼 없이 늘 펼친다 — 정보량은 줄 풀이(자세히에서만)로 조인다. hint = 제목 옆 흐린 글(적용 중 값 등).
  * 줄 사이엔 앱처럼 옅은 1px 선(데스크톱 Svg — 위아래 6px 여백을 같이 그려 줄 간격도 맡는다). 터미널은 선 없이 붙인다
  */
-export function appSection(ui: Ui, key: string, title: string, rows: unknown[], hint?: unknown) {
+export function appSection(ui: Ui, key: string, title: string, rows: unknown[], hint?: unknown, fold?: Fold) {
   const { Box, Text } = ui
   const units = rows.filter(r => r !== null && r !== undefined && r !== false)
   const body: unknown[] = []
@@ -553,6 +641,8 @@ export function appSection(ui: Ui, key: string, title: string, rows: unknown[], 
     if (i > 0) body.push(rowLine(ui, `${key}-line-${i}`))
     body.push(r)
   })
+  // S3 · S6(0.6.1 피드백 "다 펼쳐져 길다 · 큰 제목 기준 접기 · 앱 옆 패널 꼴"): 접는 카드 — 접으면 제목 + 요약 한 줄
+  if (fold) return foldCard(ui, key, title, fold, fold.isOpen ? body : [], hint)
   return (
     // 칸 사이는 데스크톱 두 칸(약 20px — 앱 설정의 소제목 위 여백) · 터미널 한 줄. 한 칸이면 줄 사이 선(13px)보다 좁아 칸 구분이 묻혔다
     // 0.6.0 실물: 칸 위 여백을 앱 설정처럼 크게(데스크톱 4 = 2줄 ≈ 40px)
@@ -635,10 +725,13 @@ export function helpTip(ui: Ui, key: string, text: unknown, top: number, toggle?
   }
 }
 
-/** 글(anchor) 옆 "?" 칩 — 미리보기 제목 · 크기별 비용 제목처럼 줄이 아닌 자리 */
-export function hoverTip(ui: Ui, key: string, anchor: unknown, text: unknown) {
-  const { Box } = ui
-  const tip = helpTip(ui, key, text, 1)
+/**
+ * 글(anchor) 옆 "?" 칩 — 미리보기 제목 · 크기별 비용 제목처럼 줄이 아닌 자리. toggle 이 있으면 "?" 를 눌러 아래에 펼친다(S5 · O1 — 0.6.1
+ * 피드백: 같은 "?" 가 설정 줄은 눌리고 여기는 안 눌렸다)
+ */
+export function hoverTip(ui: Ui, key: string, anchor: unknown, text: unknown, toggle?: { isOpen: boolean; onToggle: () => void }) {
+  const { Box, Text } = ui
+  const tip = helpTip(ui, key, text, 1, toggle?.onToggle)
   return (
     <Box key={key} flexDirection="column">
       <Box key={`${key}-line`} columnGap={1} alignItems="center">
@@ -646,6 +739,17 @@ export function hoverTip(ui: Ui, key: string, anchor: unknown, text: unknown) {
         {tip.mark}
       </Box>
       {tip.card}
+      {toggle?.isOpen ? (
+        <Box key={`${key}-open`} flexDirection="column">
+          {typeof text === 'string' ? (
+            <Text dimColor wrap="wrap">
+              {text}
+            </Text>
+          ) : (
+            text
+          )}
+        </Box>
+      ) : null}
     </Box>
   )
 }
@@ -705,6 +809,8 @@ export function section(
   fold?: Fold,
 ) {
   const { Box, Text } = ui
+  // S6(0.6.1 피드백): 접는 카드는 앱 옆 패널 꼴 — 카드 밖 작은 제목 + ⌄ / ›(제목 줄이 버튼), 아이콘 없이
+  if (fold && isCard) return foldCard(ui, key, title, fold, children, hint)
   const isOpen = fold?.isOpen ?? true
   return (
     <Box key={key} flexDirection="column" marginTop={1} rowGap={0} {...(isCard ? CARD : {})}>

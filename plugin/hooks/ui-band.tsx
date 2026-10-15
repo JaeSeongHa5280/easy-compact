@@ -1,10 +1,11 @@
 import type { BandShow, CompactInputs, CostParts, LiveTurn, StepDetail, TurnSummary, Usage } from '../types'
-import { cacheWarnFor, estimateFor, fmtTokens, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, sessionColorOf, thresholds, priceWarnings } from './cost'
+import { cacheWarnFor, estimateFor, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, sessionColorOf, thresholds, priceWarnings } from './cost'
 import { L, plural } from './i18n'
 import { bandShowOf, DEFAULT_SETTINGS, SESSION_COLORS_DEFAULT } from './settings'
-import { agentPart, callsOf, limitName, widthOf } from './text'
+import { agentPart, agentSum, callsOf, ctxNumText, limitName, rangeNumText, widthOf } from './text'
+import type { CtxUnit } from './text'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
-import { bar, decoIcon, TILE } from './ui-common'
+import { agentText, bar, decoIcon, TILE } from './ui-common'
 import type { Ui } from './ui-common'
 
 /** 입력창 위 띠의 줄들 — 한도 · 예상(이 세션 · 요청당 · 컨텍스트 · 캐시) · 지난 질문. 칸마다 화면 보기 값(bandShow)으로 뺄 수 있다 */
@@ -146,6 +147,18 @@ export function setBandOrder(order: readonly string[]): void {
   bandOrder = order
 }
 
+/** B1(0.6.1 피드백): 컨텍스트 · 컴팩트 구간 숫자 꼴(설정 ctxUnit) — register 가 그리기 전에 넣는다(bandOrder 와 같은 방식) */
+let ctxUnit: CtxUnit = 'size'
+
+export function setCtxUnit(unit: CtxUnit): void {
+  ctxUnit = unit
+}
+
+/** 지금 숫자 꼴 — 바 설명 칩도 같은 꼴 */
+export function ctxUnitNow(): CtxUnit {
+  return ctxUnit
+}
+
 const ORDER_OF: Record<string, string> = { 'c-session': 'session', 'c-today': 'today', 'c-month': 'month', 'c-call': 'perRequest', 'c-ctx': 'context', 'c-range': 'range', 'c-cache': 'cache' }
 
 /** 칸을 설정 순서로(식은 캐시 상태 칸은 컨텍스트 바로 앞 — 상태 · 크기가 붙어 읽히게). 같은 순위는 원래 순서 */
@@ -219,7 +232,7 @@ function costCellsRaw(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: r
   const level = levelOf(u.contextTokens)
   // 컴팩트 뒤 첫 요청 전이면 "컴팩트 직후" — 크기는 엔진이 준 직후 크기(N2), 그게 없어 추정이면 "~"
   const isJust = u.contextEstimated === true || u.isAfterCompact === true
-  const ctxNum = `${u.contextEstimated ? '~' : ''}${fmtTokens(u.contextTokens)}`
+  const ctxNum = `${u.contextEstimated ? '~' : ''}${ctxNumText(u.contextTokens, u.window, ctxUnit)}`
   const ctxText = isJust ? L(`컨텍스트 ${ctxNum} 컴팩트 직후`, `Context ${ctxNum} just compacted`) : L(`컨텍스트 ${ctxNum}`, `Context ${ctxNum}`)
   const ctxCell: LineCell | null = !show.context
     ? null
@@ -242,7 +255,7 @@ function costCellsRaw(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: r
       }
   // 지금 걸린 컴팩트 시점(설정 탭) — 컨텍스트 크기 바로 뒤에, 얼마나 남았는지 견주게. 칸 사이 " · " 는 앞 칸이 있을 때만
   const t = thresholds()
-  const rangeValue = t.isRange ? `${fmtTokens(t.ctxWarn)}~${fmtTokens(t.ctxCut)}` : fmtTokens(t.ctxCut)
+  const rangeValue = rangeNumText(t, u.window, ctxUnit)
   const rangeCell: LineCell | null = !show.range
     ? null
     : {
@@ -466,7 +479,8 @@ export function fitLastTurnLine(ui: Ui, last: TurnSummary | null, now: LiveTurn 
       },
       { key: 't-calls', drop: 2, text: L(`요청 ${calls}회`, plural(calls, 'request')), el: () => <Text dimColor>{L(` · 요청 ${calls}회`, ` · ${plural(calls, 'request')}`)}</Text> },
     ]
-    if (agents) cells.push({ key: 't-agents', drop: 1, text: agents, el: () => <Text>{` · ${agents}`}</Text> })
+    // B4(0.6.1 피드백): 🤖 대신 도트 캐릭터(데스크톱) — 이 질문 에이전트가 도는 동안만 걷는다
+    if (agents) cells.push({ key: 't-agents', drop: 1, text: agents, el: () => agentText(ui, 't-agents-el', agents, agentSum(details)?.running === true, {}, ' · ') })
     if (rewrite && rewriteUsd !== undefined) cells.push({ key: 't-rewrite', text: L(`캐시 다시 씀 ${fmtUsd(rewriteUsd)}`, `cache rewrite ${fmtUsd(rewriteUsd)}`), el: () => rewrite })
     return fitLine(ui, cells, maxW)
   }

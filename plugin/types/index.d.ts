@@ -95,6 +95,8 @@ export type Settings = {
   bandOrder: string[]
   /** 0.5 묶음 2(N20): 모션 — system = OS 동작 줄이기만 따름, reduce = 게이지 · 점 움직임 없음(앱 "모션" 값은 mod 가 못 읽는다) */
   motion: 'system' | 'reduce'
+  /** B1(0.6.1 피드백): 바 · 설명 칩의 컨텍스트 · 컴팩트 구간 숫자 꼴 — size = 281k, pct = 최대 컨텍스트 대비 28%(앱 '11% 사용됨' 과 같은 셈), both = 281k(28%) */
+  ctxUnit: 'size' | 'pct' | 'both'
 }
 
 /** 오늘 · 이번 달 사용량(달러) — atMs 에 잰 값. tools/scan-spend.mjs 결과를 cost.ts spendUsd 로 센 것 */
@@ -120,6 +122,8 @@ export type UpdateState = {
   changes?: Record<string, ChangeGroup[]>
   /** 펼침: 새 판의 바뀐 것 · 오류 원문 · 업데이트 알림의 바뀐 것 */
   open?: { changes?: boolean; error?: boolean; note?: boolean }
+  /** U1(0.6.1 피드백): 서랍에 보일 판들(새 판부터) — 새 판이면 지금 판 < v ≤ 새 판, 업데이트 뒤 첫 실행이면 본 판 < v ≤ 지금 판, 그 밖엔 지금 판 */
+  versions?: string[]
 }
 
 /** CHANGELOG 한 판의 한 절(바뀜 · 새로 생김 · 뺌 · 고침) — 항목은 굵은 머리만 */
@@ -414,15 +418,12 @@ export type CompactEvent = {
 /**
  * 캐시 유지 시간을 무엇이 정하나(엔진 순서, 공식 문서 "Choose the TTL yourself"): FORCE_PROMPT_CACHING_5M → 환경 변수
  * CLAUDE_CODE_PROMPT_CACHE_TTL → 설정 promptCacheTtl → ENABLE_PROMPT_CACHING_1H → 자동(구독 요금제 사용량 안 1시간, 그 밖 5분).
- * userSetting = 사용자 설정 파일(~/.claude/settings.json)의 값 — 설정 탭(커스텀)이 바꾸는 곳
+ * 보이기만 한다 — 설정 파일을 바꾸던 칸은 0.6.1 피드백으로 뺐다
  */
 export type TtlConfig = {
   source: 'force5m' | 'env' | 'setting' | 'enable1h' | 'auto'
   /** 그 출처가 정한 값(자동이면 null) */
   value: '5m' | '1h' | null
-  userSetting: '5m' | '1h' | null
-  /** 사용자 설정 파일 경로 — 못 찾으면 null(바꾸기 버튼을 숨긴다) */
-  userFile: string | null
 }
 
 /** $.store 에 두는 열린 패널. 트리는 그 그룹 세션에서만 따라 연다 */
@@ -476,6 +477,8 @@ declare module 'claude-code' {
       spendFailed: boolean
       /** 업데이트 칸 상태(설치본만) */
       update: UpdateState
+      /** U4(0.6.1 피드백): 탭 줄 업데이트 버튼의 서랍이 열렸나 — 이 세션, 탭을 바꾸거나 패널을 닫으면 닫힘 */
+      updDrawer: boolean
       /** 설정의 직접 쓴 문구 입력칸에 치는 중인 글(Enter 전). 화면을 다시 그려도 친 글이 남게 칸 값으로 다시 준다 */
       tidyDraft: string | null
       /** 설정의 컴팩트 문구 ② /compact 뒤에 붙일 글 칸에 치는 중인 글(Enter 전) — tidyDraft 와 같은 까닭 */
@@ -500,7 +503,7 @@ declare module 'claude-code' {
       optimal: Optimal | null
       /** 기록에서 잰 메인 대화 캐시 유지 시간(분, 5 · 60) — 턴 끝 · 흐름을 읽을 때 잰다. 못 쟀으면 null */
       ttlMeasured: number | null
-      /** 캐시 유지 시간 설정의 출처(설정 탭) — 무엇이 정하나 · 우리가 바꿀 수 있나 */
+      /** 캐시 유지 시간 설정의 출처(설정 탭) — 무엇이 정하나 */
       ttlConfig: TtlConfig | null
       /** 패널 위 [간략][자세히] 로 이 세션에서만 바꾼 보기 — null 이면 화면 프리셋 값 */
       paneModeLocal: PaneMode | null

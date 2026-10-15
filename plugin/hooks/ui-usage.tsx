@@ -48,7 +48,9 @@ import {
   CARD_INSET,
   TILE,
   TILE_PX,
+  agentText,
   foldButton,
+  foldHead,
   section,
   growthText,
   emptyLine,
@@ -60,14 +62,14 @@ import type { Ui, Grid, Fold } from './ui-common'
 import { fitLine, rewriteNote } from './ui-band'
 import type { LineCell } from './ui-band'
 import { L, plural } from './i18n'
-import { iconOf, withIcon } from './glyph'
+import { iconOf, onDesktop, withIcon } from './glyph'
 import { questionScope, rasterOf } from './ui-common'
 import { flowCells, flowLayout, timingCells } from './cells'
 
 /** 터미널 흐름 그래프 높이(줄) — 8줄은 작은 컨텍스트일 때 거의 빈 칸이라 패널만 길게 했다(2026-10-11 CLI) */
 const FLOW_ROWS = 6
 
-/** 📊 사용량 패널 — 컨텍스트 · 비용, 질문별 비용, 컴팩트(시점 · 흐름 그래프 · 효과), 참고 */
+/** 현황 탭(옛 📊 사용량 패널) — 컨텍스트 · 비용, 질문별 비용, 컴팩트(시점 · 흐름 그래프 · 효과), 참고 */
 
 /**
  * 앞 질문과 비교한 모델 · 노력도 변화(바뀐 쪽의 앞 값, 안 바뀌었으면 null). 모델은 이 질문의 첫 요청 때 바뀌어 있었으면(switchedFrom)
@@ -122,23 +124,35 @@ export function liveBlock(ui: Ui, now: LiveTurn, older: TurnSummary | undefined,
               <Text bold color={ACCENT}>
                 {L('진행 중', 'Running')}
               </Text>
-              <Text>{` ${clipText(now.prompt, 60) || L('(글 없음)', '(no text)')}`}</Text>
+              <Text>{` ${clipText(promptHead(now.prompt), 60) || L('(글 없음)', '(no text)')}`}</Text>
             </Text>
           )}
           {/* 첫 요청이 끝나기 전엔 컨텍스트 · 요청 수를 모른다 — "컨텍스트 0 · 요청 0회" 대신 기다린다고만 */}
           {now.steps === 0 ? (
             <Text dimColor>{L('첫 응답을 기다리는 중', 'Waiting for the first response')}</Text>
           ) : (
-            <Text wrap="wrap">
-              <Text color={LEVEL_TEXT[levelOf(now.contextTokens)]}>{L(`컨텍스트 ${fmtTokens(now.contextTokens)}`, `context ${fmtTokens(now.contextTokens)}`)}</Text>
-              {/* 요청 수는 에이전트 요청까지 · 에이전트는 간략이면 개수만, 자세히면 "$ 포함" 까지(끝난 질문 줄과 같은 꼴) */}
-              <Text dimColor>{L(` · 요청 ${callsOf(now.steps, now.details)}회`, ` · ${plural(callsOf(now.steps, now.details), 'request')}`)}</Text>
-              {agentPart(now.details, detail === 'steps') ? <Text>{` · ${agentPart(now.details, detail === 'steps')}`}</Text> : null}
-              {model ? <Text dimColor>{` · ${model}`}</Text> : null}
-              {fromModel && now.model ? <Text>{` · ${withIcon('🔄', `${L('모델', 'model')} ${modelName(fromModel)} → ${modelName(now.model)}`)}`}</Text> : null}
-              {fromEffort && now.effort ? <Text>{` · ${withIcon('🔄', `${L('노력도', 'effort')} ${fromEffort} → ${now.effort}`)}`}</Text> : null}
-              {rewriteNote(ui, now.rewriteUsd)}
-            </Text>
+            (() => {
+              const liveAgents = agentPart(now.details, detail === 'steps')
+              const isMark = liveAgents !== null && liveAgents.startsWith('🤖 ') && onDesktop()
+              const kids = [
+                <Text key="lc" color={LEVEL_TEXT[levelOf(now.contextTokens)]}>{L(`컨텍스트 ${fmtTokens(now.contextTokens)}`, `context ${fmtTokens(now.contextTokens)}`)}</Text>,
+                // 요청 수는 에이전트 요청까지 · 에이전트는 간략이면 개수만, 자세히면 "$ 포함" 까지(끝난 질문 줄과 같은 꼴)
+                <Text key="lr" dimColor>{L(` · 요청 ${callsOf(now.steps, now.details)}회`, ` · ${plural(callsOf(now.steps, now.details), 'request')}`)}</Text>,
+                // B4(0.6.1 피드백): 데스크톱은 🤖 대신 도트 캐릭터 — 이 질문 에이전트가 도는 동안 걷는다
+                liveAgents ? (isMark ? agentText(ui, 'la', liveAgents, agentSum(now.details)?.running === true, {}, ' · ') : <Text key="la">{` · ${liveAgents}`}</Text>) : null,
+                model ? <Text key="lm" dimColor>{` · ${model}`}</Text> : null,
+                fromModel && now.model ? <Text key="lfm">{` · ${withIcon('🔄', `${L('모델', 'model')} ${modelName(fromModel)} → ${modelName(now.model)}`)}`}</Text> : null,
+                fromEffort && now.effort ? <Text key="lfe">{` · ${withIcon('🔄', `${L('노력도', 'effort')} ${fromEffort} → ${now.effort}`)}`}</Text> : null,
+                rewriteNote(ui, now.rewriteUsd),
+              ]
+              return isMark ? (
+                <Box key="live-meta" flexDirection="row" flexWrap="wrap" alignItems="center">
+                  {kids}
+                </Box>
+              ) : (
+                <Text wrap="wrap">{kids}</Text>
+              )
+            })()
           )}
           {/* 간략은 동작별 줄 없이 위 한 줄(요청 수 · 에이전트 개수)만 */}
           {now.details.length > 0 && detail === 'steps' ? (
@@ -216,7 +230,9 @@ export function historyRow(
   const calls = callsOf(t.steps, t.details)
   if (calls > 0) parts.push(<Text key="n">{L(`요청 ${calls}회`, plural(calls, 'request'))}</Text>)
   const agents = agentPart(t.details, detail === 'steps')
-  if (agents) parts.push(<Text key="a">{agents}</Text>)
+  // B4: 데스크톱은 🤖 대신 도트 캐릭터(백그라운드 에이전트가 아직 돌면 걷는다) — 그러면 조각 묶음을 칸(Box)으로
+  const isMark = agents !== null && agents.startsWith('🤖 ') && onDesktop()
+  if (agents) parts.push(isMark ? agentText(ui, 'a', agents, agentSum(t.details)?.running === true) : <Text key="a">{agents}</Text>)
   if (t.model) {
     parts.push(
       fromModel ? (
@@ -270,7 +286,15 @@ export function historyRow(
         )}
         <Box flexDirection="column" flexShrink={1} minWidth={0}>
           {head}
-          {meta.length > 0 ? <Text wrap="wrap">{meta}</Text> : null}
+          {meta.length > 0 ? (
+            isMark ? (
+              <Box key="h-meta" flexDirection="row" flexWrap="wrap" alignItems="center">
+                {meta}
+              </Box>
+            ) : (
+              <Text wrap="wrap">{meta}</Text>
+            )
+          ) : null}
           {extra}
         </Box>
       </Box>
@@ -923,16 +947,30 @@ export function drawHistory(
   const toggle = (key: string, text: string, isOn: boolean, toAll: boolean) => segButton(ui, key, text, isOn, () => act.setAll(toAll))
   // 글 기둥 폭(Box 칸): 아이콘 칸 · 사이 · 금액(+ 시간) 칸 · 사이를 뺀 자리
   const textBox = cols - g.iconW - 1 - g.leadW - 1
+  // S6(0.6.1 피드백 — 앱 옆 패널 꼴): 카드 밖 작은 제목 + ⌄ / ›(제목 줄이 버튼) · 옆에 요약(합 · 진행 중), 펼치면 [최근 | 전체] 도 그 줄에
+  const summary =
+    all.length === 0 && !(liveNote && !fold.isOpen) ? null : (
+      <Text key="s-history-sum" wrap="wrap">
+        {!fold.isOpen && liveNote ? <Text color={LIVE_HEX}>{`● ${liveNote}`}</Text> : null}
+        {!fold.isOpen && liveNote && all.length > 0 ? <Text dimColor>{' · '}</Text> : null}
+        {/* 합은 남겨 둔 질문(최대 60개)의 합이라 세션 누적보다 작을 수 있다 — "N개 합" 으로 무엇의 합인지 */}
+        {all.length > 0 ? <Text>{L(`${all.length}개 합 `, `${all.length} total `)}</Text> : null}
+        {all.length > 0 ? <Text bold>{fmtUsd(total)}</Text> : null}
+        {fold.isOpen && all.length > 0 ? (
+          <Text dimColor>
+            {detail === 'summary'
+              ? L(' · (+N)은 그 질문이 늘린 컨텍스트', ' · (+N) = context the question added')
+              : L(' · ▸ 로 자세히 · (+N)은 그 질문이 늘린 컨텍스트', ' · ▸ for details · (+N) = context the question added')}
+          </Text>
+        ) : null}
+      </Text>
+    )
   return (
-    <Box key="s-history" flexDirection="column" marginTop={1} {...CARD}>
-      {/* 제목 줄 아래 한 칸 더 — 줄마다 위 한 칸이 있지만 제목 줄의 버튼이 높아 붙어 보였다 */}
-      <Box columnGap={1} alignItems="center" flexWrap="wrap" marginBottom={fold.isOpen ? 1 : 0} {...titleBand()}>
-        {foldButton(ui, 's-history', fold)}
-        {/* 제목 띠 위 아이콘은 회색 하나 — 카드 제목과 같은 꼴(section 과 같은 아이콘 함수) */}
-        {decoIcon(ui, 'questions', ICON_GRAY, L('질문별 비용', 'Cost per question'), 's-history-icon')}
-        <Text bold>{L('질문별 비용', 'Cost per question')}</Text>
-        {/* 최근 · 전체 전환은 펼쳤을 때만(목록을 바꾸는 버튼). 접으면 진행 중 질문 값을 요약 앞에 붙인다 */}
-        {/* 줄로 다 못 그리면 "전체" 가 아니라 "최근 30" — 이름과 보이는 것이 맞게. 둘은 묶음 칸(R1) */}
+    <Box key="s-history" flexDirection="column" marginTop={1}>
+      <Box key="s-history-head" columnGap={1} alignItems="center" flexWrap="wrap">
+        {foldHead(ui, 's-history', L('질문별 비용', 'Cost per question'), fold)}
+        {summary}
+        {/* 최근 · 전체 전환은 펼쳤을 때만(목록을 바꾸는 버튼). 줄로 다 못 그리면 "전체" 가 아니라 "최근 30" — 이름과 보이는 것이 맞게 */}
         {fold.isOpen && hasMore
           ? segGroup(ui, 'history-seg', [
               toggle('history-recent', L(`최근 ${RECENT_COUNT}`, `Last ${RECENT_COUNT}`), !isAll, false),
@@ -944,24 +982,10 @@ export function drawHistory(
               ),
             ])
           : null}
-        {/* 합은 남겨 둔 질문(최대 60개)의 합이라 세션 누적보다 작을 수 있다 — "N개 합" 으로 무엇의 합인지 */}
-        {all.length === 0 && !(liveNote && !fold.isOpen) ? null : (
-          <Text wrap="wrap">
-            {!fold.isOpen && liveNote ? <Text color={LIVE_HEX}>{`● ${liveNote}`}</Text> : null}
-            {!fold.isOpen && liveNote && all.length > 0 ? <Text dimColor>{' · '}</Text> : null}
-            {all.length > 0 ? <Text>{L(`${all.length}개 합 `, `${all.length} total `)}</Text> : null}
-            {all.length > 0 ? <Text bold>{fmtUsd(total)}</Text> : null}
-            {fold.isOpen && all.length > 0 ? (
-              <Text dimColor>
-                {detail === 'summary'
-                  ? L(' · (+N)은 그 질문이 늘린 컨텍스트', ' · (+N) = context the question added')
-                  : L(' · ▸ 로 자세히 · (+N)은 그 질문이 늘린 컨텍스트', ' · ▸ for details · (+N) = context the question added')}
-              </Text>
-            ) : null}
-          </Text>
-        )}
       </Box>
-      {fold.isOpen ? liveEl : null}
+      {fold.isOpen ? (
+      <Box key="s-history-card" flexDirection="column" {...CARD}>
+      {liveEl}
       {fold.isOpen && all.length === 0 && !liveEl ? emptyLine(ui, 'h-none', L('아직 끝난 질문이 없습니다.', 'No finished questions yet.')) : null}
       {(fold.isOpen ? shown : []).map((t, i) => {
         const id = Number.isFinite(t.atMs) ? t.atMs : -i
@@ -992,11 +1016,8 @@ export function drawHistory(
         const extra = isOpen ? (
           <Box key={`hbox-${i}`} {...DETAIL_BOX}>
             {/* 메인 / 🤖 에이전트 / ⚙ 앱 자체 요청 — 줄마다(에이전트가 없으면 예전처럼 한 줄) */}
-            {costBreakdown(t.cost, t.appUsd, t.details, t.steps).map((line, k) => (
-              <Text key={`hb-${i}-${k}`} dimColor wrap="wrap">
-                {line}
-              </Text>
-            ))}
+            {/* 에이전트 줄은 데스크톱이면 🤖 대신 도트 캐릭터(B4) */}
+            {costBreakdown(t.cost, t.appUsd, t.details, t.steps).map((line, k) => agentText(ui, `hb-${i}-${k}`, line, agentSum(t.details)?.running === true, { dimColor: true, wrap: 'wrap' }))}
             {(t.details ?? []).length === 0
               ? emptyLine(ui, `hd-none-t-${i}`, L('동작별 기록이 없는 예전 질문입니다.', 'An earlier question without per-step records.'))
               : detailRows(ui, top.shown, `hd-${i}`, textBox - DETAIL_INSET, g, top.rest > 0)}
@@ -1019,6 +1040,8 @@ export function drawHistory(
             `${plural(older.length, 'earlier question')} · ${fmtUsd(olderUsd)} total — the pane draws only the last ${HISTORY_ALL_MAX} as rows (size limit)`,
           )}
         </Text>
+      ) : null}
+      </Box>
       ) : null}
     </Box>
   )
@@ -1370,17 +1393,23 @@ export function drawSummary(
       </Text>
     )
   // 메인 / 에이전트 / 앱 자체 — 에이전트 · 앱 자체 요청이 있을 때만(없으면 전부 메인이라 같은 값을 또 적는 셈)
+  const mainPart = L(`메인 ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`, `main ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`)
+  const agentPartText = agentUsd > 0 ? withIcon('🤖', L(`에이전트 ${fmtUsd(agentUsd)}`, `agents ${fmtUsd(agentUsd)}`)) : null
+  const appPart = appUsd >= APP_MIN_USD ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd)}`, `app's own ${fmtUsd(appUsd)}`)) : null
+  // B4: 데스크톱은 🤖 대신 도트 캐릭터(이 세션에 아직 도는 에이전트가 있으면 걷는다)
   const split =
     agentUsd > 0 || appUsd >= APP_MIN_USD ? (
-      <Text wrap="wrap" dimColor>
-        {[
-          L(`메인 ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`, `main ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`),
-          agentUsd > 0 ? withIcon('🤖', L(`에이전트 ${fmtUsd(agentUsd)}`, `agents ${fmtUsd(agentUsd)}`)) : null,
-          appUsd >= APP_MIN_USD ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd)}`, `app's own ${fmtUsd(appUsd)}`)) : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')}
-      </Text>
+      agentPartText && agentPartText.startsWith('🤖 ') && onDesktop() ? (
+        <Box key="m-split-row" flexDirection="row" flexWrap="wrap" alignItems="center">
+          <Text dimColor>{mainPart}</Text>
+          {agentText(ui, 'm-split-agents', agentPartText, sums.some(s => agentSum(s.details)?.running === true), { dimColor: true }, ' · ')}
+          {appPart ? <Text dimColor>{` · ${appPart}`}</Text> : null}
+        </Box>
+      ) : (
+        <Text wrap="wrap" dimColor>
+          {[mainPart, agentPartText, appPart].filter(Boolean).join(' · ')}
+        </Text>
+      )
     ) : null
   const hint =
     u && u.costUsd !== null ? (
