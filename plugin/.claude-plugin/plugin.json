@@ -2,10 +2,25 @@
   "name": "easy-compact",
   "version": "0.6.0",
   "description": "The Easy Compact bar above the input and the Easy Compact pane for Claude Code: live context, cost and plan limits, when to compact, and one-click Save & compact. Requires Claude Code 2.1.295+.",
+  "types": "./types/index.d.ts",
   "author": {
     "name": "JaeSeongHa5280"
   },
   "homepage": "https://github.com/JaeSeongHa5280/easy-compact",
   "repository": "https://github.com/JaeSeongHa5280/easy-compact",
-  "license": "MIT"
+  "license": "MIT",
+  "displayName": "Easy Compact",
+  "keywords": [
+    "cost",
+    "tokens",
+    "context",
+    "compact",
+    "cache",
+    "usage",
+    "pricing",
+    "mod"
+  ],
+  "documentationUrl": "https://github.com/JaeSeongHa5280/easy-compact#readme",
+  "supportUrl": "https://github.com/JaeSeongHa5280/easy-compact/issues",
+  "privacyPolicyUrl": "https://github.com/JaeSeongHa5280/easy-compact/blob/main/plugin/README.md#what-it-sends"
 }
