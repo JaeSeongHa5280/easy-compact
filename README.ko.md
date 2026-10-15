@@ -193,7 +193,7 @@ Claude Code 는 요청마다 컨텍스트 전체를 다시 읽습니다. 300k �
 
 ## 데모 · 60초
 
-https://github.com/user-attachments/assets/f357e96b-41fe-496e-8a1c-4e3b05c8c397
+https://github.com/user-attachments/assets/14ada62f-b8b0-4362-a69f-7014d85a4fff
 
 ## 기능
 

@@ -193,7 +193,7 @@ Claude Code re-reads the whole context on every request — a session at 300k pa
 
 ## Demo · 60 s
 
-https://github.com/user-attachments/assets/f357e96b-41fe-496e-8a1c-4e3b05c8c397
+https://github.com/user-attachments/assets/14ada62f-b8b0-4362-a69f-7014d85a4fff
 
 ## Features
 
