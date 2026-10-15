@@ -35,9 +35,12 @@ export type Settings = {
    *
    */
   cacheWarnMin5m: number
-  /** 정리 후 컴팩트 문구: 기본 프리셋 셋 중 하나, 또는 사용자가 쓴 글 */
+  /** 정리 후 컴팩트 문구: 기본 프리셋 셋 중 하나, 또는 직접(① tidyCustom · ② compactCustom 을 사용자가 씀) */
   tidy: TidyStyleId | 'custom'
+  /** ① 컴팩트 전에 보낼 글 — [저장하고 컴팩트] 저장 턴의 가운데(앞뒤 고정 글은 mod 가 붙인다) */
   tidyCustom: string
+  /** ② /compact 뒤에 붙일 글 — 요약에 남길 것(저장하고 컴팩트는 mod 고정 지시 뒤에, 바로 컴팩트는 이것만) */
+  compactCustom: string
   /**
    * 화면 언어. auto(기본) = Claude Code 설정 language → Claude 데스크톱 앱 언어 → OS 언어 → 영어, 한국어면 한국어 아니면
    * 영어. ko · en 은 고정 — 감지가 빗나갈 때(CLI 만 쓰고 아무것도 안 정한 경우 등) 설정 탭 맨 위 줄에서 바꾼다
@@ -88,6 +91,10 @@ export type Settings = {
    */
   spendToday: boolean
   spendMonth: boolean
+  /** 0.5 묶음 2(N15): 바 비용 줄 칸 순서(BAND_ORDER_DEFAULT 의 이름들) — 설정 "바 · 패널" 에서 ◂ 로 한 칸씩 앞으로 */
+  bandOrder: string[]
+  /** 0.5 묶음 2(N20): 모션 — system = OS 동작 줄이기만 따름, reduce = 게이지 · 점 움직임 없음(앱 "모션" 값은 mod 가 못 읽는다) */
+  motion: 'system' | 'reduce'
 }
 
 /** 오늘 · 이번 달 사용량(달러) — atMs 에 잰 값. tools/scan-spend.mjs 결과를 cost.ts spendUsd 로 센 것 */
@@ -95,11 +102,12 @@ export type SpendTotals = { atMs: number; today: number; month: number }
 
 /**
  * 설정 탭 easy-compact 칸(업데이트, 마켓 설치본만 — 2026-10-14 사용자 1~3안 · 자동 확인 없음). phase: idle(아직) · checking(마켓 받는 중) ·
- * latest · newer(받아 둔 마켓 사본이 더 새 판) · updating · done(받음 — 앱을 다시 켜면 적용) · failed. own = 이 판, market = 마켓 사본 판,
- * marketAt = 사본을 받은 때(known_marketplaces.json lastUpdated)
+ * latest · newer(받아 둔 마켓 사본이 더 새 판) · updating · done(받음 — 앱을 다시 켜면 적용) · failed · synced(앤트로픽 디렉터리에서 받은
+ * 판 — Claude Code 가 켤 때 저절로 새 판을 받아 버튼이 없다, 0.6.0). own = 이 판, market = 마켓 사본 판, marketAt = 사본을 받은 때
+ * (known_marketplaces.json lastUpdated)
  */
 export type UpdateState = {
-  phase: 'idle' | 'checking' | 'latest' | 'newer' | 'updating' | 'done' | 'failed'
+  phase: 'idle' | 'checking' | 'latest' | 'newer' | 'updating' | 'done' | 'failed' | 'synced'
   own: string | null
   market: string | null
   marketAt: string | null
@@ -346,6 +354,10 @@ export type LiveTurn = {
 
 /** 끝난 턴 요약. 답변 블록은 id 가 없어 마지막 글 끝부분(tail)으로 찾는다 */
 export type TurnSummary = {
+  /** 사람이 멈춘 질문(turn.complete isAborted, N7) — 요청이 0개여도 줄을 남기고 "⏹ 중단됨" */
+  aborted?: true
+  /** 대화 기록에서 다시 만든 질문(N3 — 이 판 전 세션). 앱 자체 요청 · 컴팩트 값 · 동작별 줄이 없다 */
+  rebuilt?: true
   tail: string
   steps: number
   cost: CostParts
@@ -463,6 +475,8 @@ declare module 'claude-code' {
       update: UpdateState
       /** 설정의 직접 쓴 문구 입력칸에 치는 중인 글(Enter 전). 화면을 다시 그려도 친 글이 남게 칸 값으로 다시 준다 */
       tidyDraft: string | null
+      /** 설정의 컴팩트 문구 ② /compact 뒤에 붙일 글 칸에 치는 중인 글(Enter 전) — tidyDraft 와 같은 까닭 */
+      compactDraft: string | null
       /**
        * 설정의 컴팩트 시점에서 고르는 중인 값(방식 · 구간 시작 · 끝 · 직접 지정 크기). [적용] 을 눌러야 저장 — 누르자마자
        * 바뀌어 고르는 도중에도 띠 · 색이 따라 움직였다. null 이면 바꾸는 중이 아니다

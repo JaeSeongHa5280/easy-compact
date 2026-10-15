@@ -1,9 +1,9 @@
 import type { BandShow, CompactInputs, CostParts, LiveTurn, StepDetail, TurnSummary, Usage } from '../types'
-import { cacheWarnFor, estimateFor, fmtTokens, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, sessionColorOf, thresholds } from './cost'
+import { cacheWarnFor, estimateFor, fmtTokens, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, sessionColorOf, thresholds, priceWarnings } from './cost'
 import { L, plural } from './i18n'
 import { bandShowOf, DEFAULT_SETTINGS, SESSION_COLORS_DEFAULT } from './settings'
 import { agentPart, callsOf, limitName, widthOf } from './text'
-import { iconOf, onTerminal, withIcon } from './glyph'
+import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
 import { bar, decoIcon, TILE } from './ui-common'
 import type { Ui } from './ui-common'
 
@@ -40,7 +40,7 @@ export function drawLimitsLine(ui: Ui, surface: string, u: Usage, nowMs: number,
           <Box key={`bl-${r.kind}-v`} columnGap={1} alignItems="center" flexShrink={0}>
             <Text dimColor>{limitName(r.kind)}</Text>
             {bar(ui, surface, r.percentUsed, limitHex(r.percentUsed), 64, L(`${limitName(r.kind)} 한도 ${r.percentUsed}%`, `${limitName(r.kind)} limit ${r.percentUsed}%`))}
-            <Text {...(r.percentUsed >= 90 ? { color: 'red' } : r.percentUsed >= 70 ? { color: 'yellow' } : {})}>
+            <Text {...(r.percentUsed >= 90 ? { color: 'error' } : r.percentUsed >= 70 ? { color: 'warning' } : {})}>
               {Math.round(r.percentUsed)}%
             </Text>
           </Box>
@@ -76,9 +76,11 @@ function lineWidth(cells: readonly LineCell[]): number {
  * 꺾인다). maxW = null 이면(설정 미리보기 등) 다 둔다.
  * 칸마다 따로 꺾이지 않는 조각(Box)으로 그린다 — 예전엔 줄 하나를 Text 하나로 그렸는데 데스크톱은 안쪽 Text 가 pre-wrap 이라 바깥
  * truncate 를 안 지켜 "…$0.60 이 / 득" 처럼 한글 낱말 중간에서 꺾였다(2026-10-14 render 도구로 원인 확인 · fb B1 · E1). 칸 Box 안
- * 글은 줄바꿈 속성이 없어 위로 뜨지 않는다(6ddd6b4 의 뜸은 Text 안 wrap Text 였다)
+ * 글은 줄바꿈 속성이 없어 위로 뜨지 않는다(6ddd6b4 의 뜸은 Text 안 wrap Text 였다).
+ * wrapW(나눌 폭 — 기본 maxW)를 넘으면 칸을 줄마다 직접 담아 나눈다 — 줄 머리 칸엔 " · " 를 안 붙인다. 엔진이 칸 사이에서 꺾게 두면
+ * 다음 줄이 "· 캐시 만료 …" 처럼 점으로 시작했다(0.6.0 CLI 확인)
  */
-export function fitLine(ui: Ui, cells: readonly LineCell[], maxW: number | null): LineFit {
+export function fitLine(ui: Ui, cells: readonly LineCell[], maxW: number | null, wrapW: number | null = maxW): LineFit {
   const { Box } = ui
   let list = [...cells]
   if (maxW !== null) {
@@ -90,19 +92,42 @@ export function fitLine(ui: Ui, cells: readonly LineCell[], maxW: number | null)
   }
   const width = lineWidth(list)
   if (list.length === 0) return { el: null, width: 0, over: false }
+  const rowEl = (row: readonly LineCell[], key?: string) => (
+    <Box {...(key ? { key } : {})} flexWrap="wrap" alignItems="center">
+      {row.map((c, i) => (
+        <Box key={c.key} flexShrink={0}>
+          {c.el(i === 0)}
+        </Box>
+      ))}
+    </Box>
+  )
+  const rows = wrapW !== null && width > wrapW ? packRows(list, wrapW) : [list]
   return {
-    el: (
-      <Box flexWrap="wrap" alignItems="center">
-        {list.map((c, i) => (
-          <Box key={c.key} flexShrink={0}>
-            {c.el(i === 0)}
-          </Box>
-        ))}
-      </Box>
-    ),
+    el: rows.length === 1 ? rowEl(list) : <Box flexDirection="column">{rows.map(r => rowEl(r, `${r[0]!.key}-row`))}</Box>,
     width,
     over: maxW !== null && width > maxW,
   }
+}
+
+/** 칸을 폭(w)에 맞춰 줄마다 담는다 — 안 드는 칸은 다음 줄 머리로, 한 칸이 줄보다 넓으면 그 칸 하나로 한 줄 */
+function packRows(list: readonly LineCell[], w: number): LineCell[][] {
+  const isTerm = onTerminal()
+  const rows: LineCell[][] = []
+  let row: LineCell[] = []
+  let rowW = 0
+  for (const c of list) {
+    const add = widthOf((row.length === 0 ? '' : SEP) + c.text, isTerm)
+    if (row.length > 0 && rowW + add > w) {
+      rows.push(row)
+      row = [c]
+      rowW = widthOf(c.text, isTerm)
+    } else {
+      row.push(c)
+      rowW += add
+    }
+  }
+  if (row.length > 0) rows.push(row)
+  return rows
 }
 
 /**
@@ -114,7 +139,29 @@ export function fitLine(ui: Ui, cells: readonly LineCell[], maxW: number | null)
 /** 바에 보일 오늘 · 이번 달 사용량(설정에서 켠 것만, 못 쟀으면 null) */
 export type SpendShown = { today: number | null; month: number | null }
 
-function costCells(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: readonly [number, number, number], isShort: boolean, spend: SpendShown | null = null): LineCell[] {
+/** 0.5 묶음 2(N15): 비용 줄 칸 순서(설정 bandOrder) — register 가 그리기 전에 넣는다(thresholds() 와 같은 방식) */
+let bandOrder: readonly string[] = ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache']
+
+export function setBandOrder(order: readonly string[]): void {
+  bandOrder = order
+}
+
+const ORDER_OF: Record<string, string> = { 'c-session': 'session', 'c-today': 'today', 'c-month': 'month', 'c-call': 'perRequest', 'c-ctx': 'context', 'c-range': 'range', 'c-cache': 'cache' }
+
+/** 칸을 설정 순서로(식은 캐시 상태 칸은 컨텍스트 바로 앞 — 상태 · 크기가 붙어 읽히게). 같은 순위는 원래 순서 */
+function costCells(...args: Parameters<typeof costCellsRaw>): LineCell[] {
+  const rank = (c: LineCell) => {
+    const name = ORDER_OF[c.key]
+    const i = name ? bandOrder.indexOf(name) : -1
+    return i >= 0 ? i : c.key === 'c-cold' ? bandOrder.indexOf('context') - 0.5 : 99
+  }
+  return costCellsRaw(...args)
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i)
+    .map(x => x.c)
+}
+
+function costCellsRaw(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: readonly [number, number, number], isShort: boolean, spend: SpendShown | null = null): LineCell[] {
   const { Box, Text } = ui
   const dot = (isFirst: boolean) => (isFirst ? null : <Text dimColor> · </Text>)
   const cells: LineCell[] = []
@@ -125,18 +172,32 @@ function costCells(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: read
   if (show.session && u.costUsd !== null) {
     const usd = u.costUsd
     const color = sessionColorOf(usd, colors)
+    // N22: 가격표에 없는 모델 · 1M 을 넘는 창 — 금액 옆 ⚠, 마우스를 올리면 까닭(바 설명 칩과 같은 꼴, 데스크톱만)
+    const warns = priceWarnings(u.model, u.window)
     cells.push({
       key: 'c-session',
-      text: `${L('세션 ', 'Session ')}${fmtUsd(usd)}`,
-      el: isFirst => (
-        <Text>
-          {dot(isFirst)}
-          <Text dimColor>{L('세션 ', 'Session ')}</Text>
-          <Text bold {...(color ? { color } : {})}>
-            {fmtUsd(usd)}
+      text: `${L('세션 ', 'Session ')}${fmtUsd(usd)}${warns.length > 0 ? ' ⚠' : ''}`,
+      el: isFirst => {
+        const line = (
+          <Text>
+            {dot(isFirst)}
+            <Text dimColor>{L('세션 ', 'Session ')}</Text>
+            <Text bold {...(color ? { color } : {})}>
+              {fmtUsd(usd)}
+            </Text>
+            {warns.length > 0 ? <Text color="warning"> ⚠</Text> : null}
           </Text>
-        </Text>
-      ),
+        )
+        if (warns.length === 0 || onTerminal()) return line
+        return (
+          <Box key="c-session-warn">
+            {line}
+            <Box position="absolute" top={0} left={0} display="none" hover={{ display: 'flex' }} backgroundColor="promptBorder" paddingX={1}>
+              <Text wrap="truncate-end">{warns.join(' · ')}</Text>
+            </Box>
+          </Box>
+        )
+      },
     })
   }
   // 오늘 · 이번 달(설정에서 켰을 때만) — 이 세션 금액 바로 뒤 돈 묶음. 모든 세션 기록 합이라 "~"(앱 자체 요청은 기록에 없다).
@@ -144,12 +205,12 @@ function costCells(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: read
   const spendCell = (key: string, name: string, usd: number, drop: number): LineCell => ({
     key,
     drop,
-    text: `${name}~${fmtUsd(usd)}`,
+    text: `${name}${fmtUsd(usd)}`,
     el: isFirst => (
       <Text>
         {dot(isFirst)}
         <Text dimColor>{name}</Text>
-        <Text bold>~{fmtUsd(usd)}</Text>
+        <Text bold>{fmtUsd(usd)}</Text>
       </Text>
     ),
   })
@@ -206,15 +267,14 @@ function costCells(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: read
     // 아이콘은 캡슐 꼴 Svg(빨강 — 바 바탕 위라 상태 색, 확인 카드 제목과 같은 그림), 터미널은 글만
     const isModel = est.reason === 'model'
     const stateWord = isModel ? L('모델 바뀜', 'Model switched') : L('캐시 만료', 'Cache expired')
-    const icon = decoIcon(ui, isModel ? 'switch' : 'cold', LEVEL_HEX.cut, stateWord, 'c-cold-icon')
+    // 0.5 묶음 2: 옛 캡슐 아이콘은 뺐다 — 빨강 굵은 "캐시 만료" 글이 말하고, 상태 그림은 버튼 옆 게이지 하나
     cells.push({
       key: 'c-cold',
-      text: withIcon('🧊', stateWord),
+      text: stateWord,
       el: isFirst => (
         <Box columnGap={1} alignItems="center">
           {isFirst ? null : <Text dimColor> ·</Text>}
-          {icon}
-          <Text color="red" bold>
+          <Text color="error" bold>
             {stateWord}
           </Text>
         </Box>
@@ -259,7 +319,7 @@ function costCells(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: read
             {(isFirst ? '' : ' · ') +
               (isShortForm ? L('캐시 만료 ', isFirst ? 'Cache expires in ' : 'cache expires in ') : L('캐시 만료까지 ', isFirst ? 'Cache expires in ' : 'cache expires in '))}
           </Text>
-          <Text {...(isLate ? { color: 'yellow' } : {})}>{L(`${mins}분 남음`, `${mins}m`)}</Text>
+          <Text {...(isLate ? { color: 'warning' } : {})}>{L(`${mins}분 남음`, `${mins}m`)}</Text>
         </Text>
       ),
       ...(isShortForm ? {} : { drop: 2.1, short: cacheCell(true) }),
@@ -282,8 +342,10 @@ export function fitEstimateLine(
   isShort: boolean,
   maxW: number | null,
   spend: SpendShown | null = null,
+  /** 줄을 나눌 폭(기본 maxW) — 설정 미리보기는 칸을 빼지 않고(maxW null) 이 폭으로만 나눈다 */
+  wrapW: number | null = maxW,
 ): LineFit {
-  return fitLine(ui, costCells(ui, u, nowMs, show, colors, isShort, spend), maxW)
+  return fitLine(ui, costCells(ui, u, nowMs, show, colors, isShort, spend), maxW, wrapW)
 }
 
 /** 비용 줄(폭 맞춤 없이) — 설정 미리보기 · 예전 부르는 곳. inputs 는 예전 인자(지금은 안 쓴다) */
@@ -296,8 +358,9 @@ export function drawEstimateLine(
   colors: readonly [number, number, number] = SESSION_COLORS_DEFAULT,
   isShort = false,
   spend: SpendShown | null = null,
+  wrapW: number | null = null,
 ) {
-  return fitEstimateLine(ui, u, nowMs, show, colors, isShort, null, spend).el
+  return fitEstimateLine(ui, u, nowMs, show, colors, isShort, null, spend, wrapW).el
 }
 
 /**
@@ -308,7 +371,7 @@ export function drawEstimateLine(
 export function rewriteNote(ui: Ui, rewriteUsd: number | undefined) {
   const { Text } = ui
   if (rewriteUsd === undefined || rewriteUsd < REWRITE_NOTE_USD) return null
-  return <Text color="yellow">{L(` · 캐시 다시 씀 ${fmtUsd(rewriteUsd)}`, ` · cache rewrite ${fmtUsd(rewriteUsd)}`)}</Text>
+  return <Text color="warning">{L(` · 캐시 다시 씀 ${fmtUsd(rewriteUsd)}`, ` · cache rewrite ${fmtUsd(rewriteUsd)}`)}</Text>
 }
 
 /**
@@ -327,11 +390,12 @@ export function drawBandPreview(
   last: TurnSummary | null,
   isLean = false,
   spend: SpendShown | null = null,
+  /** 견본 바 안쪽 폭(칸) — 비용 줄을 칸 사이에서 직접 나눈다(줄 머리 " · " 없이). 모르면 null(엔진이 꺾음) */
+  boxW: number | null = null,
 ) {
   const { Box, Text } = ui
   // 간단 화면은 한 줄 고정 — 한도 줄을 안 그린다(바와 같다)
   const limits = !isLean && u && u.rateLimits.length > 0 ? drawLimitsLine(ui, surface, u, nowMs, show) : null
-  const est = u ? drawEstimateLine(ui, u, nowMs, inputs, show, colors, false, spend) : <Text dimColor>{L('질문이 한 번 끝나면 비용이 보입니다', 'Costs appear after the first question finishes')}</Text>
   const turn = show.lastTurn ? drawLastTurnLine(ui, last, null) : null
   const fake = (key: string, text: string) => (
     <Text key={key} dimColor>
@@ -341,11 +405,18 @@ export function drawBandPreview(
   // 창 버튼은 바와 같게 — 바가 한 줄(간단 · 한도 줄 · 질문 줄 없음)이면 [—] 가 없다(register.tsx isOneRow). 간단 미리보기에도
   // "📊  —  ✕" 가 나왔다(공개 세션 발견, 2026-10-13)
   const isOneRow = isLean || (!limits && !show.lastTurn)
-  const win = fake(
-    'pv-win',
-    iconOf('📊') ? (isOneRow ? '📊  ✕' : '📊  —  ✕') : isOneRow ? L('[사용량] [✕]', '[Usage] [✕]') : L('[사용량] [—] [✕]', '[Usage] [—] [✕]'),
-  )
-  const compact = fake('pv-compact', withIcon('🗜', L('이지 컴팩트', 'Easy Compact')))
+  // 0.5 묶음 2: 패널 버튼 ◔ · 터미널 "패널 ▸", 컴팩트 버튼 이름 "컴팩트"(바와 같은 이름 — 게이지 그림은 미리보기 글 줄에 못 넣어 뺌)
+  const winText = onDesktop() ? (isOneRow ? '◔  ✕' : '◔  —  ✕') : isOneRow ? L('[패널 ▸] [✕]', '[Pane ▸] [✕]') : L('[패널 ▸] [—] [✕]', '[Pane ▸] [—] [✕]')
+  const compactText = L('컴팩트', 'Compact')
+  const win = fake('pv-win', winText)
+  const compact = fake('pv-compact', compactText)
+  // 질문 줄을 뺀 화면이면 이지 컴팩트는 비용 줄 오른쪽(한도 줄이 없으면 한 줄) — 바와 같은 규칙
+  const hasTurnRow = show.lastTurn
+  // 비용 줄 폭 = 견본 바 안쪽 − 같은 줄 오른쪽 글(줄 사이 2칸). 칸은 빼지 않고(최대 크기 견본) 이 폭으로만 나눈다
+  const isTerm = !onDesktop()
+  const estRight = limits ? (hasTurnRow ? 0 : widthOf(compactText, isTerm)) : hasTurnRow ? widthOf(winText, isTerm) : widthOf(compactText, isTerm) + 2 + widthOf(winText, isTerm)
+  const estW = boxW === null ? null : Math.max(12, boxW - (estRight > 0 ? estRight + 2 : 0))
+  const est = u ? drawEstimateLine(ui, u, nowMs, inputs, show, colors, false, spend, estW) : <Text dimColor>{L('질문이 한 번 끝나면 비용이 보입니다', 'Costs appear after the first question finishes')}</Text>
   const line = (key: string, left: unknown, right: unknown) => (
     <Box key={key} columnGap={2} alignItems="flex-start">
       <Box flexGrow={1} flexShrink={1} minWidth={0}>
@@ -358,8 +429,6 @@ export function drawBandPreview(
       ) : null}
     </Box>
   )
-  // 질문 줄을 뺀 화면이면 이지 컴팩트는 비용 줄 오른쪽(한도 줄이 없으면 한 줄) — 바와 같은 규칙
-  const hasTurnRow = show.lastTurn
   const rows = limits
     ? [line('pv-1', limits, win), est ? line('pv-2', est, hasTurnRow ? null : compact) : null, hasTurnRow || !est ? line('pv-3', turn, compact) : null]
     : [line('pv-1', est, hasTurnRow ? win : [compact, win]), hasTurnRow ? line('pv-3', turn, compact) : null]

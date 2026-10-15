@@ -21,9 +21,11 @@ import { CACHE_WARN_5M_DEFAULT, fmtUsd } from './cost'
  * [컴팩트 보류] 표시는 어느 문구든 mod 가 앞뒤에 붙인다.
  * use = 언제 쓰나 한 줄(설정 화면) — 하는 일만 적으니 셋이 비슷해 보여 고르기 어려웠다.
  * keep · reply = 설정 화면 단계 보기의 ② 저장 · ③ 답(문구마다 다른 곳만) — 원문(body)은 모델이 읽으라고 쓴 글이라
- * 사람이 머릿속에서 풀어야 했다. 원문은 그 아래 접어 둔다. save = 컴팩트 확인창의 "저장하고 컴팩트" 줄
+ * 사람이 머릿속에서 풀어야 했다. 원문은 그 아래 접어 둔다. save = 컴팩트 확인창의 "저장하고 컴팩트" 줄.
+ * compact = /compact 뒤에 붙이는 요약 지시(② 칸 — 사용자 2026-10-15 "컴팩트 전 문구 · /compact 뒤 문구 둘을 각각 셋팅, 나머지는 프리셋").
+ * 저장하고 컴팩트는 mod 고정 지시(직전 답 남김) 뒤에, 바로 컴팩트는 이것만
  */
-type TidyStyle = { name: string; use: string; keep: string; reply: string; save: string; body: string[] }
+type TidyStyle = { name: string; use: string; keep: string; reply: string; save: string; compact: string; body: string[] }
 
 /** 지금 언어의 문구 프리셋 — 이름 · 설명 · 모델에 보내는 글(body) 모두 그 언어로 */
 export function tidyStyles(): Record<TidyStyleId, TidyStyle> {
@@ -38,6 +40,7 @@ const STYLES: Record<Lang, Record<TidyStyleId, TidyStyle>> = {
     keep: '아직 파일에 없는 결정 · 진행 · 할 일 → 메모리 · 작업 기록',
     reply: '이어서 할 일 3~5줄',
     save: '아직 안 남긴 결정 · 진행 · 할 일을 메모리에 저장',
+    compact: '진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것',
     body: [
       '1) 이 세션에서 정해진 것 · 진행 상황 · 다음 할 일 중 아직 파일(작업 기록 · 메모리 · 레지스트리 등)에 남기지 않은 게 있으면 지금 남기세요.',
       '2) 컴팩트 뒤 이어서 할 일을 3~5줄로 정리해 답하세요.',
@@ -49,6 +52,7 @@ const STYLES: Record<Lang, Record<TidyStyleId, TidyStyle>> = {
     keep: '저장 안 함',
     reply: '이어서 할 일 3~5줄',
     save: '저장 없이 이어서 할 일만 정리',
+    compact: '이어서 할 일만 짧게 요약에 남길 것',
     body: ['1) 파일에는 아무것도 남기지 마세요.', '2) 컴팩트 뒤 이어서 할 일을 3~5줄로 정리해 답하세요.'],
   },
   thorough: {
@@ -57,6 +61,7 @@ const STYLES: Record<Lang, Record<TidyStyleId, TidyStyle>> = {
     keep: '결정과 이유 · 열린 질문 · 선호까지 → 메모리 · 작업 기록',
     reply: '이어서 할 일 5~10줄과 주의할 점',
     save: '결정 · 이유 · 열린 질문 · 선호까지 메모리에 저장',
+    compact: '진행 중 작업 · 결정과 이유 · 열린 질문 · 이어서 할 일은 요약에 자세히 남길 것',
     body: [
       '1) 이 세션에서 정해진 것과 그 이유, 아직 열린 질문, 사용자가 밝힌 선호 · 수정 요청 중 파일(작업 기록 · 메모리 · 레지스트리 등)에 없는 것을 지금 남기세요.',
       '2) 컴팩트 뒤 이어서 할 일을 5~10줄로, 주의할 점(함정 · 아직 확인 못 한 것)과 함께 정리해 답하세요.',
@@ -70,6 +75,7 @@ const STYLES: Record<Lang, Record<TidyStyleId, TidyStyle>> = {
       keep: 'Decisions · progress · to-dos not yet in files → memory · work log',
       reply: 'Next steps in 3–5 lines',
       save: 'Save decisions · progress · to-dos not yet recorded to memory',
+      compact: 'Keep ongoing work, decisions and next steps in the summary',
       body: [
         '1) Of what was decided in this session, the progress and the next steps, record now anything not yet in files (work log · memory · registry, etc.).',
         '2) Answer with the next steps after compacting, in 3–5 lines.',
@@ -81,6 +87,7 @@ const STYLES: Record<Lang, Record<TidyStyleId, TidyStyle>> = {
       keep: 'No saving',
       reply: 'Next steps in 3–5 lines',
       save: 'Only list the next steps, no saving',
+      compact: 'Keep only the next steps, briefly, in the summary',
       body: ['1) Do not record anything to files.', '2) Answer with the next steps after compacting, in 3–5 lines.'],
     },
     thorough: {
@@ -89,6 +96,7 @@ const STYLES: Record<Lang, Record<TidyStyleId, TidyStyle>> = {
       keep: 'Decisions and reasons · open questions · preferences → memory · work log',
       reply: 'Next steps in 5–10 lines, with cautions',
       save: 'Save decisions · reasons · open questions · preferences to memory',
+      compact: 'Keep ongoing work, decisions with reasons, open questions and next steps in the summary in detail',
       body: [
         '1) Record now anything not yet in files (work log · memory · registry, etc.) among: what was decided in this session and why, open questions, and preferences or corrections the user stated.',
         '2) Answer with the next steps after compacting in 5–10 lines, with cautions (pitfalls · things not yet verified).',
@@ -117,6 +125,43 @@ export const RANGE_ROWS: readonly number[] = [100_000, 150_000, 200_000, 250_000
  * 고르는 버튼 둘은 낯설었다
  */
 export const RANGE_BANDS: readonly (readonly [number, number])[] = RANGE_ROWS.slice(1).map((end, i) => [RANGE_ROWS[i]!, end] as const)
+
+/**
+ * N22: 최대 컨텍스트 양(엔진 창 — 사용량 window). 1M 을 넘으면(2M 창) 구간 목록 · 직접 지정 상한 · 자동 컴팩트 자리가 창을 따라
+ * 늘어난다(요율은 그대로 — 경고는 cost.ts priceWarnings). register 가 사용량을 읽을 때 맞춘다(언어처럼 모듈 하나의 값)
+ */
+let contextWindow = 1_000_000
+
+export function setContextWindow(w: number | null | undefined): void {
+  if (typeof w === 'number' && Number.isFinite(w) && w > 0) contextWindow = w
+}
+
+export function contextWindowNow(): number {
+  return contextWindow
+}
+
+/** 구간 목록의 경계: 1M 창까지는 RANGE_ROWS, 창이 더 크면 50만 칸씩 창까지 */
+export function rangeRows(): readonly number[] {
+  if (contextWindow <= RANGE_ROWS[RANGE_ROWS.length - 1]!) return RANGE_ROWS
+  const more: number[] = []
+  for (let v = 1_500_000; v < contextWindow; v += 500_000) more.push(v)
+  return [...RANGE_ROWS, ...more, contextWindow]
+}
+
+export function rangeBands(): readonly (readonly [number, number])[] {
+  const rows = rangeRows()
+  return rows.slice(1).map((end, i) => [rows[i]!, end] as const)
+}
+
+/** 직접 지정 크기 · 구간 끝의 상한: 1M 과 창 중 큰 쪽 */
+export function compactMax(): number {
+  return Math.max(COMPACT_MAX, contextWindow)
+}
+
+/** 엔진 자동 컴팩트가 도는 자리(어림): 창의 96.7%(1M 창이면 약 967k) */
+export function autoCompactAt(): number {
+  return Math.round(contextWindow * 0.967)
+}
 
 /** 한도 줄 칸 다 켬(처음 값) */
 const ALL_LIMITS: LimitShow = { fiveHour: true, sevenDay: true, resets: true }
@@ -169,6 +214,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cacheWarnMin5m: CACHE_WARN_5M_DEFAULT,
   tidy: 'default',
   tidyCustom: '',
+  compactCustom: '',
   lang: 'auto',
   band: 'full',
   bandFolded: false,
@@ -189,6 +235,49 @@ export const DEFAULT_SETTINGS: Settings = {
   // 오늘 · 이번 달 사용량은 처음엔 끔 — 늘 볼 값이 아니라 옵션
   spendToday: false,
   spendMonth: false,
+  bandOrder: ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache'],
+  motion: 'system',
+}
+
+/** 바 비용 줄 칸 순서의 기본(0.5 묶음 2 N15) — 세션 · 오늘 · 이번 달(돈) → 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시 */
+export const BAND_ORDER_DEFAULT: readonly string[] = ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache']
+
+/** 저장값 → 순서(모르는 이름은 버리고 빠진 이름은 기본 자리 순서로 뒤에) */
+export function normalizeOrder(raw: unknown): string[] {
+  const got = Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string' && BAND_ORDER_DEFAULT.includes(k)) : []
+  const seen = [...new Set(got)]
+  return [...seen, ...BAND_ORDER_DEFAULT.filter(k => !seen.includes(k))]
+}
+
+/** 돈 칸(세션 · 오늘 · 이번 달)의 여섯 순서 — 설정 "돈 칸 순서" 드롭다운(0.5 묶음 2 N15) */
+export const MONEY_KEYS: readonly string[] = ['session', 'today', 'month']
+export const MONEY_ORDERS: readonly (readonly string[])[] = [
+  ['session', 'today', 'month'],
+  ['session', 'month', 'today'],
+  ['today', 'session', 'month'],
+  ['today', 'month', 'session'],
+  ['month', 'session', 'today'],
+  ['month', 'today', 'session'],
+]
+
+/** 지금 순서의 돈 칸만(순서대로) */
+export function moneyOf(order: readonly string[]): string[] {
+  return normalizeOrder(order).filter(k => MONEY_KEYS.includes(k))
+}
+
+/** 돈 칸 순서를 바꾼다 — 돈 칸이 맨 앞, 나머지는 그대로 뒤에 */
+export function withMoney(s: Settings, money: readonly string[]): Settings {
+  const rest = normalizeOrder(s.bandOrder).filter(k => !MONEY_KEYS.includes(k))
+  return { ...s, bandOrder: [...money, ...rest] }
+}
+
+/** 칸 하나를 한 칸 앞으로(맨 앞이면 그대로) */
+export function moveEarlier(s: Settings, key: string): Settings {
+  const o = normalizeOrder(s.bandOrder)
+  const i = o.indexOf(key)
+  if (i <= 0) return s
+  ;[o[i - 1], o[i]] = [o[i]!, o[i - 1]!]
+  return { ...s, bandOrder: o }
 }
 
 /**
@@ -326,10 +415,10 @@ export function setLimits(s: Settings, on: boolean): Settings {
 /** 새 세션에서 자동으로 열기 한 줄 풀이(설정 탭 · 명령 답) */
 export function paneAutoUse(isOn: boolean): string {
   return isOn
-    ? L('새 세션은 사용량 패널을 연 채로 시작합니다. 그 뒤 닫으면 닫힌 채로 둡니다.', 'New sessions start with the Usage pane open. Once you close it, it stays closed.')
+    ? L('새 세션은 이지 컴팩트 패널을 연 채로 시작합니다. 그 뒤 닫으면 닫힌 채로 둡니다.', 'New sessions start with the Easy Compact pane open. Once you close it, it stays closed.')
     : L(
-        `새 세션은 패널이 닫힌 채로 시작합니다. 바의 ${onTerminal() ? '사용량 패널' : '📊'} 버튼으로 엽니다.`,
-        `New sessions start with the pane closed. Open it with the ${onTerminal() ? 'Usage pane' : '📊'} button on the bar.`,
+        `새 세션은 패널이 닫힌 채로 시작합니다. 바의 ${onTerminal() ? '패널' : '◔'} 버튼으로 엽니다.`,
+        `New sessions start with the pane closed. Open it with the ${onTerminal() ? 'Pane' : '◔'} button on the bar.`,
       )
 }
 
@@ -361,8 +450,8 @@ export function bandModeName(m: BandMode): string {
 /** 띠 크기 한 줄 풀이(설정 탭) — 한 줄 바는 한도 · 컴팩트 구간 · 질문 줄을 빼고 캐시는 남긴다(ui-band minShowOf) */
 export function bandModeUse(m: BandMode): string {
   return m === 'full'
-    ? L('전체: 한도 · 비용 · 질문 줄과 이지 컴팩트 버튼. 칸은 화면 → 세부에서 뺄 수 있습니다.', 'Full: limits, cost and question rows with the Easy Compact button. Hide parts under Screen → Details.')
-    : L('한 줄: 이 세션 · 요청당 · 컨텍스트 · 캐시 한 줄과 이지 컴팩트 · 사용량 패널 버튼.', 'One line: session, per request, context and cache, plus the Easy Compact and Usage pane buttons.')
+    ? L('전체: 한도 · 비용 · 질문 줄과 컴팩트 버튼. 칸은 아래 "바에 보일 칸" 에서 뺄 수 있습니다.', 'Full: limits, cost and question rows with the Compact button. Hide parts under "What the bar shows" below.')
+    : L('한 줄: 이 세션 · 요청당 · 컨텍스트 · 캐시 한 줄과 컴팩트 · 패널 버튼.', 'One line: session, per request, context and cache, plus the Compact and pane buttons.')
 }
 
 /**
@@ -384,7 +473,7 @@ export function revealLabel(isClosed: boolean): string {
 export function bandAutoUse(isOn: boolean): string {
   return isOn
     ? L(
-        `✕ 로 접어 둔 바가 컴팩트 구간 시작(노랑) · 캐시 만료에 닿으면 저절로 펴지고, 컴팩트하면 다시 접힙니다. 펴진 바를 ✕ 로 접으면 더 급해질 때(빨강 · 캐시 만료)까지 기다립니다.`,
+        `✕ 로 접어 둔 바가 컴팩트 구간 시작(주황) · 캐시 만료에 닿으면 저절로 펴지고, 컴팩트하면 다시 접힙니다. 펴진 바를 ✕ 로 접으면 더 급해질 때(빨강 · 캐시 만료)까지 기다립니다.`,
         `A bar folded with ✕ opens by itself at the start of the compact range (yellow) or when the cache expires, and folds again after a compact. Fold it again with ✕ and it waits until things get more urgent (red · cache expired).`,
       )
     : L(`✕ 로 접은 바는 입력창 아래 [${revealLabel(true)}] 를 누를 때까지 접힌 채입니다.`, `A bar folded with ✕ stays folded until you press [${revealLabel(true)}] below the input.`)
@@ -515,7 +604,7 @@ export function isViewPart(key: keyof BandShow): boolean {
 
 /** 크기를 값으로 직접 지정(명령). 범위 밖이면 끝 값으로 */
 export function setCompactAt(s: Settings, tokens: number): Settings {
-  return { ...s, compactAt: Math.min(COMPACT_MAX, Math.max(COMPACT_MIN, Math.round(tokens))), follow: false }
+  return { ...s, compactAt: Math.min(compactMax(), Math.max(COMPACT_MIN, Math.round(tokens))), follow: false }
 }
 
 /** 구간 방식 켜고 끄기. 끌 때(직접 지정) shown(지금 빨강 = 구간 끝)을 그 크기로 — 바꾸자마자 빨강이 튀지 않게 */
@@ -526,7 +615,7 @@ export function setFollow(s: Settings, on: boolean, shown?: number): Settings {
 
 /** 구간을 값으로 정하고 구간 방식으로(명령). 범위 밖이면 끝 값으로, 시작이 끝 이상이면 그대로 */
 export function setRange(s: Settings, start: number, end: number): Settings {
-  const clamp = (v: number) => Math.min(COMPACT_MAX, Math.max(COMPACT_MIN, Math.round(v)))
+  const clamp = (v: number) => Math.min(compactMax(), Math.max(COMPACT_MIN, Math.round(v)))
   return clamp(start) < clamp(end) ? { ...s, follow: true, rangeStart: clamp(start), rangeEnd: clamp(end) } : s
 }
 
@@ -568,9 +657,23 @@ export function chooseTidy(s: Settings, text: string): Settings {
   return t ? setTidyCustom(s, t) : s
 }
 
-/** 직접 쓴 문구를 저장하고 고른다(설정 화면 입력칸의 Enter). 빈 글이면 지운다 — 그동안 일반 문구 */
+/**
+ * ① 컴팩트 전에 보낼 글(설정 화면 ① 칸의 Enter · 명령 '문구 <글>')을 저장하고 직접을 고른다. 프리셋에서 처음 직접으로 오면 ② 칸은
+ * 그 프리셋 글로 채운다 — 한 칸만 고쳐도 다른 칸이 비지 않게. 빈 글이면 지운다(그동안 그 칸은 일반 문구)
+ */
 export function setTidyCustom(s: Settings, text: string): Settings {
-  return { ...s, tidy: 'custom', tidyCustom: text.trim() }
+  return { ...s, tidy: 'custom', tidyCustom: text.trim(), compactCustom: s.tidy === 'custom' ? s.compactCustom : compactText(s) }
+}
+
+/** ② /compact 뒤에 붙일 글(설정 화면 ② 칸의 Enter) — ① 과 같은 규칙(프리셋에서 오면 ① 칸은 그 프리셋 글로) */
+export function setCompactCustom(s: Settings, text: string): Settings {
+  return { ...s, tidy: 'custom', compactCustom: text.trim(), tidyCustom: s.tidy === 'custom' ? s.tidyCustom : tidyBody(s).join('\n') }
+}
+
+/** ② /compact 뒤에 붙일 글: 직접이고 쓴 글이 있으면 그 글, 아니면 고른 프리셋(직접인데 비었으면 일반) */
+export function compactText(s: Settings): string {
+  if (s.tidy === 'custom' && s.compactCustom !== '') return s.compactCustom
+  return tidyStyles()[s.tidy === 'custom' ? 'default' : s.tidy].compact
 }
 
 /** 직접을 골랐고 쓴 글이 있나 — 없으면 일반 문구대로 한다 */
@@ -614,6 +717,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const cacheWarnMin5m = isCount(r.cacheWarnMin5m) && r.cacheWarnMin5m < 5 ? r.cacheWarnMin5m : DEFAULT_SETTINGS.cacheWarnMin5m
   const tidy = r.tidy === 'custom' || TIDY_IDS.includes(r.tidy as TidyStyleId) ? (r.tidy as Settings['tidy']) : 'default'
   const tidyCustom = typeof r.tidyCustom === 'string' ? r.tidyCustom : ''
+  const compactCustom = typeof r.compactCustom === 'string' ? r.compactCustom : ''
   const lang = r.lang === 'ko' || r.lang === 'en' ? r.lang : 'auto'
   // 0.2.0 의 band 'auto'(컴팩트할 때만 = 한 줄로 나옴)는 최소 + 필요할 때만으로
   const rawBand = (r as { band?: unknown }).band
@@ -630,6 +734,8 @@ export function normalizeSettings(raw: unknown): Settings {
   // 오늘 · 이번 달 사용량(0.5.0 새 칸) — 없으면 끔
   const spendToday = (r as { spendToday?: unknown }).spendToday === true
   const spendMonth = (r as { spendMonth?: unknown }).spendMonth === true
+  const bandOrder = normalizeOrder((r as { bandOrder?: unknown }).bandOrder)
+  const motion = (r as { motion?: unknown }).motion === 'reduce' ? 'reduce' : 'system'
   const custom = normalizeView((r as { custom?: unknown }).custom)
   // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)
   const rawScreen = (r as { screen?: unknown }).screen
@@ -654,7 +760,7 @@ export function normalizeSettings(raw: unknown): Settings {
           : screen === 'custom'
             ? limitFrom(rawCustomShow, ALL_LIMITS)
             : ALL_LIMITS
-    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth }
+    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion }
   }
   // 화면이 없는 저장값 = 0.4.0 전부터 쓰던 사람: 칸(bandShow) · 패널 보기(paneMode — 없으면 자세히)를 옮긴다. 한도 칸은 한도 줄로,
   // 비용 · 질문 줄 칸을 다 켰으면(손대지 않음) 간단 — 업데이트 뒤 첫 화면. 하나라도 껐으면 고른 것이라 그 칸 ·
@@ -668,7 +774,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const allOn = (Object.keys(oldShow) as (keyof CostShow)[]).every(k => oldShow[k])
   const migrated: Pick<Settings, 'screen' | 'custom'> =
     allOn ? { screen: 'simple', custom } : { screen: 'custom', custom: { ...SCREEN_VIEWS.detail, bandShow: oldShow, info: oldPane === 'simple' ? 'lean' : 'full' } }
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth }
+  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion }
 }
 
 /** 저장값 안의 객체(아니면 빈 객체) */

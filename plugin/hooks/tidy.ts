@@ -1,6 +1,6 @@
 import type { Settings } from '../types'
 import { L } from './i18n'
-import { tidyBody } from './settings'
+import { compactText, tidyBody } from './settings'
 
 /**
  * 컴팩트 지시문 — [컴팩트 준비] 프롬프트 · 진행/보류 표시 · 컴팩트 종류 이름 · 요약에 남길 것.
@@ -88,31 +88,42 @@ export function tidyPrompt(body: readonly string[]): string {
   ].join('\n')
 }
 
-/** 설정 화면 "보내는 글 전체": 저장 턴에 보내는 글 줄마다(고른 문구 줄 표시) + 그 턴이 끝난 뒤 /compact 지시 */
+/**
+ * 설정 화면 "보내는 글 전체": [저장하고 컴팩트] 저장 턴에 보내는 글 줄마다(① 칸 줄 표시) + 그 턴이 끝난 뒤 /compact 지시 +
+ * [바로 컴팩트] 의 /compact 지시(② 칸 글이 두 버튼 모두에 붙는다)
+ */
 export function tidyScript(s: Settings): { text: string; isBody: boolean }[] {
   const body = tidyBody(s)
   return [
+    { text: L('[저장하고 컴팩트]', '[Save & compact]'), isBody: false },
     ...tidyPrompt(body)
       .split('\n')
       .map(text => ({ text, isBody: body.includes(text) })),
-    { text: L(`답이 ${markGo()}으로 끝나면: /compact ${compactKeep()}`, `If the answer ends with ${markGo()}: /compact ${compactKeep()}`), isBody: false },
+    { text: L(`→ 답이 ${markGo()}으로 끝나면: /compact ${compactKeep(s)}`, `→ If the answer ends with ${markGo()}: /compact ${compactKeep(s)}`), isBody: false },
+    { text: '', isBody: false },
+    { text: L(`[바로 컴팩트] /compact ${directKeep(s)}`, `[Compact now] /compact ${directKeep(s)}`), isBody: false },
   ]
 }
 
-/** 정리 답(이어서 할 일 등)을 요약이 버리지 않게 /compact 에 함께 넘기는 지시 */
-export function compactKeep(): string {
-  return L(
+/**
+ * 저장하고 컴팩트의 /compact 지시: 정리 답(이어서 할 일 등)을 요약이 버리지 않게 넘기는 고정 지시 + 설정 ② 칸 글(요약에 남길 것).
+ * s 를 안 주면 고정 지시만(예전 꼴)
+ */
+export function compactKeep(s?: Settings): string {
+  const fixed = L(
     `직전 ${tidyTag()} 답에 적은 내용("이어서 할 일" 등)은 요약에 그대로 남길 것`,
     `Keep what the previous ${tidyTag()} answer wrote (e.g. "next steps") in the summary as is`,
   )
+  const extra = s ? compactText(s) : ''
+  return extra ? `${fixed}. ${extra}` : fixed
 }
 
 /**
- * 정리 없이 바로 컴팩트할 때(캐시가 살아 있든 식었든) — 정리 턴이 하던 일을 요약 지시로 대신한다.
- * 지시문은 몇십 토큰이라 늘 붙인다. 캐시 상태로 정하는 건 정리 단계를 할지 뿐이다
+ * 정리 없이 바로 컴팩트할 때(캐시가 살아 있든 식었든) — 정리 턴이 하던 일을 요약 지시로 대신한다: 설정 ② 칸 글(프리셋 일반 =
+ * "진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것"). 지시문은 몇십 토큰이라 늘 붙인다. 캐시 상태로 정하는 건 정리 단계를 할지 뿐이다
  */
-export function directKeep(): string {
-  return L('진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것', 'Keep ongoing work, decisions and next steps in the summary')
+export function directKeep(s?: Settings): string {
+  return s ? compactText(s) : L('진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것', 'Keep ongoing work, decisions and next steps in the summary')
 }
 
 /** 정리 턴의 답으로 다음 단계를 정한다(표시는 두 언어 다 받는다) */

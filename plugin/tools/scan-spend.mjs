@@ -1,12 +1,14 @@
 // 오늘 · 이번 달 사용량 재료 — 모든 세션 기록(메인 <세션>.jsonl + 하위 에이전트 <세션>/subagents/*.jsonl)의 요청 토큰을
-// 날짜(이 PC 지역 시각) · 모델 · 크기 묶음별로 합한다. 값(달러)은 mod 가 공식 요율표(hooks/cost.ts)로 센다 — 요율은 한 곳에만.
+// 날짜(UTC — Claude 사용량 화면처럼, 한국은 오전 9시에 바뀜) · 모델 · 크기 묶음별로 합한다. 값(달러)은 mod 가 공식 요율표(hooks/cost.ts)로 센다 — 요율은 한 곳에만.
 // mod 의 $.fs.read 는 4 MiB 넘는 파일을 거부하고 기록은 수백 개라 $.process.run 으로 이 스크립트를 돌린다(scan-transcript.mjs 와 같은 길).
 //
 // 쓰는 법: node scan-spend.mjs <projects 폴더> <캐시 파일> <시작 시각 ms>
 // 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, files, scanned }
 //   S = 프롬프트(입력 + 캐시 읽기 + 쓰기) 10만 이하 요청, L = 넘는 요청 — 긴 프롬프트 요율(지금은 Haiku 5.5 10만 초과 5배)을 가른다
 // 캐시: 파일마다 크기 · 수정 시각이 같으면 다시 안 읽는다 — 처음 켤 때만 이번 달 기록을 다 읽는다(기록이 크면 수십 초).
-// 규칙: assistant 줄의 message.usage, 같은 message.id 는 파일마다 한 번(같은 응답이 여러 번 적힌다). 날짜는 그 줄 timestamp.
+// 규칙: assistant 줄의 message.usage, 같은 message.id 는 파일마다 첫 줄로 세고(날짜 · 모델 · 크기 묶음), 뒤 줄은 출력만 최댓값으로 —
+//   스트리밍 중 같은 응답이 출력이 늘며 여러 번 적힌다. 첫 줄만 세면 출력이 모자랐다(N1: 이 PC 이번 달 출력 약 243만 토큰 ≈ $49 빠짐).
+//   날짜는 첫 줄 timestamp(UTC).
 //   쓰기는 usage.cache_creation 의 ephemeral_5m · 1h 로 가르고, 그 칸이 없으면 메인은 1시간 · 하위 에이전트는 5분(엔진 기본).
 //   앱 자체 요청(다음 질문 제안 · 컴팩트 요청 등)은 기록에 없어 빠진다 — 화면엔 "~" 를 붙인다
 
@@ -23,9 +25,10 @@ const since = Number(sinceArg) || 0
 const LONG_OVER = 100_000
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 const two = n => String(n).padStart(2, '0')
+// 날짜는 UTC 로 나눈다(사용자 2026-10-15: Claude 사용량 화면과 같게 — 설정 옵션 없이 고정)
 const dayOf = ms => {
   const d = new Date(ms)
-  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
+  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}`
 }
 
 /** projects 아래 .jsonl(수정 시각이 since 뒤) — 프로젝트 / 세션 / subagents / workflows / wf_… 까지(워크플로 에이전트 기록은 6단계 아래) */
@@ -53,7 +56,8 @@ function walk(dir, depth, out) {
 
 async function scanFile(f) {
   const days = {}
-  const seen = new Set()
+  // 응답 id → { 그 응답이 더해진 칸, 센 출력 } — 뒤 줄은 출력만 늘어난 만큼 더한다
+  const seen = new Map()
   const lines = createInterface({ input: createReadStream(f.path, 'utf8'), crlfDelay: Infinity })
   for await (const line of lines) {
     if (!line.includes('"usage"')) continue
@@ -64,8 +68,16 @@ async function scanFile(f) {
       continue
     }
     const m = r.message
-    if (r.type !== 'assistant' || !m?.usage || !m.id || seen.has(m.id)) continue
-    seen.add(m.id)
+    if (r.type !== 'assistant' || !m?.usage || !m.id) continue
+    const prev = seen.get(m.id)
+    if (prev) {
+      const more = num(m.usage.output_tokens) - prev.output
+      if (more > 0) {
+        prev.t[1] += more
+        prev.output += more
+      }
+      continue
+    }
     const at = Date.parse(String(r.timestamp ?? '')) || 0
     if (at < since) continue
     const u = m.usage
@@ -89,6 +101,7 @@ async function scanFile(f) {
     t[2] += read
     t[3] += w5
     t[4] += w1
+    seen.set(m.id, { t, output })
   }
   return days
 }
@@ -99,16 +112,17 @@ function slot(obj, key, empty) {
   return obj[key]
 }
 
-let cache = { v: 1, files: {} }
+// v2(N1): 출력 셈 · UTC 날짜가 바뀌어 v1 캐시는 버린다
+let cache = { v: 2, files: {} }
 try {
   const old = JSON.parse(readFileSync(cacheFile, 'utf8'))
-  if (old && old.v === 1 && old.files) cache = old
+  if (old && old.v === 2 && old.files) cache = old
 } catch {
   // 처음
 }
 const files = []
 walk(root, 0, files)
-const next = { v: 1, files: {} }
+const next = { v: 2, files: {} }
 let scanned = 0
 for (const f of files) {
   const hit = cache.files[f.path]

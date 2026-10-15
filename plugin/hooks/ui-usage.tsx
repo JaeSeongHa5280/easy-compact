@@ -1,24 +1,5 @@
 import type { CompactInputs, LiveTurn, Optimal, QuestionDetail, TurnSummary, Usage } from '../types'
-import {
-  average,
-  PERM_HEX,
-  compactPayoff,
-  coldFor,
-  estimateFor,
-  fmtTokens,
-  fmtUsd,
-  LEVEL_HEX,
-  LEVEL_TEXT,
-  levelOf,
-  LITTLE_SHRINK,
-  modelKey,
-  modelName,
-  ratesFor,
-  thresholds,
-  cacheWarnFor,
-  sessionColorOf,
-  ttlName,
-} from './cost'
+import { average, PERM_HEX, compactPayoff, coldFor, estimateFor, fmtTokens, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, LITTLE_SHRINK, modelKey, modelName, ratesFor, thresholds, cacheWarnFor, sessionColorOf, ttlName, priceWarnings } from './cost'
 import { OUTPUT_GUESS, SUMMARY_GUESS } from './optimal'
 import { SESSION_COLORS_DEFAULT } from './settings'
 import {
@@ -40,7 +21,7 @@ import {
   pendingCompact,
 } from './flow'
 import type { CompactEffect, Flow } from './flow'
-import { APP_MIN_USD, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, callsOf, costBreakdown, modelText, switchText, topSteps } from './text'
+import { APP_MIN_USD, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, callsOf, costBreakdown, modelText, switchText, recentSteps } from './text'
 import {
   ACCENT,
   TALK_HEX,
@@ -63,7 +44,7 @@ import {
   pulseDot,
   usdCell,
   CARD,
-  TITLE_BAND,
+  titleBand,
   CARD_INSET,
   TILE,
   TILE_PX,
@@ -72,6 +53,8 @@ import {
   growthText,
   emptyLine,
   svgOf,
+  segButton,
+  segGroup,
 } from './ui-common'
 import type { Ui, Grid, Fold } from './ui-common'
 import { fitLine, rewriteNote } from './ui-band'
@@ -159,9 +142,11 @@ export function liveBlock(ui: Ui, now: LiveTurn, older: TurnSummary | undefined,
           )}
           {/* 간략은 동작별 줄 없이 위 한 줄(요청 수 · 에이전트 개수)만 */}
           {now.details.length > 0 && detail === 'steps' ? (
+            // 0.5 묶음 2(N18): 최신 동작이 위 — 질문 목록(최신 위)과 같은 방향. 접은 줄은 맨 아래 "이전 동작 N개"(예전 맨 위 "앞 동작 N개" 는
+            // 아래에 첫 동작들이 있다는 말로 읽혔다)
             <Box key="h-live-box" {...DETAIL_BOX}>
-              {hidden > 0 ? <Text key="h-live-more" dimColor>{L(`├─ 앞 동작 ${hidden}개`, `├─ ${hidden} earlier steps`)}</Text> : null}
-              {detailRows(ui, shown, 'hl', textBox - DETAIL_INSET, g)}
+              {detailRows(ui, [...shown].reverse(), 'hl', textBox - DETAIL_INSET, g, hidden > 0)}
+              {hidden > 0 ? <Text key="h-live-more" dimColor>{L(`└─ 이전 동작 ${hidden}개`, `└─ ${hidden} earlier steps`)}</Text> : null}
             </Box>
           ) : null}
         </Box>
@@ -224,6 +209,10 @@ export function historyRow(
   const parts: unknown[] = []
   // 맨 앞에 요청 수(에이전트 요청까지)와 에이전트 — 간략은 개수만, 자세히는 "$ 포함" 까지. 값 옆에 "🤖 $3.56" 만 있으니 금액 칸
   // ($16.43)과의 관계가 헷갈렸다. 도는 중이면 그 말도
+  // N3: 대화 기록에서 다시 만든 질문(이 판 전 세션) — 앱 자체 요청 · 컴팩트 값 · 동작별 줄이 없다
+  if (t.rebuilt) parts.push(<Text key="r" dimColor>{L('기록에서 다시 만듦', 'rebuilt from the transcript')}</Text>)
+  // N7: 사람이 멈춘 질문 — 맨 앞에(요청이 0개여도 줄이 남는다)
+  if (t.aborted) parts.push(<Text key="x" color="warning">{withIcon('⏹', L('중단됨', 'stopped'))}</Text>)
   const calls = callsOf(t.steps, t.details)
   if (calls > 0) parts.push(<Text key="n">{L(`요청 ${calls}회`, plural(calls, 'request'))}</Text>)
   const agents = agentPart(t.details, detail === 'steps')
@@ -336,7 +325,7 @@ export function drawFlow(
   const hasMoreFlow = recentFrom > 0
   const isFlowAll = showAllFlow && hasMoreFlow
   const from = isFlowAll ? 0 : recentFrom
-  const flowToggle = (key: string, text: string, isOn: boolean, toAll: boolean) => pickButton(ui, key, text, isOn, () => onShowAllFlow(toAll))
+  const flowToggle = (key: string, text: string, isOn: boolean, toAll: boolean) => segButton(ui, key, text, isOn, () => onShowAllFlow(toAll))
   // 가장 컸던 크기는 제목 줄 설명에 — 그래프 아래 시간 줄에 붙여 두니 "그 시각이 최고였다" 로 읽혔다
   const head = (
     <Box key="f-head" columnGap={1} marginTop={1} alignItems="center" flexWrap="wrap">
@@ -349,8 +338,12 @@ export function drawFlow(
           )}
         </Text>
       ) : null}
-      {hasMoreFlow && n >= 2 ? flowToggle('flow-recent', L(`최근 질문 ${FLOW_RECENT}`, `Last ${FLOW_RECENT} questions`), !isFlowAll, false) : null}
-      {hasMoreFlow && n >= 2 ? flowToggle('flow-all', L('전체', 'All'), isFlowAll, true) : null}
+      {hasMoreFlow && n >= 2
+        ? segGroup(ui, 'flow-seg', [
+            flowToggle('flow-recent', L(`최근 질문 ${FLOW_RECENT}`, `Last ${FLOW_RECENT} questions`), !isFlowAll, false),
+            flowToggle('flow-all', L('전체', 'All'), isFlowAll, true),
+          ])
+        : null}
     </Box>
   )
   const noteLine = note ? emptyLine(ui, 'f-note', note) : null
@@ -419,8 +412,8 @@ export function drawFlow(
   const fillColor = { ok: LEVEL_HEX.ok, warn: LEVEL_TEXT.warn, cut: LEVEL_TEXT.cut } as const
   const applied = thresholds()
   const fillWord = applied.isRange
-    ? { ok: L('여유', 'Room left'), warn: L('컴팩트하기 좋은 때', 'Good time to compact'), cut: L('컴팩트 늦어짐', 'Compact overdue') }
-    : { ok: L('여유', 'Room left'), warn: L('곧 컴팩트할 때', 'Compact soon'), cut: L('컴팩트할 때', 'Time to compact') }
+    ? { ok: L('여유', 'Room left'), warn: L('컴팩트할 때', 'Time to compact'), cut: L('컴팩트 늦어짐', 'Compact overdue') }
+    : { ok: L('여유', 'Room left'), warn: L('곧 컴팩트할 때', 'Compact soon'), cut: L('컴팩트 권장', 'Compact advised') }
   const nowCtx = u && u.contextTokens > 0 ? u.contextTokens : flow.points[n - 1]!.ctx
   const extraLevel = levelOf(nowCtx)
   // 상태 말 옆에 다음 자리까지 얼마 — "좋은 때인지 놓쳤는지" 를 말로
@@ -445,7 +438,7 @@ export function drawFlow(
   // 막대는 컴팩트 카드의 판단 타일 안에 들어가 그만큼 좁다(흐름 그래프는 타일 밖이라 그대로)
   const tilePx = Math.max(120, widthPx - tilePxOf(surface))
   const markNames = applied.isRange
-    ? { warnName: L(`${fmtTokens(applied.ctxWarn)} 좋은 때`, `${fmtTokens(applied.ctxWarn)} good`), cutName: L(`${fmtTokens(applied.ctxCut)} 늦어짐`, `${fmtTokens(applied.ctxCut)} late`) }
+    ? { warnName: L(`${fmtTokens(applied.ctxWarn)} 컴팩트할 때`, `${fmtTokens(applied.ctxWarn)} compact`), cutName: L(`${fmtTokens(applied.ctxCut)} 늦어짐`, `${fmtTokens(applied.ctxCut)} late`) }
     : { warnName: L(`${fmtTokens(applied.ctxWarn)} 곧`, `${fmtTokens(applied.ctxWarn)} soon`), cutName: L(`${fmtTokens(applied.ctxCut)} 정한 크기`, `${fmtTokens(applied.ctxCut)} set size`) }
   const extraEl = (
     <Box key="f-extra" flexDirection="column">
@@ -514,8 +507,18 @@ export function drawFlow(
     // 범례는 그래프만 봐선 모르는 것만, 선 색 견본 + 이름을 칸 간격으로: 막대(제목 "요청 N회")와 점선(오른쪽 끝 "권장 · 강조")은
     // 그래프에 이미 이름이 있다. 예전 한 줄 "막대: … · 점선: 노랑 · 빨강 기준 · 청록 선: …" 은 · 가 항목 사이와 항목 안에 같이
     // 쓰여 어디서 끊기는지 안 읽혔다. 모델 변경은 바꾼 적이 있을 때만 — 그 자리의 증감은 컴팩트가 아니라 모델 차이
-    flow.compactions.length > 0 || switches.length > 0 ? (
+    // 0.5 묶음 2(N14): 기준선 이름 — 그래프 오른쪽엔 숫자만, 무엇인지는 여기서 바 · 컨텍스트 막대와 같은 말 · 같은 색 표(예전 "끝 250k · 시작
+    // 200k" 는 무엇의 끝 · 시작인지 안 읽혔다 — 동료 s05 ~ s07). 그래서 범례 줄은 늘 있다
+    (
       <Box key="f-key" columnGap={3} flexWrap="wrap">
+        <Text>
+          <Text color={LEVEL_HEX.warn}>┄</Text>
+          <Text>{` ${fmtTokens(applied.ctxWarn)} ${applied.isRange ? L('컴팩트할 때', 'time to compact') : L('곧 컴팩트할 때', 'compact soon')}`}</Text>
+        </Text>
+        <Text>
+          <Text color={LEVEL_HEX.cut}>╌</Text>
+          <Text>{` ${fmtTokens(applied.ctxCut)} ${applied.isRange ? L('컴팩트 늦어짐', 'compact overdue') : L('컴팩트 권장', 'compact advised')}`}</Text>
+        </Text>
         {flow.compactions.length > 0 ? (
           <Text>
             <Text color={COMPACT_HEX}>┃</Text>
@@ -530,7 +533,7 @@ export function drawFlow(
         ) : null}
         {flow.compactions.length > 0 ? <Text dimColor>{L('흐린 막대 = 지난 구간', 'faded bars = earlier segments')}</Text> : null}
       </Box>
-    ) : null,
+    ),
     // 컴팩트마다 남긴 요약은 각 컴팩트 줄 옆에. 지금 상주 크기는 맨 위 지금 카드의 컨텍스트 막대에
     ...effectsBlock(
       ui,
@@ -593,7 +596,7 @@ export function permanentOf(flow: Flow, isPartial: boolean, fallback: number | n
 export const EFFECTS_RECENT = 3
 
 /** "전체" 로 볼 때 줄로 그리는 컴팩트 수 — 그 앞은 "그 앞 컴팩트 N번" 한 줄. 질문별 비용(HISTORY_ALL_MAX)과 같은 까닭: 패널 크기 한도 */
-export const EFFECTS_ALL_MAX = 15
+export const EFFECTS_ALL_MAX = 10
 
 /**
  * 컴팩트 효과의 총 이득(끝난 셈만). 마지막 컴팩트가 아직 본전 전(회수 중)이면 빼야 "방금 한 컴팩트 = 손해" 로 읽히지
@@ -630,26 +633,28 @@ export function effectsBlock(
   const olderEffects = isAll ? all.length - shown.length : 0
   const net = effectsNet(effects)
   // 질문별 비용의 전환과 같은 고르기 버튼(pickButton)
-  const toggle = (key: string, text: string, isOn: boolean, toAll: boolean) => pickButton(ui, key, text, isOn, () => onShowAll(toAll))
+  const toggle = (key: string, text: string, isOn: boolean, toAll: boolean) => segButton(ui, key, text, isOn, () => onShowAll(toAll))
   return [
     <Box key="f-eh" marginTop={1} columnGap={1} alignItems="center" flexWrap="wrap">
       <Text bold>{L('컴팩트 효과', 'Compact results')}</Text>
       {/* 카드 제목 줄에도 있지만 목록 옆에서도 — 옮겼더니 목록을 볼 때 합이 안 보였다. "합 이득 $73.79 · 왼쪽 =
           아낀 값 − 컴팩트 비용 · …" 처럼 식을 붙이면 안 읽혔다 — 줄마다 아낀 값 · 컴팩트 비용이 있어 총계만 */}
       {net !== null ? (
-        <Text bold color={net >= 0 ? 'green' : 'red'}>
+        <Text bold color={net >= 0 ? 'success' : 'error'}>
           {L(`총 ${gainText(net)}`, `total ${gainText(net)}`)}
         </Text>
       ) : null}
-      {hasMore ? toggle('effects-recent', L(`최근 ${EFFECTS_RECENT}`, `Last ${EFFECTS_RECENT}`), !isAll, false) : null}
-      {/* 줄로 다 못 그리면 "전체" 가 아니라 "최근 N" — 이름과 보이는 것이 맞게 */}
+      {/* 줄로 다 못 그리면 "전체" 가 아니라 "최근 N" — 이름과 보이는 것이 맞게. 둘은 묶음 칸(R1) */}
       {hasMore
-        ? toggle(
-            'effects-all',
-            all.length > EFFECTS_ALL_MAX ? L(`최근 ${EFFECTS_ALL_MAX}`, `Last ${EFFECTS_ALL_MAX}`) : L(`전체 ${all.length}`, `All ${all.length}`),
-            isAll,
-            true,
-          )
+        ? segGroup(ui, 'effects-seg', [
+            toggle('effects-recent', L(`최근 ${EFFECTS_RECENT}`, `Last ${EFFECTS_RECENT}`), !isAll, false),
+            toggle(
+              'effects-all',
+              all.length > EFFECTS_ALL_MAX ? L(`최근 ${EFFECTS_ALL_MAX}`, `Last ${EFFECTS_ALL_MAX}`) : L(`전체 ${all.length}`, `All ${all.length}`),
+              isAll,
+              true,
+            ),
+          ])
         : null}
     </Box>,
     ...(effects.length === 0
@@ -698,7 +703,7 @@ export function effectRow(
     ) : isRecouping ? (
       <Text bold>{L('회수중', 'recouping')}</Text>
     ) : (
-      <Text bold color={ef.netUsd >= 0 ? 'green' : 'red'}>
+      <Text bold color={ef.netUsd >= 0 ? 'success' : 'error'}>
         {gainText(ef.netUsd)}
       </Text>
     )
@@ -709,10 +714,10 @@ export function effectRow(
       <Box flexDirection="column" flexShrink={1} minWidth={0}>
         <Text wrap="wrap">
           {/* 청록 "컴팩트" — 그래프의 청록 세로선과 짝. 자동이면 제목에(시간 옆에 붙어 있었다) — 진행 글과 같은 "클로드 기본 auto-compact" */}
-          <Text color="cyan">{ef.event.trigger === 'auto' ? L('클로드 기본 auto-compact ', "Claude's auto-compact ") : L('컴팩트 ', 'Compact ')}</Text>
+          <Text color="suggestion">{ef.event.trigger === 'auto' ? L('클로드 기본 auto-compact ', "Claude's auto-compact ") : L('컴팩트 ', 'Compact ')}</Text>
           <Text color={LEVEL_TEXT[levelOf(ef.event.before)]}>{fmtTokens(ef.event.before)}</Text>
           <Text dimColor> → </Text>
-          {after === null ? <Text dimColor>?</Text> : <Text color="green">{fmtTokens(after)}</Text>}
+          {after === null ? <Text dimColor>?</Text> : <Text color="success">{fmtTokens(after)}</Text>}
           {/* 직후 크기 안에 요약이 들어 있다 — " · 요약 18k" 는 따로 18k 가 더 있는 것처럼 읽혔다 */}
           {summary !== null && after !== null ? <Text dimColor>{L(`(요약 ${fmtTokens(summary)} 포함)`, `(incl. ${fmtTokens(summary)} summary)`)}</Text> : null}
         </Text>
@@ -726,7 +731,7 @@ export function effectRow(
           ) : (
             <Text>
               <Text dimColor>{L(` · 이후 요청 ${ef.requestsAfter}회 · 절약 `, ` · ${plural(ef.requestsAfter, 'request')} since · saved `)}</Text>
-              <Text color="green">{fmtUsd(ef.savedUsd)}</Text>
+              <Text color="success">{fmtUsd(ef.savedUsd)}</Text>
               {isRecouping ? (
                 <Text>
                   {ef.breakEvenLeft === null
@@ -765,7 +770,7 @@ export const RECENT_COUNT = 5
  * 트리 한도는 문서에 따로 없지만 엔진이 같은 한도를 곳곳에 적는다(Client 트리 "20,000 노드 · 32 깊이 · 직렬화 100,000자").
  * 줄 수가 아니라 크기라 ▸ 버튼만 줄여선 안 됐다. 30줄이면 자세히도 6만 자 남짓. 크기는 size.test.tsx 가 지킨다
  */
-export const HISTORY_ALL_MAX = 30
+export const HISTORY_ALL_MAX = 20
 
 /**
  * 펼친 질문에 줄로 그리는 동작 수 — 비싼 것부터 이만큼(순서는 그대로), 나머지는 "그 밖 동작 N개 $X" 한 줄. 질문마다 동작 기록은
@@ -783,7 +788,7 @@ export function growthOf(t: TurnSummary, older: TurnSummary | undefined): number
  * 컴팩트 카드의 판단 한 줄 — 지난 컴팩트 효과(이득)만 보이니 "괜찮네, 문제없네" 로 읽혔고, 지금 컴팩트하면 얼마인지가
  * 없었다. 지금 컴팩트하면 질문마다 아끼는 값 · 컴팩트 비용 · 본전(띠 확인창과 같은 계산). 캐시가 식었으면 그 견줌
  */
-export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], nowMs: number, inputs: CompactInputs) {
+export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], nowMs: number, inputs: CompactInputs, wrapW: number | null = null) {
   const { Box, Text } = ui
   const ctx = u.contextTokens
   const r = ratesFor(u.model, ctx)
@@ -795,7 +800,7 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
   let second: unknown = null
   if (ratio < LITTLE_SHRINK) {
     // 띠 툴팁 · 확인 카드와 같은 선 · 같은 말 · 같은 색
-    second = <Text bold color="red" wrap="wrap">{L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'Little to save — compacting now is a loss')}</Text>
+    second = <Text bold color="error" wrap="wrap">{L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'Little to save — compacting now is a loss')}</Text>
   } else if (est.kind === 'cold') {
     const c = coldFor(u, inputs, ctx)
     if (c) {
@@ -803,9 +808,9 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
         <Text wrap="wrap">
           <Text dimColor>{L('캐시가 만료돼 다음 요청은 전체를 다시 씁니다. 지금 컴팩트하면 ', 'The cache expired, so the next request rewrites everything. Compacting now ')}</Text>
           {c.compactUsd < c.continueUsd ? (
-            <Text color="green" bold>{L(`${fmtUsd(c.continueUsd - c.compactUsd)} 이득`, `saves ${fmtUsd(c.continueUsd - c.compactUsd)}`)}</Text>
+            <Text color="success" bold>{L(`${fmtUsd(c.continueUsd - c.compactUsd)} 이득`, `saves ${fmtUsd(c.continueUsd - c.compactUsd)}`)}</Text>
           ) : (
-            <Text bold color="red">{L(`${fmtUsd(c.compactUsd - c.continueUsd)} 손해`, `costs ${fmtUsd(c.compactUsd - c.continueUsd)} more`)}</Text>
+            <Text bold color="error">{L(`${fmtUsd(c.compactUsd - c.continueUsd)} 손해`, `costs ${fmtUsd(c.compactUsd - c.continueUsd)} more`)}</Text>
           )}
         </Text>
       )
@@ -821,18 +826,55 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
           : pay.breakEvenCalls !== null
             ? L(`요청 ${pay.breakEvenCalls}회면 본전`, `breaks even after ${plural(pay.breakEvenCalls, 'request')}`)
             : L('본전 시점 모름', 'break-even unknown')
-      second = (
-        <Text wrap="wrap">
-          <Text dimColor>{L('지금 컴팩트하면 ', 'Compacting now ')}</Text>
-          <Text color="green" bold>
-            {pay.saveQuestionUsd !== null
-              ? L(`질문마다 ~${fmtUsd(pay.saveQuestionUsd)} 아낌`, `saves ~${fmtUsd(pay.saveQuestionUsd)} per question`)
-              : L(`요청마다 ~${fmtUsd(pay.saveCallUsd)} 아낌`, `saves ~${fmtUsd(pay.saveCallUsd)} per request`)}
-          </Text>
-          <Text dimColor>{L(` · 비용 ~${fmtUsd(pay.costUsd)} · `, ` · cost ~${fmtUsd(pay.costUsd)} · `)}</Text>
-          <Text>{even}</Text>
-        </Text>
-      )
+      // 칸(아낌 · 비용 · 본전) 사이에서만 꺾고 줄 머리엔 " · " 를 안 붙인다(fitLine) — 예전엔 글 하나라 좁으면 "본전" 만 다음 줄로
+      // 떨어졌다(0.6.0 CLI 확인)
+      const head = L('지금 컴팩트하면 ', 'Compacting now ')
+      const save =
+        pay.saveQuestionUsd !== null
+          ? L(`질문마다 ~${fmtUsd(pay.saveQuestionUsd)} 아낌`, `saves ~${fmtUsd(pay.saveQuestionUsd)} per question`)
+          : L(`요청마다 ~${fmtUsd(pay.saveCallUsd)} 아낌`, `saves ~${fmtUsd(pay.saveCallUsd)} per request`)
+      const costText = L(`비용 ~${fmtUsd(pay.costUsd)}`, `cost ~${fmtUsd(pay.costUsd)}`)
+      const dot = (isFirst: boolean) => (isFirst ? null : <Text dimColor>{' · '}</Text>)
+      second = fitLine(
+        ui,
+        [
+          {
+            key: 'eff-save',
+            text: `${head}${save}`,
+            el: (isFirst: boolean) => (
+              <Text>
+                {dot(isFirst)}
+                <Text dimColor>{head}</Text>
+                <Text color="success" bold>
+                  {save}
+                </Text>
+              </Text>
+            ),
+          },
+          {
+            key: 'eff-cost',
+            text: costText,
+            el: (isFirst: boolean) => (
+              <Text>
+                {dot(isFirst)}
+                <Text dimColor>{costText}</Text>
+              </Text>
+            ),
+          },
+          {
+            key: 'eff-even',
+            text: even,
+            el: (isFirst: boolean) => (
+              <Text>
+                {dot(isFirst)}
+                <Text>{even}</Text>
+              </Text>
+            ),
+          },
+        ],
+        null,
+        wrapW,
+      ).el
     }
   }
   // "지금 요청 1회 $X · 컴팩트하면 $Y" 줄은 뺐다 — 지금 카드의 "다음 요청" 과 같은 값이 두 번 보였고, 컴팩트 판단은
@@ -878,27 +920,29 @@ export function drawHistory(
   const older = isAll ? all.slice(HISTORY_ALL_MAX) : []
   const olderUsd = older.reduce((sum, t) => sum + t.cost.usd, 0)
   // 고르기 버튼(pickButton): 고른 쪽은 채운 버튼, 다른 쪽은 흐린 보조 버튼 — 흐림 차이만으론 지금 보는 쪽이 안 읽혔다
-  const toggle = (key: string, text: string, isOn: boolean, toAll: boolean) => pickButton(ui, key, text, isOn, () => act.setAll(toAll))
+  const toggle = (key: string, text: string, isOn: boolean, toAll: boolean) => segButton(ui, key, text, isOn, () => act.setAll(toAll))
   // 글 기둥 폭(Box 칸): 아이콘 칸 · 사이 · 금액(+ 시간) 칸 · 사이를 뺀 자리
   const textBox = cols - g.iconW - 1 - g.leadW - 1
   return (
     <Box key="s-history" flexDirection="column" marginTop={1} {...CARD}>
       {/* 제목 줄 아래 한 칸 더 — 줄마다 위 한 칸이 있지만 제목 줄의 버튼이 높아 붙어 보였다 */}
-      <Box columnGap={1} alignItems="center" flexWrap="wrap" marginBottom={fold.isOpen ? 1 : 0} {...TITLE_BAND}>
+      <Box columnGap={1} alignItems="center" flexWrap="wrap" marginBottom={fold.isOpen ? 1 : 0} {...titleBand()}>
         {foldButton(ui, 's-history', fold)}
         {/* 제목 띠 위 아이콘은 회색 하나 — 카드 제목과 같은 꼴(section 과 같은 아이콘 함수) */}
         {decoIcon(ui, 'questions', ICON_GRAY, L('질문별 비용', 'Cost per question'), 's-history-icon')}
         <Text bold>{L('질문별 비용', 'Cost per question')}</Text>
         {/* 최근 · 전체 전환은 펼쳤을 때만(목록을 바꾸는 버튼). 접으면 진행 중 질문 값을 요약 앞에 붙인다 */}
-        {fold.isOpen && hasMore ? toggle('history-recent', L(`최근 ${RECENT_COUNT}`, `Last ${RECENT_COUNT}`), !isAll, false) : null}
-        {/* 줄로 다 못 그리면 "전체" 가 아니라 "최근 30" — 이름과 보이는 것이 맞게 */}
+        {/* 줄로 다 못 그리면 "전체" 가 아니라 "최근 30" — 이름과 보이는 것이 맞게. 둘은 묶음 칸(R1) */}
         {fold.isOpen && hasMore
-          ? toggle(
-              'history-all',
-              all.length > HISTORY_ALL_MAX ? L(`최근 ${HISTORY_ALL_MAX}`, `Last ${HISTORY_ALL_MAX}`) : L(`전체 ${all.length}`, `All ${all.length}`),
-              isAll,
-              true,
-            )
+          ? segGroup(ui, 'history-seg', [
+              toggle('history-recent', L(`최근 ${RECENT_COUNT}`, `Last ${RECENT_COUNT}`), !isAll, false),
+              toggle(
+                'history-all',
+                all.length > HISTORY_ALL_MAX ? L(`최근 ${HISTORY_ALL_MAX}`, `Last ${HISTORY_ALL_MAX}`) : L(`전체 ${all.length}`, `All ${all.length}`),
+                isAll,
+                true,
+              ),
+            ])
           : null}
         {/* 합은 남겨 둔 질문(최대 60개)의 합이라 세션 누적보다 작을 수 있다 — "N개 합" 으로 무엇의 합인지 */}
         {all.length === 0 && !(liveNote && !fold.isOpen) ? null : (
@@ -943,7 +987,8 @@ export function drawHistory(
           <Text>{fitCells(full, textCells(g, textBox))}</Text>
         )
         // 펼치면(자세히) 메인 · 에이전트 · 앱 자체 요청을 줄마다 요청 수 · 금액 · 읽기 · 쓰기 · 출력으로, 그 아래 동작별 값(비싼 PANE_STEPS 개)
-        const top = topSteps(t.details ?? [], PANE_STEPS)
+        // 0.5 묶음 2(N18): 최근 PANE_STEPS 개를 최신 위로, 그 앞은 맨 아래 한 줄 — 비싼 20개는 시간 순과 섞여 어디가 빠졌는지 안 보였다
+        const top = recentSteps(t.details ?? [], PANE_STEPS)
         const extra = isOpen ? (
           <Box key={`hbox-${i}`} {...DETAIL_BOX}>
             {/* 메인 / 🤖 에이전트 / ⚙ 앱 자체 요청 — 줄마다(에이전트가 없으면 예전처럼 한 줄) */}
@@ -958,8 +1003,8 @@ export function drawHistory(
             {top.rest > 0 ? (
               <Text key={`hd-${i}-rest`} dimColor wrap="wrap">
                 {L(
-                  `└─ 그 밖 동작 ${top.rest}개 ${fmtUsd(top.restUsd)} — 패널이 한 번에 그릴 수 있는 크기 때문에 비싼 ${PANE_STEPS}개까지만 줄로 보입니다`,
-                  `└─ ${plural(top.rest, 'more step')} ${fmtUsd(top.restUsd)} — the pane draws only the ${PANE_STEPS} costliest as rows (size limit)`,
+                  `└─ 이전 동작 ${top.rest}개 ${fmtUsd(top.restUsd)} — 패널 크기 한도로 최근 ${PANE_STEPS}개까지만 보입니다`,
+                  `└─ ${plural(top.rest, 'earlier step')} ${fmtUsd(top.restUsd)} — the pane shows only the last ${PANE_STEPS} (size limit)`,
                 )}
               </Text>
             ) : null}
@@ -1053,7 +1098,7 @@ export function drawNow(
       </Text>
       {/* 최적을 따라가면 권장이 늘 상주 위라 거의 안 켜진다 — 손으로 고정한 권장이 상주보다 작을 때 */}
       {perm.tokens >= t.ctxCut ? (
-        <Text wrap="wrap" color="yellow">
+        <Text wrap="wrap" color="warning">
           {L(
             `컴팩트해도 남는 크기(상주)가 빨강 기준 ${fmtTokens(t.ctxCut)}보다 큽니다. 새 세션으로 옮기는 게 낫습니다.`,
             `What stays after compacting (resident) is above the red threshold ${fmtTokens(t.ctxCut)}. Moving to a new session is better.`,
@@ -1097,7 +1142,7 @@ export function drawNow(
     surface === 'desktop' ? (
       <Box key="c-marks" columnGap={1} flexWrap="wrap">
         <Text color={LEVEL_HEX.warn}>┃</Text>
-        <Text dimColor>{`${fmtTokens(t.ctxWarn)} ${t.isRange ? L('컴팩트하기 좋은 때', 'good time to compact') : L('미리 알림', 'heads-up')}`}</Text>
+        <Text dimColor>{`${fmtTokens(t.ctxWarn)} ${t.isRange ? L('컴팩트할 때', 'time to compact') : L('곧 컴팩트할 때', 'compact soon')}`}</Text>
         <Text color={LEVEL_HEX.cut}>┃</Text>
         <Text dimColor>{`${fmtTokens(t.ctxCut)} ${t.isRange ? L('컴팩트 늦어짐', 'compact overdue') : L('컴팩트 권장', 'compact advised')}`}</Text>
       </Box>
@@ -1132,10 +1177,10 @@ export function drawNow(
           <Text>
             {/* "만료까지 N분 남음" — 유지 시간 종류는 뒤에 흐리게 */}
             <Text dimColor>{L('캐시 만료까지 ', 'cache expires in ')}</Text>
-            <Text {...(isLate ? { color: 'yellow' } : {})}>{L(`${est.minsLeft}분 남음`, `${est.minsLeft}m`)}</Text>
+            <Text {...(isLate ? { color: 'warning' } : {})}>{L(`${est.minsLeft}분 남음`, `${est.minsLeft}m`)}</Text>
             <Text dimColor>{L(` · ${ttlName(est.ttlMin)} 캐시`, ` · ${ttlName(est.ttlMin)} cache`)}</Text>
             {guessNote ? <Text dimColor>{guessNote}</Text> : null}
-            <Text {...(isLate ? { color: 'red' } : { dimColor: true })}>{L(` · 넘기면 ~${fmtUsd(est.rewriteUsd)}`, ` · after that ~${fmtUsd(est.rewriteUsd)}`)}</Text>
+            <Text {...(isLate ? { color: 'error' } : { dimColor: true })}>{L(` · 넘기면 ~${fmtUsd(est.rewriteUsd)}`, ` · after that ~${fmtUsd(est.rewriteUsd)}`)}</Text>
           </Text>
         ),
         LEVEL_TEXT[level],
@@ -1154,7 +1199,7 @@ export function drawNow(
         est.reason === 'model'
           ? L(`모델 바뀜(${switchText(u.switchedFrom, u.model)}) — 전체를 다시 씀`, `model switched (${switchText(u.switchedFrom, u.model)}) — rewrites everything`)
           : L('캐시 만료 — 전체를 다시 씀', 'cache expired — rewrites everything'),
-        'red',
+        'error',
       ),
     )
   }
@@ -1210,7 +1255,7 @@ export function decisionLine(ui: Ui, u: Usage, sums: readonly TurnSummary[], now
     const c = inputs ? coldFor(u, inputs) : null
     return (
       <Text wrap="wrap">
-        {head(est.reason === 'model' ? withIcon('🔄', L('모델 바뀜', 'Model switched')) : withIcon('🧊', L('캐시 만료', 'Cache expired')), 'red')}
+        {head(est.reason === 'model' ? withIcon('🔄', L('모델 바뀜', 'Model switched')) : withIcon('🧊', L('캐시 만료', 'Cache expired')), 'error')}
         <Text>{L(` — 다음 요청 ~${fmtUsd(est.rewriteUsd)}`, ` — next request ~${fmtUsd(est.rewriteUsd)}`)}</Text>
         {c === null ? null : c.compactUsd < c.continueUsd ? (
           <Text>{L(` · 지금 컴팩트하면 ~${fmtUsd(c.continueUsd - c.compactUsd)} 덜 듦`, ` · compacting now costs ~${fmtUsd(c.continueUsd - c.compactUsd)} less`)}</Text>
@@ -1224,7 +1269,7 @@ export function decisionLine(ui: Ui, u: Usage, sums: readonly TurnSummary[], now
   const after = inputs ? Math.min(inputs.after, ctx) : null
   // 아낄 게 거의 없음(컨텍스트가 이미 상주 크기 근처) — 바 툴팁 · 확인 카드 · 컴팩트 카드와 같은 선
   const isLittle = after !== null && after > 0 && ctx / after < LITTLE_SHRINK
-  if (level !== 'ok' && isLittle) return <Text wrap="wrap">{head(L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'Little to save — compacting now is a loss'), 'red')}</Text>
+  if (level !== 'ok' && isLittle) return <Text wrap="wrap">{head(L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'Little to save — compacting now is a loss'), 'error')}</Text>
   if (level !== 'ok') {
     const name =
       level === 'cut'
@@ -1232,7 +1277,7 @@ export function decisionLine(ui: Ui, u: Usage, sums: readonly TurnSummary[], now
           ? L('컴팩트 늦어짐', 'Compact overdue')
           : L('컴팩트 권장', 'Compact advised')
         : t.isRange
-          ? L('컴팩트하기 좋은 때', 'Good time to compact')
+          ? L('컴팩트할 때', 'Time to compact')
           : L('곧 컴팩트할 때', 'Compact soon')
     const pay = inputs ? compactPayoff(ctx, inputs, u.model, average(sums.slice(-10).map(x => x.steps).filter(n => n > 0))) : null
     return (
@@ -1368,7 +1413,7 @@ export function drawSummary(
  * "컴팩트할까?" 에 답하는 곳을 한 카드로 모았다 — 예전엔 컨텍스트 카드의 효율 줄 · 게이지 · 효과 목록이 흩어져 같은 판단을
  * 따로 말했다. 그래프 · 효과는 늘 펼쳐 둔다 — 카드째 접을 수 있어 따로 접는 버튼은 군더더기였다
  */
-export function drawCompactCard(ui: Ui, parts: FlowParts, effEl: unknown, fold?: Fold) {
+export function drawCompactCard(ui: Ui, parts: FlowParts, effEl: unknown, fold?: Fold, timing: unknown = null) {
   const { Box, Text } = ui
   // 접으면 지금 값 하나(게이지 상태 말)를 앞에 — 제목 줄 한 줄이 이 카드의 간략 보기
   const state = fold !== undefined && !fold.isOpen ? parts.state : null
@@ -1378,11 +1423,17 @@ export function drawCompactCard(ui: Ui, parts: FlowParts, effEl: unknown, fold?:
     L('컴팩트', 'Compact'),
     [
       // 게이지 + 판단 한 줄 = "지금 컴팩트할까" — 타일로 묶어 아래 지난 기록(그래프 · 효과)과 가른다
-      parts.gauge || effEl ? (
+      parts.gauge || effEl || timing ? (
         <Box key="c-decide" flexDirection="column" {...TILE}>
           {parts.gauge}
           {effEl}
           {parts.gaugeNote}
+          {/* 컴팩트 시점 고르기(0.6.0 — 설정 탭에서 옮김): 지금 어디쯤인지 바로 아래에서 구간을 고른다 */}
+          {timing ? (
+            <Box key="c-timing" flexDirection="column" marginTop={1}>
+              {timing}
+            </Box>
+          ) : null}
         </Box>
       ) : null,
       ...parts.details,
@@ -1393,7 +1444,7 @@ export function drawCompactCard(ui: Ui, parts: FlowParts, effEl: unknown, fold?:
         {state ? <Text bold color={state.color}>{`● ${state.word}`}</Text> : null}
         {state && parts.gain !== null ? <Text dimColor>{' · '}</Text> : null}
         {parts.gain !== null ? (
-          <Text bold color={parts.gain >= 0 ? 'green' : 'red'}>
+          <Text bold color={parts.gain >= 0 ? 'success' : 'error'}>
             {L(`총 ${gainText(parts.gain)}`, `total ${gainText(parts.gain)}`)}
           </Text>
         ) : null}
@@ -1422,7 +1473,8 @@ export function drawAllSpend(ui: Ui, line: AllSpendLine | null) {
   if (line.today !== null) amounts.push(['a-today', L('오늘 ', 'Today '), line.today])
   if (line.month !== null) amounts.push(['a-month', L('이번 달 ', 'This month '), line.month])
   if (line.state === 'ok' && amounts.length === 0) return null
-  const name = L('모든 세션', 'All sessions')
+  // 0.5 묶음 2(N0 안 B): 숫자마다 "~" 대신 이름에 한 번 "(추정)" — 한국어 "~" 는 범위 · "까지" 로 먼저 읽혔다
+  const name = L('모든 세션(추정)', 'All sessions (est.)')
   // 띄어쓰기는 칸 앞에 — 칸 뒤 빈칸은 터미널이 줄 끝에서 지울 수 있다(바 칸도 " · " 를 앞에 둔다)
   const head: LineCell = { key: 'a-name', text: name, el: () => <Text dimColor>{name}</Text> }
   const stateText =
@@ -1437,11 +1489,11 @@ export function drawAllSpend(ui: Ui, line: AllSpendLine | null) {
             const lead = j === 0 ? ' ' : ' · '
             return {
               key,
-              text: `${lead}${label}~${fmtUsd(usd)}`,
+              text: `${lead}${label}${fmtUsd(usd)}`,
               el: () => (
                 <Text>
                   <Text dimColor>{`${lead}${label}`}</Text>
-                  <Text bold>~{fmtUsd(usd)}</Text>
+                  <Text bold>{fmtUsd(usd)}</Text>
                 </Text>
               ),
             }
@@ -1465,6 +1517,12 @@ export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null,
   const n = (v: number) => (v < 1 ? v.toFixed(2) : String(v))
   return (
     <Box key="s-ref" flexDirection="column" marginTop={1} paddingX={1}>
+      {/* N22: 가격표에 없는 모델 · 1M 을 넘는 창 */}
+      {priceWarnings(u.model, u.window).map((w, i) => (
+        <Text key={`ref-warn-${i}`} color="warning" wrap="wrap">
+          {`⚠ ${w}`}
+        </Text>
+      ))}
       <Text dimColor wrap="wrap">
         {L(
           `금액은 모두 API 정가 환산입니다(토큰 × 공식 요율). ${r.label} 요율 $/MTok · 입력 ${n(r.input)} · 출력 ${n(r.output)} · 캐시 읽기 ${n(r.read)} · 쓰기 ${n(r.write1h)}(1시간)`,

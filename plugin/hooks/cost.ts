@@ -40,6 +40,57 @@ const PRICE_TABLE: { match: RegExp; base: Rates; long?: { over: number; rates: R
   { match: /haiku-4-5/, base: rates('Haiku 4.5', 1, 5, 0.1) },
 ]
 
+/**
+ * N22: 요율을 확인한 모델(계열 · 판). 목록에 없는 모델(새 판 — 예 opus-5-6)은 위 표의 계열 요율로 그대로 세되 경고한다 — 요율을
+ * mod 가 스스로 고치지는 않는다. 날짜 · [1m] 같은 꼬리는 떼고 견준다
+ */
+const KNOWN_MODELS = new Set([
+  'fable-5-1',
+  'fable-5',
+  'mythos-5-1',
+  'mythos-5',
+  'opus-5-5',
+  'opus-5',
+  'opus-4-5',
+  'opus-4-6',
+  'opus-4-7',
+  'opus-4-8',
+  'sonnet-5-5',
+  'sonnet-5',
+  'sonnet-4-5',
+  'sonnet-4-6',
+  'haiku-5-5',
+  'haiku-4-5',
+])
+
+/** 모델 id → 견줄 이름: "claude-haiku-4-5-20251001" → "haiku-4-5", "claude-opus-5-5[1m]" → "opus-5-5" */
+export function modelKeyOf(model: string): string {
+  return model
+    .toLowerCase()
+    .replace(/\[.*$/, '')
+    .replace(/^claude-/, '')
+    .replace(/-\d{8}$/, '')
+}
+
+export function isKnownModel(model: string): boolean {
+  return KNOWN_MODELS.has(modelKeyOf(model))
+}
+
+/**
+ * N22 경고(바 세션 금액 옆 ⚠ · 패널 참고 줄): 가격표에 없는 모델(계열 요율로 셈) · 최대 컨텍스트 양이 1M 을 넘음(긴 창 요율이
+ * 따로일 수 있다). 둘 다 아니면 빈 목록. 문구는 사용자 확정(2026-10-14)
+ */
+export function priceWarnings(model: string | null | undefined, window: number | null | undefined): string[] {
+  const out: string[] = []
+  if (model && ratesFor(model) && !isKnownModel(model)) {
+    out.push(L('가격표에 없는 모델이라 요율 가격이 맞지 않을 수 있음 — 최신 버전에서 반영 예정', 'This model is not in the price table, so prices may be off — to be fixed in a later version'))
+  }
+  if (typeof window === 'number' && window > 1_000_000) {
+    out.push(L('최대 컨텍스트 양이 바뀌어 요율 가격이 맞지 않을 수 있음 — 최신 버전에서 반영 예정', 'The maximum context size changed, so prices may be off — to be fixed in a later version'))
+  }
+  return out
+}
+
 /** 모델 id 에 맞는 요율. 모르는 모델이면 null — 달러를 내지 않고 토큰만 보인다 */
 export function ratesFor(model: string, promptTokens = 0): Rates | null {
   const row = PRICE_TABLE.find(r => r.match.test(model))
@@ -69,19 +120,20 @@ export function spendUsd(days: SpendDays, from: string, to: string): number {
   return usd
 }
 
-/** 이 PC 지역 날짜 "YYYY-MM-DD" — tools/scan-spend.mjs 와 같은 꼴 */
-export function localDay(ms: number): string {
+/**
+ * 오늘 · 이번 달을 나누는 날짜 "YYYY-MM-DD" — UTC.
+ * tools/scan-spend.mjs 와 같은 꼴
+ */
+export function spendDay(ms: number): string {
   const d = new Date(ms)
   const two = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
+  return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}`
 }
 
-/** 이번 달 1일 0시(이 PC 지역 시각, ms) */
+/** 이번 달 1일 0시(UTC, ms) */
 export function monthStartMs(ms: number): number {
   const d = new Date(ms)
-  d.setDate(1)
-  d.setHours(0, 0, 0, 0)
-  return d.getTime()
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)
 }
 
 /** 긴 프롬프트 요율이 붙는 경계(토큰). 없는 모델이면 null — 지금은 Haiku 5.5(10만 초과 5배)뿐 */
@@ -384,10 +436,16 @@ export function coldFor(
 // 노랑은 hex 하나(#e0a030 — 막대 · 시점 · 한도와 같은 노랑, 2026-10-14 uxi 색 표). 예전 #d6b03a 는 노랑 다섯 벌 중 하나였다
 export const SESSION_HEX = { yellow: '#e0a030', orange: '#e8833a', red: '#e05555' } as const
 
+/**
+ * 세션 금액 글자 색(0.5 묶음 2 U13): 1단계 = 테마 키 warning(어두움 #db9300 · 밝음 #734500), 2단계 = mod 의 주황 하나 #d9722b(경고
+ * 주황과 같은 hex — 예전 #e8833a 는 1.21:1 로 거의 같은 색에 다른 뜻이었다), 3단계 = 테마 키 error. 그림(막대)은 SESSION_HEX 그대로
+ */
+export const SESSION_TEXT = ['warning', '#d9722b', 'error'] as const
+
 export function sessionColorOf(usd: number, colors: readonly [number, number, number]): string | undefined {
-  if (usd >= colors[2]) return SESSION_HEX.red
-  if (usd >= colors[1]) return SESSION_HEX.orange
-  if (usd >= colors[0]) return SESSION_HEX.yellow
+  if (usd >= colors[2]) return SESSION_TEXT[2]
+  if (usd >= colors[1]) return SESSION_TEXT[1]
+  if (usd >= colors[0]) return SESSION_TEXT[0]
   return undefined
 }
 
@@ -476,23 +534,29 @@ export function levelOf(contextTokens: number): Level {
 
 /** Text 의 color — 터미널 · 데스크톱 둘 다 아는 이름만 쓴다 */
 /** 컨텍스트 글자 색: 강조 · 권장을 넘었을 때만(그 아래는 색 없음 — 어디나 색이면 정작 노랑 · 빨강이 묻힌다) */
-export const LEVEL_TEXT: Record<Level, string | undefined> = { ok: undefined, warn: 'yellow', cut: 'red' }
+// 0.5 묶음 2(UI 묶음 U13): ANSI 이름(yellow · red)은 데스크톱에서 테마와 상관없는 고정 hex 라 밝은 테마에서 안 읽혔다(노랑 흰 바탕
+// 1.42:1). 빨강은 테마 키 error(어두움 #ec7e7e · 밝음 #8e2626), 주황은 엔진 테마 키가 없어 hex 하나 #d9722b(어두운 바 4.96 · 흰 3.29:1 —
+// 한 hex 로 두 테마 모두 4.5:1 은 셈으로 불가, 뜻은 말 · 게이지가 같이 말한다)
+export const LEVEL_TEXT: Record<Level, string | undefined> = { ok: undefined, warn: '#d9722b', cut: 'error' }
 
-/** 한도 막대 색: 70% 까지 보통(막대 기본 #6b8db8 — 예전 #5b8def 는 파랑이 한 벌 더였다), 90% 까지 노랑, 그 위 빨강 — LEVEL_HEX 와 같은 세 색 */
+/**
+ * 한도 막대 색 = 앱 사용량 막대(Meter)와 같게: 채움 fill-accent #2a78d6(두 테마 같음),
+ * 100% 에서만 fill-danger #d03b3b — 앱 2.37337 토큰 실측. 70 · 90% 경고는 막대 대신 옆 % 글자색(warning · error)이 맡는다
+ */
 export function limitHex(percent: number): string {
-  return percent >= 90 ? '#e05555' : percent >= 70 ? '#e0a030' : '#6b8db8'
+  return percent >= 100 ? '#d03b3b' : '#2a78d6'
 }
 
 /** 막대 색: 기준 아래는 차분한 파랑(초록이면 "좋다" 로 읽혀 색이 늘어난다), 넘으면 노랑 · 빨강 */
-export const LEVEL_HEX: Record<Level, string> = { ok: '#6b8db8', warn: '#e0a030', cut: '#e05555' }
+export const LEVEL_HEX: Record<Level, string> = { ok: '#6b8db8', warn: '#d9722b', cut: '#e05555' }
 
-/** 둥근 진행 막대 SVG(데스크톱). 바탕은 반투명 회색이라 밝은 · 어두운 테마 둘 다 보인다 */
+/** 둥근 진행 막대 SVG(데스크톱). 바탕 = 글자색 10%(앱 alpha-2 — 어두운 테마 흰 10% · 밝은 테마 검정 10%, 앱이 그림 뿌리에 그 자리 글자색을 넣는다) */
 export function barSvg(percent: number, hex: string, width: number, height: number): string {
   const p = Math.max(0, Math.min(100, percent))
   const r = height / 2
   const fillWidth = p === 0 ? 0 : Math.max(height, (width * p) / 100)
   const fill = fillWidth === 0 ? '' : `<rect width="${fillWidth.toFixed(1)}" height="${height}" rx="${r}" fill="${hex}"/>`
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" rx="${r}" fill="#888888" fill-opacity="0.28"/>${fill}</svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" rx="${r}" fill="currentColor" fill-opacity="0.1"/>${fill}</svg>`
 }
 
 /** 컨텍스트 막대의 영구 몫(컴팩트해도 남는 크기) 색 — 크기 단계(파랑 · 노랑 · 빨강) · 컴팩트(청록) · 모델(보라)과 겹치지 않는 밝은 회청색 */

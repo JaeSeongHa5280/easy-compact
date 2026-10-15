@@ -234,6 +234,15 @@ export function topSteps(details: readonly StepDetail[], n: number): { shown: St
   return { shown, rest: details.length - shown.length, restUsd: details.reduce((sum, d) => sum + (top.has(d) ? 0 : d.usd), 0) }
 }
 
+/**
+ * 최근 n 개를 최신 위로 + 그 앞 수 · 합(0.5 묶음 2 N18 — 사용자: 비싼 20개가 아니라 최근 20개, 질문 목록처럼 최신이 위). 줄 수는 같아
+ * 패널 크기 한도(size.test)는 그대로
+ */
+export function recentSteps(details: readonly StepDetail[], n: number): { shown: StepDetail[]; rest: number; restUsd: number } {
+  const from = Math.max(0, details.length - n)
+  return { shown: details.slice(from).reverse(), rest: from, restUsd: details.slice(0, from).reduce((sum, d) => sum + d.usd, 0) }
+}
+
 /** 질문 하나의 요청 수 — 메인 + 에이전트(질문 값에 들어 있는 것과 맞게). steps = 메인 요청 수 */
 export function callsOf(steps: number, details?: readonly StepDetail[]): number {
   return steps + (agentSum(details)?.steps ?? 0)

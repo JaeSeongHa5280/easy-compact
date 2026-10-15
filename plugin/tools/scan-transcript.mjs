@@ -6,9 +6,10 @@
 //   p <시각ms> <input> <output> <cache_read> <cache_creation> <model> <5분 쓰기> <1시간 쓰기>
 //                       (끝 둘 = usage.cache_creation 의 ephemeral_5m · 1h — 그 요청의 캐시 유지 시간)
 //   c <시각ms> <trigger> <preTokens>
-//   q <시각ms>                       (질문 시작 — promptId 가 처음 나온 사용자 줄)
+//   q <시각ms> <질문 글 앞부분>       (질문 시작 — promptId 가 처음 나온 사용자 줄, 글은 공백 하나로 200자까지 — N3)
 // 규칙은 hooks/flow.ts 의 recordsFromTranscript 와 같다: 메인 대화만(isSidechain 제외),
-// 같은 message.id · promptId 는 한 번만, 깨진 줄은 건너뛴다.
+// 같은 message.id 는 첫 줄로 내고 뒤 줄은 출력만 최댓값으로 고쳐 쓴다(N1 — 스트리밍 중 출력이 늘며 다시 적힌다),
+// promptId 는 한 번만, 깨진 줄은 건너뛴다.
 
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
@@ -20,7 +21,8 @@ if (!path) {
 }
 
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
-const seen = new Set()
+// 응답 id → out 의 자리 · 그 줄의 칸들(뒤 줄에서 출력만 고쳐 다시 쓴다)
+const seen = new Map()
 // 컴팩트 경계 줄도 같은 것이 다시 적힌다(2026-10-11 확인) — 시각 · 직전 크기로 한 번만
 const seenBoundary = new Set()
 const seenPrompt = new Set()
@@ -42,7 +44,11 @@ for await (const line of lines) {
   const at = Date.parse(String(r.timestamp ?? '')) || 0
   if (isNewPrompt && r.type === 'user') {
     seenPrompt.add(promptId)
-    out.push(`q ${at}`)
+    // 질문 글 앞부분(N3) — hooks/flow.ts promptTextOf 와 같은 규칙
+    const c = r.message?.content
+    const b = Array.isArray(c) ? c.find(x => x && x.type === 'text' && typeof x.text === 'string') : null
+    const text = (typeof c === 'string' ? c : b ? b.text : '').replace(/\s+/g, ' ').trim().slice(0, 200)
+    out.push(text ? `q ${at} ${text}` : `q ${at}`)
     continue
   }
   if (r.type === 'system' && r.subtype === 'compact_boundary') {
@@ -54,12 +60,20 @@ for await (const line of lines) {
     continue
   }
   const m = r.message
-  if (r.type !== 'assistant' || !m?.usage || !m.id || seen.has(m.id)) continue
-  seen.add(m.id)
+  if (r.type !== 'assistant' || !m?.usage || !m.id) continue
+  const prev = seen.get(m.id)
+  if (prev) {
+    const o = num(m.usage.output_tokens)
+    if (o > prev.parts[3]) {
+      prev.parts[3] = o
+      out[prev.at] = prev.parts.join(' ')
+    }
+    continue
+  }
   const u = m.usage
   const cc = u.cache_creation ?? {}
-  out.push(
-    `p ${at} ${num(u.input_tokens)} ${num(u.output_tokens)} ${num(u.cache_read_input_tokens)} ${num(u.cache_creation_input_tokens)} ${m.model ?? '?'} ${num(cc.ephemeral_5m_input_tokens)} ${num(cc.ephemeral_1h_input_tokens)}`,
-  )
+  const parts = ['p', at, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens), m.model ?? '?', num(cc.ephemeral_5m_input_tokens), num(cc.ephemeral_1h_input_tokens)]
+  seen.set(m.id, { at: out.length, parts })
+  out.push(parts.join(' '))
 }
 process.stdout.write(out.join('\n'))

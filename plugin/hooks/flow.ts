@@ -26,19 +26,34 @@ const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0
 export type FlowRecord =
   | { kind: 'p'; atMs: number; tokens: Tokens; model: string }
   | { kind: 'c'; atMs: number; trigger: string; pre: number }
-  | { kind: 'q'; atMs: number }
+  | { kind: 'q'; atMs: number; text?: string }
+
+/**
+ * 사용자 줄 message.content → 질문 글 앞부분(공백 하나로, 200자까지). 글(string)이거나 블록 목록의 첫 text 블록. 없으면 ''.
+ * tools/scan-transcript.mjs 와 같은 규칙
+ */
+export function promptTextOf(content: unknown): string {
+  let text = ''
+  if (typeof content === 'string') text = content
+  else if (Array.isArray(content)) {
+    const b = (content as { type?: unknown; text?: unknown }[]).find(x => x && x.type === 'text' && typeof x.text === 'string')
+    text = typeof b?.text === 'string' ? b.text : ''
+  }
+  return text.replace(/\s+/g, ' ').trim().slice(0, 200)
+}
 
 /** 사용자 줄의 질문 id — 질문 하나의 줄(프롬프트 · 도구 결과)엔 모두 같은 promptId 가 붙는다. 글 속 따옴표는 \" 라 안 걸린다 */
 const PROMPT_ID = /"promptId":"([^"]+)"/
 
 /**
- * 기록 파일 본문 → 건들. 메인 대화만(서브에이전트 줄 isSidechain 은 뺀다), 같은 message.id 는 한 번만
- * (블록마다 줄이 따로 남는다). 질문은 promptId 가 처음 나온 사용자 줄의 시각 — 같은 줄이 다시 적혀도(2026-10-11:
+ * 기록 파일 본문 → 건들. 메인 대화만(서브에이전트 줄 isSidechain 은 뺀다), 같은 message.id 는 첫 줄로 내고 뒤 줄은 출력만
+ * 최댓값으로(블록마다 · 스트리밍 중 출력이 늘며 줄이 따로 남는다 — 첫 줄만 세면 출력이 모자랐다, N1). 질문은 promptId 가 처음 나온 사용자 줄의 시각 — 같은 줄이 다시 적혀도(2026-10-11:
  * 이 세션 사용자 글 줄 3,500여 개 중 3,200개가 중복) 한 번만. 깨진 줄은 건너뛴다. tools/scan-transcript.mjs 와 같은 규칙
  */
 export function recordsFromTranscript(text: string): FlowRecord[] {
   const out: FlowRecord[] = []
-  const seen = new Set<string>()
+  // 응답 id → 그 요청의 토큰(뒤 줄에서 출력만 늘린다)
+  const seen = new Map<string, Tokens>()
   // 컴팩트 경계 줄도 같은 것이 다시 적힌다(2026-10-11: 세 번째 컴팩트 때 첫 경계 줄이 그대로 한 번 더) — 시각 · 직전 크기로 한 번만
   const seenBoundary = new Set<string>()
   const seenPrompt = new Set<string>()
@@ -58,7 +73,9 @@ export function recordsFromTranscript(text: string): FlowRecord[] {
     const atMs = Date.parse(String(r.timestamp ?? '')) || 0
     if (isNewPrompt && r.type === 'user') {
       seenPrompt.add(promptId)
-      out.push({ kind: 'q', atMs })
+      // 질문 글 앞부분(N3 — 기록에서 다시 만든 질문 줄 이름). 글 블록이 없으면(그림만 등) 없음
+      const text = promptTextOf((r.message as { content?: unknown } | undefined)?.content)
+      out.push(text ? { kind: 'q', atMs, text } : { kind: 'q', atMs })
       continue
     }
     if (r.type === 'system' && r.subtype === 'compact_boundary') {
@@ -70,9 +87,16 @@ export function recordsFromTranscript(text: string): FlowRecord[] {
       continue
     }
     const m = r.message as { id?: string; model?: string; usage?: Record<string, unknown> } | undefined
-    if (r.type !== 'assistant' || !m?.usage || !m.id || seen.has(m.id)) continue
-    seen.add(m.id)
-    out.push({ kind: 'p', atMs, model: m.model ?? '?', tokens: tokensOfUsage(m.usage) })
+    if (r.type !== 'assistant' || !m?.usage || !m.id) continue
+    const prev = seen.get(m.id)
+    if (prev) {
+      const outNow = num(m.usage.output_tokens)
+      if (outNow > prev.output_tokens) prev.output_tokens = outNow
+      continue
+    }
+    const tokens = tokensOfUsage(m.usage)
+    seen.set(m.id, tokens)
+    out.push({ kind: 'p', atMs, model: m.model ?? '?', tokens })
   }
   return out
 }
@@ -137,7 +161,9 @@ export function recordsFromLines(text: string): FlowRecord[] {
     } else if (f[0] === 'c' && f.length >= 4) {
       out.push({ kind: 'c', atMs: Number(f[1]) || 0, trigger: f[2]!, pre: Number(f[3]) || 0 })
     } else if (f[0] === 'q' && f.length >= 2) {
-      out.push({ kind: 'q', atMs: Number(f[1]) || 0 })
+      // 셋째 칸부터 질문 글 앞부분(tools/scan-transcript.mjs — 공백은 하나로 줄어 있다)
+      const text = f.slice(2).join(' ')
+      out.push(text ? { kind: 'q', atMs: Number(f[1]) || 0, text } : { kind: 'q', atMs: Number(f[1]) || 0 })
     }
   }
   return out
@@ -363,11 +389,12 @@ export function withQuestion(flow: Flow, atMs: number): Flow {
 export function addPoint(flow: Flow, p: CtxPoint, fresh?: number): void {
   flow.points.push(p)
   const last = flow.compactions[flow.compactions.length - 1]
-  if (last && last.after === null && last.index === flow.points.length - 1) {
-    last.after = p.ctx
+  // 컴팩트 뒤 첫 점: 직후 크기를 엔진이 안 줬으면 이 점으로(N2 — 엔진 tokensAfter 가 있으면 그것을 이미 적었다), 요약(새로 쓴 몫)은 늘 이 점으로
+  if (last && last.index === flow.points.length - 1 && last.summary === undefined) {
+    if (last.after === null) last.after = p.ctx
     const lastQ = flow.questions?.[flow.questions.length - 1]
     const isNewQuestion = lastQ !== undefined && lastQ >= last.atMs
-    if (fresh !== undefined && isNewQuestion && p.atMs - last.atMs <= coldGapMs(ttlAt(p))) last.summary = Math.min(fresh, p.ctx)
+    if (fresh !== undefined && isNewQuestion && p.atMs - last.atMs <= coldGapMs(ttlAt(p))) last.summary = Math.min(fresh, last.after)
   }
 }
 
@@ -612,10 +639,11 @@ export function flowSvg(
     const dim = from < lastMark ? ' fill-opacity="0.4"' : ''
     body += `<rect x="${(b * bw).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${(height - y).toFixed(1)}" fill="${LEVEL_HEX[levelOf(v)]}"${dim}/>`
   }
-  // 기준선은 회색 — 빨강 · 노랑이면 "비용이 많다" 로 읽혔다. 강조는 잘게, 권장은 길게 끊는다
-  const rule = (v: number, dash: string) =>
-    `<line x1="0" x2="${plotW.toFixed(1)}" y1="${yOf(v).toFixed(1)}" y2="${yOf(v).toFixed(1)}" stroke="${RULE_HEX}" stroke-width="1" stroke-dasharray="${dash}" stroke-opacity="0.9"/>`
-  body += rule(t.ctxWarn, '2 3') + rule(t.ctxCut, '6 3')
+  // 0.5 묶음 2(N14): 기준선 = 단계 색(주황 = 컴팩트할 때 시작 · 빨강 = 늦어짐 시작) — 막대 색이 바뀌는 자리와 같은 색. 예전 회색은 노랑이
+  // "좋은 때" 였던 때의 결정(빨강 · 노랑이면 비용이 많다로 읽혔다, 2026-10-11) — 이제 두 색은 구간 경고라 뜻이 맞다. 강조는 잘게, 권장은 길게
+  const rule = (v: number, dash: string, hex: string) =>
+    `<line x1="0" x2="${plotW.toFixed(1)}" y1="${yOf(v).toFixed(1)}" y2="${yOf(v).toFixed(1)}" stroke="${hex}" stroke-width="1" stroke-dasharray="${dash}" stroke-opacity="0.9"/>`
+  body += rule(t.ctxWarn, '2 3', LEVEL_HEX.warn) + rule(t.ctxCut, '6 3', LEVEL_HEX.cut)
   // 선 이름: 선 높이에 맞추되 두 이름이 붙으면 겹치지 않게 벌린다
   const fontPx = 10
   let yCut = Math.max(fontPx, yOf(t.ctxCut) + 3.5)
@@ -626,9 +654,8 @@ export function flowSvg(
   }
   const name = (y: number, hex: string, text: string) =>
     `<text x="${(plotW + 4).toFixed(1)}" y="${y.toFixed(1)}" font-size="${fontPx}" font-family="sans-serif" fill="${hex}">${text}</text>`
-  // 구간이면 "시작 · 끝"(이름 칸 54px 에 들게 짧게), 직접 지정이면 "강조 · 권장"
-  const [cutName, warnName] = t.isRange ? [L('끝', 'end'), L('시작', 'start')] : [L('권장', 'limit'), L('강조', 'warn')]
-  body += name(yCut, RULE_HEX, `${cutName} ${fmtTokens(t.ctxCut)}`) + name(yWarn, RULE_HEX, `${warnName} ${fmtTokens(t.ctxWarn)}`)
+  // 선 이름은 숫자만(글자색 — 두 테마에서 읽히게), 뜻은 그래프 아래 범례 줄(ui-usage f-key)에 바 · 컨텍스트 막대와 같은 말로
+  body += name(yCut, 'currentColor', fmtTokens(t.ctxCut)) + name(yWarn, 'currentColor', fmtTokens(t.ctxWarn))
   for (const index of marks) {
     const x = Math.min(plotW - 1, Math.max(1, (index / Math.max(1, n)) * plotW))
     body += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="0" y2="${height}" stroke="${COMPACT_HEX}" stroke-width="2"/>`

@@ -10,6 +10,15 @@ export function installedFrom(root: string): { configDir: string; marketplace: s
 }
 
 /**
+ * 앤트로픽 디렉터리(claude.ai)에서 받은 설치본: 엔진이 <설정 폴더>/plugins/synced/ 아래에 두고 id 는 "<이름>@synced"(공식 문서
+ * plugins/loading — synced 는 마켓 이름으로 못 쓰는 예약어). 그 설정 폴더와 마켓 자리 "synced", 아니면 null
+ */
+export function syncedFrom(root: string): { configDir: string; marketplace: 'synced' } | null {
+  const m = /^(.*)\/plugins\/synced\//.exec(`${root.replace(/\\/g, '/').replace(/\/$/, '')}/`)
+  return m ? { configDir: m[1]!, marketplace: 'synced' } : null
+}
+
+/**
  * 공식 데이터 폴더 이름 plugins/data/<id> — id = "플러그인@마켓" 에서 영문 · 숫자 · _ · - 가 아닌 글자를 - 로
  * (공식 문서 plugins/components: my-plugin@my-marketplace → my-plugin-my-marketplace)
  */
