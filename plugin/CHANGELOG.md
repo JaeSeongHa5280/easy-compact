@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.6.1] — 2026-10-15
+
+### Fixed
+- **The bar right after a compact** — from the end of a compact until the next request, the bar kept the size from before the compact (say 255k), said *Compact overdue* and still showed the last-question line. Now it shows the size the engine reports after the compact with *just compacted*, and hovering the button says *Just compacted · 255k → 18k · saves ~$0.28 per question*. The gauge stays at the smaller size too (on 0.6.0 it drained and then filled back up).
+
 ## [0.6.0] — 2026-10-15
 
 ### Added

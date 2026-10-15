@@ -71,7 +71,7 @@ import {
   OUTPUT_GUESS,
   SUMMARY_GUESS,
 } from './optimal'
-import { afterInNowTokens, compactSummary, flowFromRecords, lacksModels, lastCtxOf, lastMainTtl, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, scanTranscript, serializeFlow, sharedFor, extraPerCall, withPoint, withQuestion, recordsFromTranscript } from './flow'
+import { afterInNowTokens, compactSince, compactSummary, flowFromRecords, lacksModels, lastCtxOf, lastMainTtl, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, scanTranscript, serializeFlow, sharedFor, extraPerCall, withPoint, withQuestion, recordsFromTranscript } from './flow'
 import type { Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, agentPart, agentSum, answerBreakdown, callsOf, cellsOf, modelCompareText, promptHead, isWide, fitCells, stepLabel, textCh, recentSteps, widthOf } from './text'
@@ -1034,22 +1034,28 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
     // 컨텍스트 크기는 우리가 잰 마지막 메인 요청 값(흐름의 마지막 점)이 기준 — 띠 · 패널 · 그래프 · 질문별 비용이
     // 같은 값을 보인다. 흐름이 비었으면(기록을 못 읽음 · 첫 요청 전) 엔진 값.
     // 컴팩트 직후 · 첫 요청 전엔 엔진 값이 마지막 응답 기준이라 컴팩트 전 크기 그대로다(띠가 "권장 54%" 를 띄웠다) —
-    // 그 동안은 추정값. 엔진 값이 이미 줄어 있으면(컴팩트 전의 8할 아래) 그것을 믿는다. 엔진 값이 0 이어도(다시 연 세션의
-    // 컴팩트 직후 — 띠가 "컨텍스트 0" 이었다) 추정값
+    // 그 동안은 엔진이 컴팩트 결과로 준 직후 크기(N2), 그게 없으면 추정값. 엔진 값이 이미 줄어 있으면(컴팩트 전의 8할 아래)
+    // 그것을 믿는다. 엔진 값이 0 이어도(다시 연 세션의 컴팩트 직후 — 띠가 "컨텍스트 0" 이었다) 추정값.
+    // 0.6.1: 엔진이 직후 크기를 준 컴팩트는 pendingCompact 가 안 잡아, 이 동안 흐름의 마지막 점(컴팩트 전 크기)을 썼다 — 방금
+    // 저장하고 컴팩트했는데 띠가 "컨텍스트 255k · 컴팩트 늦어짐" 이었고 다음 요청에야 돌아왔다
     const flow = await readFlow($)
+    const since = compactSince(flow)
     const pending = pendingCompact(flow)
     const engineTokens = measured.context.tokens ?? 0
     const lastCtx = flow.points[flow.points.length - 1]?.ctx ?? null
     const isStale = pending !== null && pending.before > 0 && (engineTokens <= 0 || engineTokens >= pending.before * 0.8)
     // 추정값은 계산식 재료와 같은 직후 크기 — 막 읽은 흐름으로 바로 잰다(걸어 둔 최적은 이 함수 끝에서야 갱신된다)
     const afterNow = isStale ? ((await measureOptimal($, prev?.model ?? (await $.session.model()))).inputs?.after ?? null) : null
-    const tokens = isStale
-      ? engineTokens > 0
-        ? Math.min(afterNow ?? engineTokens, engineTokens)
-        : (afterNow ?? 0)
-      : pending !== null
-        ? engineTokens
-        : (lastCtx ?? engineTokens)
+    const tokens =
+      since !== null && since.after !== null
+        ? since.after
+        : isStale
+          ? engineTokens > 0
+            ? Math.min(afterNow ?? engineTokens, engineTokens)
+            : (afterNow ?? 0)
+          : pending !== null
+            ? engineTokens
+            : (lastCtx ?? engineTokens)
     const window = measured.context.window
     const percent = window > 0 ? (tokens / window) * 100 : (measured.context.percent ?? null)
     const categories = opts.categories
@@ -1080,7 +1086,7 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
       // 캐시 타이머는 컴팩트 뒤 첫 요청 전에도 컴팩트 시각부터 — 컴팩트 요청이 시스템 · 도구 앞부분 캐시를 읽어(실측 98.6%) 시간이
       // 새로 시작된다. 0.3.1 은 그 동안 "캐시 없음(다음 요청이 새로 씀)" 을 띄웠는데 뜻을 모르겠고 필요 없다 — 늘 남은 시간(얼리버드)
       lastActivityMs: await lastActivity($),
-      isAfterCompact: pending !== null,
+      isAfterCompact: since !== null,
       history: opts.pushHistory ? [...(prev?.history ?? []), tokens].slice(-12) : (prev?.history ?? []),
       sharedTokens: sharedFor(flow, model),
       perCallExtraUsd: extraPerCall(flow, model),
@@ -3487,6 +3493,26 @@ export const register: Register = on => {
     const pay = u && inputs && est?.kind === 'warm' ? compactPayoff(u.contextTokens, inputs, u.model, callsPerQ) : null
     // 아낄 게 거의 없음(본전 없음 · 줄어드는 몫이 작음) — 툴팁 · 카드 · 저장 프롬프트가 같은 판정
     const isLittle = pay !== null && u !== null && isLittleToSave(u.contextTokens, afterTokens, pay.breakEvenCalls)
+    // 방금 컴팩트함(컴팩트 뒤 첫 요청 전): 권하지 않는 까닭 대신 얼마를 줄였고 얼마나 아끼는지 — 컴팩트 전 손익과 같은 셈(직전
+    // 크기 → 직후 크기). 0.6.0 은 이 동안 컴팩트 전 크기로 "컴팩트 늦어짐" 을 띄웠다
+    const just = u?.isAfterCompact ? ((await read($, compactions)).at(-1) ?? null) : null
+    const isJustShrunk = just !== null && u !== null && just.before > u.contextTokens
+    const justPay = isJustShrunk && inputs ? compactPayoff(just.before, inputs, u.model, callsPerQ) : null
+    const justTip = isJustShrunk
+      ? [
+          L(
+            `방금 컴팩트함 · ${fmtTokens(just.before)} → ${u.contextEstimated ? '~' : ''}${fmtTokens(u.contextTokens)}`,
+            `Just compacted · ${fmtTokens(just.before)} → ${u.contextEstimated ? '~' : ''}${fmtTokens(u.contextTokens)}`,
+          ),
+          ...(justPay && justPay.saveCallUsd > 0
+            ? [
+                justPay.saveQuestionUsd !== null
+                  ? L(`질문마다 ~${fmtUsd(justPay.saveQuestionUsd)} 아낌`, `saves ~${fmtUsd(justPay.saveQuestionUsd)} per question`)
+                  : L(`요청마다 ~${fmtUsd(justPay.saveCallUsd)} 아낌`, `saves ~${fmtUsd(justPay.saveCallUsd)} per request`),
+              ]
+            : []),
+        ].join(' · ')
+      : null
     // 컴팩트를 권하지 않는 동안(구간 전 · 방금 컴팩트함 · 식었어도 컴팩트가 더 비쌈) 🗜 는 회색, 까닭은 툴팁으로 — 대부분의
     // 시간이 이 상태라 글을 붙이면 바가 늘 길어진다. 처음엔 버튼을 흐리게(dimColor) 했는데 데스크톱은 버튼 흐림을 안
     // 그렸다 — 버튼 밖 아이콘은 색이 먹는다. 버튼의 dimColor 는 터미널(아이콘 없음)에서 흐리게 보여 남긴다.
@@ -3511,6 +3537,7 @@ export const register: Register = on => {
         : null
     const notNowTip =
       coldTip ??
+      justTip ??
       (isLittle
         ? L('지금 컴팩트하면 손해 — 아낄 게 거의 없음(컨텍스트가 이미 작음)', 'Compacting now is a loss — little to save, the context is already small')
         : thr.isRange

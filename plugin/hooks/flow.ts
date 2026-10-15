@@ -405,6 +405,15 @@ export function pendingCompact(flow: Flow): CompactEvent | null {
 }
 
 /**
+ * 컴팩트 뒤 아직 요청이 없는 컴팩트(맨 마지막 것만) — 직후 크기를 엔진이 줬든(N2) 아니든. 없으면 null.
+ * pendingCompact 는 그중 직후 크기를 모르는 것만이라, 엔진이 직후 크기를 준 컴팩트 뒤엔 이 동안을 못 알아봤다(0.6.1)
+ */
+export function compactSince(flow: Flow): CompactEvent | null {
+  const last = flow.compactions[flow.compactions.length - 1]
+  return last && last.index >= flow.points.length ? last : null
+}
+
+/**
  * 다음 요청이 캐시에서 읽을 수 있던 크기 = 마지막 요청의 컨텍스트. 요청이 아직 없거나(세션 첫 요청) 그 뒤 컴팩트했으면 null —
  * 그때 쓰는 캐시는 처음 쓰는 것이지 다시 쓰는 게 아니다
  */

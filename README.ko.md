@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-4c9be8" alt="판 0.6.0">
+  <img src="https://img.shields.io/badge/version-0.6.1-4c9be8" alt="판 0.6.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code 플러그인">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Claude Code 2.1.295 이상 필요">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스">
@@ -110,6 +110,8 @@ claude plugin uninstall easy-compact@easy-compact
 </details>
 
 ## 0.6.0 에서 바뀐 것
+
+*0.6.1 고침: 컴팩트가 끝나고 다음 요청 전까지 바가 컴팩트 전 크기로 **컴팩트 늦어짐** 을 띄우던 것 — 이제 컴팩트 뒤 크기와 *컴팩트 직후*.*
 
 - **컨텍스트 게이지** — 바의 컴팩트 버튼 앞 아이콘이 앱의 컨텍스트 고리 같은 원형 게이지입니다(데스크톱). 채운 만큼이 지금 컨텍스트, 주황은 *컴팩트할 때*, 빨강은 *늦어짐* — 늦어졌는데 누를 수 있으면 깜빡이고, 컴팩트가 끝나면 줄어듭니다(설정 → 화면 → **모션** 으로 끔).
 - **컴팩트 시점은 현황 탭에서** — 간단 보기는 *이 세션* 카드의 구간 드롭다운과 그 아래 판정 · 금액 한 줄, 자세히 보기는 컴팩트 카드의 색 있는 **크기별 비용** 표(고른 구간은 테두리). 고르는 순간 적용되고, 드롭다운 끝 **직접 입력…** 으로 크기 하나를 정합니다.

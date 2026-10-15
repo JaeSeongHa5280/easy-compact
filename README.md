@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-4c9be8" alt="Version 0.6.0">
+  <img src="https://img.shields.io/badge/version-0.6.1-4c9be8" alt="Version 0.6.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -110,6 +110,8 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 </details>
 
 ## What's new in 0.6.0
+
+*0.6.1 fixes the bar showing the pre-compact size and **Compact overdue** from the end of a compact until the next request — it now shows the size after the compact, marked *just compacted*.*
 
 - **Context gauge** — the icon in front of the bar's compact button is a ring gauge like the app's own context ring (desktop). How full it is shows the context; orange means *Time to compact*, red *Compact overdue* — it pulses when overdue and pressable, and drains when a compact finishes (turn the motion off in Settings → Screen → **Motion**).
 - **Compact timing lives in Overview** — the Simple view has the range dropdown in the *This session* card with a verdict-and-cost line under it; the Detailed view has a colored **Cost by size** table in the Compact card (the picked range is outlined). Picking applies at once, and **Enter a size…** at the end of the dropdown sets a single size.

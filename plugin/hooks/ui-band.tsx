@@ -217,19 +217,20 @@ function costCellsRaw(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: r
   if (spend?.today !== null && spend?.today !== undefined) cells.push(spendCell('c-today', L('오늘 ', 'Today '), spend.today, 2.4))
   if (spend?.month !== null && spend?.month !== undefined) cells.push(spendCell('c-month', L('이번 달 ', 'This month '), spend.month, 2.2))
   const level = levelOf(u.contextTokens)
-  const ctxText = u.contextEstimated
-    ? L(`컨텍스트 ~${fmtTokens(u.contextTokens)} 컴팩트 직후`, `Context ~${fmtTokens(u.contextTokens)} just compacted`)
-    : L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`)
+  // 컴팩트 뒤 첫 요청 전이면 "컴팩트 직후" — 크기는 엔진이 준 직후 크기(N2), 그게 없어 추정이면 "~"
+  const isJust = u.contextEstimated === true || u.isAfterCompact === true
+  const ctxNum = `${u.contextEstimated ? '~' : ''}${fmtTokens(u.contextTokens)}`
+  const ctxText = isJust ? L(`컨텍스트 ${ctxNum} 컴팩트 직후`, `Context ${ctxNum} just compacted`) : L(`컨텍스트 ${ctxNum}`, `Context ${ctxNum}`)
   const ctxCell: LineCell | null = !show.context
     ? null
     : {
         key: 'c-ctx',
         text: ctxText,
         el: isFirst =>
-          u.contextEstimated ? (
+          isJust ? (
             <Text>
               {dot(isFirst)}
-              <Text color={LEVEL_TEXT[level]}>{L(`컨텍스트 ~${fmtTokens(u.contextTokens)}`, `Context ~${fmtTokens(u.contextTokens)}`)}</Text>
+              <Text color={LEVEL_TEXT[level]}>{L(`컨텍스트 ${ctxNum}`, `Context ${ctxNum}`)}</Text>
               <Text dimColor>{L(' 컴팩트 직후', ' just compacted')}</Text>
             </Text>
           ) : (
