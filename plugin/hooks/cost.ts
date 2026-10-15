@@ -124,6 +124,15 @@ export function spendUsd(days: SpendDays, from: string, to: string): number {
  * 오늘 · 이번 달을 나누는 날짜 "YYYY-MM-DD" — UTC.
  * tools/scan-spend.mjs 와 같은 꼴
  */
+/**
+ * M1(0.7.0 피드백): 대화 기록에 없는 요청 값(scan-spend 출력 extra — 날짜 → 달러)의 날짜 범위 합. 오늘 · 이번 달 = spendUsd + 이것
+ */
+export function extraUsd(extra: Record<string, number> | undefined, from: string, to: string): number {
+  let usd = 0
+  for (const [day, v] of Object.entries(extra ?? {})) if (day >= from && day <= to && typeof v === 'number' && Number.isFinite(v)) usd += v
+  return usd
+}
+
 export function spendDay(ms: number): string {
   const d = new Date(ms)
   const two = (n: number) => String(n).padStart(2, '0')

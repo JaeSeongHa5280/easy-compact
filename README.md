@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.7.0-4c9be8" alt="Version 0.7.0">
+  <img src="https://img.shields.io/badge/version-0.8.0-4c9be8" alt="Version 0.8.0">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-070">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-080">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a>
 </p>
 
 ---
@@ -78,7 +78,7 @@ No `claude` command (usual if you only use the desktop app)? Send the one line a
 
 ## Update
 
-**From 0.5.0, inside the app:** **◔** on the bar (**📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *New N* (on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
+**From 0.5.0, inside the app:** the bar's **gauge** — the ring before **Compact** (**◔** on 0.6–0.7, **📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *New N* (on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
 
 **On 0.4.1 or earlier, or to do it yourself, send this one line to Claude**, then restart Claude:
 
@@ -109,7 +109,18 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.7.0
+## What's new in 0.8.0
+
+- **The gauge opens the pane** — click the ring before **Compact** to open or close the Easy Compact pane, like the app's own context ring. The **◔** button is gone, so the bar's top right holds only **—** and **✕**. Hover the gauge for the context and your compact range, the **Compact** button for what to do.
+- **Terminal: buttons instead of dropdowns** — value lists are buttons in a row (a dropdown kept the arrow keys), session-cost colors are **[ − ] $10 [ + ]**, and the compact card is numbered: **1** Save & compact · **2** Compact now · **3** Cancel — typing the number in an empty prompt presses it.
+- **Today · this month include what isn't in the records** — compact summaries and Claude Code's own background requests, as easy-compact measured them.
+- **? chips** — the **?** beside a setting is a small bordered chip right after its name.
+- **Fixed** — the gauge blinking when the bar changed size, and *Compact now* not responding to Enter in a terminal.
+
+Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.7.0</b></summary>
 
 - **Version button** — at the right of the pane's tab row: *New N* when a new version is out, *What's new in N* after updating. Press it for what changed in every newer version, plus **[Check for updates]** and **[Update]** — you can check again any time, even right after updating.
 - **Settings fold like the app's side panel** — **⌄** / **›** beside each section title; only **Screen** is open at first, and a folded section shows its current value. **Screen** keeps what the screen type decides; the rest of the bar's options moved to **Bar — every screen**.
@@ -118,7 +129,7 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 - **The cache lifetime is shown, not changed** — easy-compact no longer writes `promptCacheTtl` to your Claude Code settings.
 - **Fixed** — the bar's session cost starting over from $0 after an app restart, the compact button's chip covering ◔, *downloaded — restart to apply* staying after an update, the **?** in Overview's Compact card not opening, and Korean left on the English screen.
 
-Full list: [CHANGELOG](CHANGELOG.md).
+</details>
 
 <details>
 <summary><b>What's new in 0.6.0</b></summary>
@@ -193,7 +204,7 @@ Claude Code re-reads the whole context on every request — a session at 300k pa
 
 ## Demo · 60 s
 
-https://github.com/user-attachments/assets/14ada62f-b8b0-4362-a69f-7014d85a4fff
+https://github.com/user-attachments/assets/793eb759-3f15-4e0d-882d-5d234479d873
 
 ## Features
 
@@ -202,7 +213,7 @@ https://github.com/user-attachments/assets/14ada62f-b8b0-4362-a69f-7014d85a4fff
 <img src="docs/img/band.png" width="900" alt="The Easy Compact bar: plan usage, per-request cost, context, compact range, cache, and this question's cost">
 
 **Context, next-request cost and this question's cost — updated after every request.**
-Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** under Settings → **Screen**; to choose single parts, pick **Custom** there and switch the rows below it — the bar preview follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both under **Bar — every screen**. Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
+Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** under Settings → **Screen**; to choose single parts, pick **Custom** there and switch the rows below it — the bar preview follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both under **Bar — every screen**. Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
 
 <img src="docs/img/screen.png" width="520" alt="Settings → Screen type: Simple · Detailed · Custom, a “?” on each row, and a preview of the bar and the question-cost chip">
 
@@ -235,7 +246,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 | 🔴 Red gauge (pulsing) · *Compact overdue* | Past your range — the deeper, the faster it pulses |
 | 🔴 *Cache expired* · **Compact now advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
 
-Hover the gauge or the button and the first line is the context and your compact range (as size, % or both — **Context numbers**), then the state.
+Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do.
 
 ### 4. Save & compact — one click
 
@@ -243,7 +254,7 @@ Hover the gauge or the button and the first line is the context and your compact
 
 <img src="docs/img/keep-working.png" width="860" alt="The cache has expired and compacting now would cost more: the card says Keep working, with only an OK button">
 
-**"Compact now?" shows what you save per question and what the compact costs.** Its text dropdown (Normal · Long-session handoff · Wrap-up) picks what to keep, and what the chosen text does is shown in two lines (*Save* · *Reply*) — you can write both texts yourself in Settings → **Compact text** (**① Text sent before compacting** · **② Text after /compact**). With a cold cache it's the *Cache expired* card — continuing vs compacting now, with ▶ Compact now as the main button (a save question would first re-send everything). **When compacting now would cost more** (a cold cache where continuing is cheaper, or little to save), the card has no compact buttons, just *Keep working* — easy-compact decides the money side with numbers and doesn't leave it to the session. Pressing **Save & compact**:
+**"Compact now?" shows what you save per question and what the compact costs.** Its text dropdown (Normal · Long-session handoff · Wrap-up) picks what to keep, and what the chosen text does is shown in two lines (*Save* · *Reply*) — you can write both texts yourself in Settings → **Compact text** (**① Text sent before compacting** · **② Text after /compact**). With a cold cache it's the *Cache expired* card — continuing vs compacting now, with ▶ Compact now as the main button (a save question would first re-send everything). **When compacting now would cost more** (a cold cache where continuing is cheaper, or little to save), the card has no compact buttons, just *Keep working* — easy-compact decides the money side with numbers and doesn't leave it to the session. In a terminal the card's buttons are numbered — **1** Save & compact · **2** Compact now · **3** Cancel — and typing the number in an empty prompt presses it. Pressing **Save & compact**:
 
 ```mermaid
 flowchart LR
@@ -263,7 +274,7 @@ flowchart LR
 
 <img src="docs/img/simple.png" width="900" alt="The Simple screen: a one-line bar and the Simple Easy Compact pane with This session and cost per question">
 
-Open it with **◔** on the bar. The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested · not advised · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen type in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Bar · pane**.
+Open it by clicking the bar's **gauge** (in a terminal, **[Pane ▸]**). The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested · not advised · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen type in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Bar · pane**.
 
 ### 6. Terminal too
 
@@ -279,13 +290,13 @@ The window buttons sit at the top right of the bar. Every choice applies to all 
 |---|---|---|
 | **—** / **□** | One line / full | Press it again |
 | **✕** fold | Folds the bar below the input in every session | By itself when it's time to compact (orange · cache expired) — or press **🔽 Easy Compact ⇱** below the input, or type `/easy-compact show` |
-| **◔** | Opens or closes the Easy Compact pane | Press it again |
+| **Gauge** (the ring before **Compact**) | Opens or closes the Easy Compact pane (in a terminal, **[Pane ▸]**) | Press it again |
 
 Whether a folded bar opens by itself is **Open the bar when compacting** under Settings → **Bar · pane** (on by default). Turn it off and the bar stays folded — the button below the input turns grey (*closed*) — until you press it: a pause before you decide to uninstall. Folding an opened-by-itself bar again keeps it folded until things get more urgent (red · cache expired).
 
 <img src="docs/img/fold.png" width="900" alt="After folding the bar: a note that it opens by itself when it is time to compact, and the Easy Compact button below the input">
 
-**There are only two commands: `/easy-compact show` · `hide`** — use `show` to open a folded bar. Everything else is on the bar's buttons and the **⚙ Settings** tab of the ◔ pane. Like the app's side panel, each section folds under its title (**⌄** open · **›** folded; only **Screen** is open at first, and a folded section shows its current value beside the title), and each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). The sections: **Screen** (Simple · Detailed · Custom with a preview, then what that screen shows — answer chip details · cost row · question row, changed on Custom and dimmed on the presets), **Bar — every screen** (limits row · All sessions · session-cost colors · cost order · context numbers as size, % or both · bar size · animations), **Bar · pane** (keep the bar folded · open the bar when compacting · open the pane in new sessions · open and close together · highlight — switches), **Compact text** · **Cache** · **Language**. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version: press it for what changed in each newer version, **Check for updates** and **Update**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
+**There are only two commands: `/easy-compact show` · `hide`** — use `show` to open a folded bar. Everything else is on the bar's buttons and the **⚙ Settings** tab of the pane. Like the app's side panel, each section folds under its title (**⌄** open · **›** folded; only **Screen** is open at first, and a folded section shows its current value beside the title), and each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). In a terminal, value lists are buttons in a row instead of dropdowns. The sections: **Screen** (Simple · Detailed · Custom with a preview, then what that screen shows — answer chip details · cost row · question row, changed on Custom and dimmed on the presets), **Bar — every screen** (limits row · All sessions · session-cost colors · cost order · context numbers as size, % or both · bar size · animations), **Bar · pane** (keep the bar folded · open the bar when compacting · open the pane in new sessions · open and close together · highlight — switches), **Compact text** · **Cache** · **Language**. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version: press it for what changed in each newer version, **Check for updates** and **Update**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
 
 **Buttons cost nothing.** Typed commands don't call the model either, but the command and its one-line answer stay in the conversation, so they are re-sent with your next request.
 
@@ -304,7 +315,7 @@ Still stuck? Open an [issue](https://github.com/JaeSeongHa5280/easy-compact/issu
 - **Everything stays on your machine.** easy-compact reads your local session records and never goes online by itself. Only when you press **[Check for updates]** · **[Update]** under the pane's version button does Claude Code (the `claude plugin` commands) fetch the marketplace from GitHub.
 - **Platforms:** built and tested on Windows 11. Nothing in the code is OS-specific, but macOS and Linux haven't been tried on real machines yet — reports welcome.
 - **Desktop app:** right after the pane opens, the first click inside it only moves focus — click once more.
-- Records over 4 MB are read with Node.js (14.8+). Without `node`, a very long session is drawn from when you installed, and the pane says so. Today · this month are counted with Node.js too — without it those bar cells don't appear and the pane's **All sessions** line says *Not measured* and why. Other sessions' transcripts (token counts only) are read only while that option is on or the pane's Overview tab is open in the Detailed view. Today · this month are cut at UTC midnight.
+- Records over 4 MB are read with Node.js (14.8+). Without `node`, a very long session is drawn from when you installed, and the pane says so. Today · this month are counted with Node.js too — without it those bar cells don't appear and the pane's **All sessions** line says *Not measured* and why. Other sessions' transcripts (token counts only) are read only while that option is on or the pane's Overview tab is open in the Detailed view. Today · this month are cut at UTC midnight. They include what easy-compact measured for requests that aren't in the session records — compact summaries and Claude Code's own background requests (earlier days come from the cost-per-question history). Use on other computers and on the web isn't counted.
 
 ## License
 

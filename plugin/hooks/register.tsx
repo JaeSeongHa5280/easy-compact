@@ -48,6 +48,7 @@ import {
   monthStartMs,
   projectSlug,
   spendUsd,
+  extraUsd,
   modelKey,
   ratesFor,
   rewriteOf,
@@ -76,7 +77,7 @@ import type { Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, agentPart, agentSum, answerBreakdown, callsOf, cellsOf, ctxNumText, modelCompareText, promptHead, isWide, fitCells, rangeNumText, stepLabel, textCh, recentSteps, widthOf } from './text'
 import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, directKeep, tidyVerdict } from './tidy'
-import { ACCENT, agentText, BRAND_HEX, CH_PX, decoIcon, gaugeEl, setMotion, hoverTip, ICON_GRAY, segButton, segGroup, row, gridOf, nameColW, phaseLook, pickButton, pulseDot, CARD_INSET, emptyLine, questionScope, stepText, SVG_MAX_PX } from './ui-common'
+import { ACCENT, agentText, BRAND_HEX, CH_PX, choiceControl, decoIcon, gaugeEl, setMotion, hoverTip, ICON_GRAY, segButton, segGroup, row, gridOf, nameColW, phaseLook, pickButton, pulseDot, CARD_INSET, emptyLine, questionScope, stepText, SVG_MAX_PX } from './ui-common'
 import type { IconName, Ui, Fold } from './ui-common'
 import { drawBandPreview, drawLimitsLine, fitEstimateLine, fitLastTurnLine, minShowOf, rewriteNote, setBandOrder, setCtxUnit } from './ui-band'
 import type { SpendShown } from './ui-band'
@@ -458,15 +459,20 @@ async function refreshSpend($: EngineInterface, minGapMs = 30_000, isWanted = fa
   spendRunning = true
   try {
     const ran = await $.process.run(
-      ['node', `${$.plugin.root}/tools/scan-spend.mjs`, `${await claudeHome($)}/projects`, `${await dataDir($)}/spend-cache.json`, String(monthStartMs(nowMs))],
+      // 넷째 = mod 데이터 폴더: 대화 기록에 없는 요청(컴팩트 · 앱 자체 요청 — 장부 extra/ · 질문 기록 turns/)을 extra 로(M1)
+      ['node', `${$.plugin.root}/tools/scan-spend.mjs`, `${await claudeHome($)}/projects`, `${await dataDir($)}/spend-cache.json`, String(monthStartMs(nowMs)), await dataDir($)],
       { timeoutMs: 180_000 },
     )
     if (ran.exitCode !== 0) throw new Error(`exit ${ran.exitCode}`)
-    const out = JSON.parse(String(ran.stdout ?? '')) as { days?: SpendDays }
+    const out = JSON.parse(String(ran.stdout ?? '')) as { days?: SpendDays; extra?: Record<string, number> }
     if (!out.days) throw new Error('no days in output')
     const today = spendDay(nowMs)
     const first = `${today.slice(0, 8)}01`
-    await update($, spend, () => ({ atMs: nowMs, today: spendUsd(out.days!, today, today), month: spendUsd(out.days!, first, today) }))
+    await update($, spend, () => ({
+      atMs: nowMs,
+      today: spendUsd(out.days!, today, today) + extraUsd(out.extra, today, today),
+      month: spendUsd(out.days!, first, today) + extraUsd(out.extra, first, today),
+    }))
     await update($, spendFailed, () => false)
     spendFailAt = 0
     spendFailWhy = ''
@@ -1374,6 +1380,38 @@ async function usedBefore($: EngineInterface): Promise<boolean> {
 }
 
 /**
+ * B5 안내: 패널 문이 ◔ 에서 게이지로 옮겨 간 것을 데스크톱에서 한 번만 알린다 — 모든 세션
+ * 공통 표시(저장소). 토스트는 그 세션 대화 화면 오른쪽 위에 몇 초만 떠, 세션이 켜질 때(업데이트가 뒤에 숨은 세션들에도 한꺼번에
+ * 올라간다)가 아니라 사람이 그 세션에서 질문을 보낼 때 띄운다. ◔ 를 쓰던 사람인지는 세션 시작 때 다른 저장값을 쓰기 전에 가린다
+ * (새 설치도 곧 패널 기록이 생긴다). 터미널은 [패널 ▸] 그대로라 알리지 않는다
+ */
+const GAUGE_NOTE_KEY = 'gaugeDoorNoted'
+const GAUGE_NOTE_MS = 12_000
+/** 이 프로세스에서 띄울 안내: false = 없음(이미 봄 · 터미널), isUpdate = ◔ 를 쓰던 사람 */
+let gaugeNote: { isUpdate: boolean } | false = false
+
+async function prepareGaugeNote($: EngineInterface): Promise<{ isUpdate: boolean } | false> {
+  if (await isTerminalSession($)) return false
+  if (await $.store.get(GAUGE_NOTE_KEY)) return false
+  return { isUpdate: await usedBefore($) }
+}
+
+async function showGaugeNote($: EngineInterface): Promise<void> {
+  const note = gaugeNote
+  if (!note) return
+  gaugeNote = false
+  // 다른 세션이 먼저 띄웠으면 그만
+  if (await $.store.get(GAUGE_NOTE_KEY)) return
+  await $.store.set(GAUGE_NOTE_KEY, true)
+  $.ui.toast(
+    note.isUpdate
+      ? L('◔ 버튼이 없어졌습니다 — 바의 동그라미(게이지)를 누르면 이지 컴팩트 패널이 열립니다', 'The ◔ button is gone — click the ring (gauge) on the bar to open the Easy Compact pane')
+      : L('바의 동그라미(게이지)를 누르면 이지 컴팩트 패널이 열립니다', 'Click the ring (gauge) on the bar to open the Easy Compact pane'),
+    { timeoutMs: GAUGE_NOTE_MS },
+  )
+}
+
+/**
  * 저장된 설정이 없을 때 한 번: 구간 · 화면만 적어 둔다(나머지는 계속 기본값을 따른다) — 업데이트면 쓰던 구간, 새 설치면 새 기본
  * (20만 ~ 25만). 화면은 둘 다 간단(정보가 처음부터 많으면 낯설다)
  */
@@ -1920,10 +1958,46 @@ function withAppStep(details: readonly StepDetail[], label: string, usd: number)
 }
 
 /**
+ * M1(0.7.0 피드백 "이번 달 금액이 Claude 화면보다 작음"): 대화 기록에 없는 요청(컴팩트 요청 · 앱 자체 요청)의 값을 세션 장부
+ * <데이터>/extra/<세션>.json 에 그날(UTC)로 더한다 — 오늘 · 이번 달은 기록 합에 이 장부를 더한다(scan-spend extra). 장부가 없으면 이 세션
+ * 질문 기록(앞 판이 남긴 컴팩트 · 앱 자체 요청 줄)에서 시작한다 — 업데이트 뒤 한 번 다시 모으기. 질문 기록에 더하기 전에 부른다
+ * (시작 값에 이번 값이 두 번 들지 않게). 못 쓰면 로그만 — 다음 값에 다시
+ */
+async function addExtraSpend($: EngineInterface, usd: number): Promise<void> {
+  if (!(usd > 0)) return
+  try {
+    const path = `${await dataDir($)}/extra/${await $.session.id()}.json`
+    let days: Record<string, number> | null = null
+    try {
+      const j = JSON.parse(await $.fs.read(path)) as { v?: unknown; days?: Record<string, number> }
+      if (j.v === 1 && j.days) days = { ...j.days }
+    } catch {
+      // 처음 — 질문 기록에서 시작
+    }
+    if (!days) {
+      days = {}
+      // 메모리 목록이 아직 비었으면(켠 직후 — loadTurns 전) 질문 기록 파일에서
+      let list: readonly TurnSummary[] = await read($, turnSummaries)
+      if (list.length === 0) list = await $.fs.read(await turnsFile($)).then(parseTurnsFile, () => null) ?? []
+      for (const s of list) {
+        if (s.rebuilt) continue
+        for (const d of s.details ?? []) if (d.app || d.compact) days[spendDay(s.atMs)] = (days[spendDay(s.atMs)] ?? 0) + d.usd
+      }
+    }
+    const day = spendDay(await $.clock.now())
+    days[day] = (days[day] ?? 0) + usd
+    await $.fs.write(path, JSON.stringify({ v: 1, days }))
+  } catch (err) {
+    log($, `extra spend write failed: ${String(err)}`)
+  }
+}
+
+/**
  * 앱 자체 요청 값을 질문에 더한다: 도는 질문이 있으면 그 질문에, 없으면 끝난 마지막 질문에. 읽기 · 쓰기 · 출력으로 못 나눠
  * cost.usd 와 appUsd 에만
  */
 async function addAppCost($: EngineInterface, usd: number, label: string): Promise<void> {
+  await addExtraSpend($, usd)
   const add = <T extends { cost: CostParts; appUsd?: number }>(t: T, details: readonly StepDetail[]) => ({
     ...t,
     cost: { ...t.cost, usd: t.cost.usd + usd },
@@ -1946,6 +2020,7 @@ async function addAppCost($: EngineInterface, usd: number, label: string): Promi
  * 나뉜 값이라 내역도 맞는다)
  */
 async function addCompactStep($: EngineInterface, parts: CostParts | null, before: number): Promise<void> {
+  await addExtraSpend($, parts?.usd ?? 0)
   const add = <T extends { cost: CostParts }>(t: T, details: readonly StepDetail[]) => ({
     ...t,
     cost: parts ? addCost(t.cost, parts) : t.cost,
@@ -2533,11 +2608,11 @@ const help = () =>
   L(
     [
       '/easy-compact 보이기 | 안보이기   입력창 위 이지 컴팩트 바 펴기 · 접기(모든 세션) — 영어: show | hide',
-      `나머지는 바의 버튼: ◔ 이지 컴팩트 패널(설정 탭) · — / □ 한 줄 / 전체 · ✕ 접기. 접어 두면 입력창 아래 [${revealLabel(false)}] — 컴팩트할 때 저절로 펴짐(설정)`,
+      `나머지는 바: 게이지(동그라미 — 터미널은 [패널 ▸]) = 이지 컴팩트 패널(설정 탭) · — / □ 한 줄 / 전체 · ✕ 접기. 접어 두면 입력창 아래 [${revealLabel(false)}] — 컴팩트할 때 저절로 펴짐(설정)`,
     ].join('\n'),
     [
       '/easy-compact show | hide   open or fold the Easy Compact bar above the input (every session)',
-      `Everything else is on the bar's buttons: ◔ Easy Compact pane (Settings tab) · — / □ one line / full · ✕ fold. When folded: [${revealLabel(false)}] below the input — it opens by itself when it is time to compact (Settings)`,
+      `Everything else is on the bar: the gauge (the ring — [Pane ▸] in a terminal) = Easy Compact pane (Settings tab) · — / □ one line / full · ✕ fold. When folded: [${revealLabel(false)}] below the input — it opens by itself when it is time to compact (Settings)`,
     ].join('\n'),
   )
 
@@ -2574,6 +2649,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await ensureLang($)
     await checkEngine($)
+    // B5 안내: ◔ 를 쓰던 사람인지는 다른 저장값을 쓰기 전에(띄우는 건 첫 질문 때 — turn.start)
+    gaugeNote = await prepareGaugeNote($).catch(() => false as const)
     await $.command.register({
       name: 'easy-compact',
       // 메뉴 · 도움말엔 보이기 · 안보이기만 — 나머지는 바의 버튼 · 설정 탭이 다 한다(버튼은 기록에 안 남아 토큰 0).
@@ -2689,6 +2766,8 @@ export const register: Register = on => {
   // ③ 작업 중 표시: 메인 턴이 시작되면 누적을 비운다
   on('turn.start', async ($, e, next) => {
     await ensureLang($)
+    // B5 안내 — 사람이 이 세션 화면에서 질문을 보낸 때 한 번
+    if (gaugeNote && (e as { agentId?: string }).agentId === undefined) void showGaugeNote($).catch(() => {})
     // 보류 표시는 다음 질문까지만
     if (e.agentId === undefined && (await read($, compactPhase)) === 'held') await update($, compactPhase, () => 'idle')
     // 앞 답 뒤 30초 안에 돈 앱 자체 요청은 앞 질문에, 그 뒤(앞 질문 값을 고정한 뒤)는 이 질문에 — 여기부터는 이 질문의 요청이라
@@ -3066,8 +3145,8 @@ export const register: Register = on => {
     if (verb !== '')
       return {
         text: L(
-          '모르는 명령입니다. 명령은 /easy-compact 보이기 · 안보이기 — 나머지는 바의 버튼(◔ 패널 · 설정 탭)',
-          'Unknown command. Commands: /easy-compact show · hide — everything else is on the bar (◔ pane · Settings tab)',
+          '모르는 명령입니다. 명령은 /easy-compact 보이기 · 안보이기 — 나머지는 바(게이지 = 패널 · 설정 탭)',
+          'Unknown command. Commands: /easy-compact show · hide — everything else is on the bar (the gauge = pane · Settings tab)',
         ),
       }
     // 흐름 먼저 — 사용량은 컴팩트 직후인지를 흐름에서 본다
@@ -3516,7 +3595,9 @@ export const register: Register = on => {
         ? L(`컨텍스트 ${ctxNumText(u.contextTokens, u.window, sNow.ctxUnit)} · 컴팩트 구간 ${rangeNumText(thr, u.window, sNow.ctxUnit)}`, `Context ${ctxNumText(u.contextTokens, u.window, sNow.ctxUnit)} · compact range ${rangeNumText(thr, u.window, sNow.ctxUnit)}`)
         : L(`컨텍스트 ${ctxNumText(u.contextTokens, u.window, sNow.ctxUnit)} · 컴팩트 기준 ${rangeNumText(thr, u.window, sNow.ctxUnit)}`, `Context ${ctxNumText(u.contextTokens, u.window, sNow.ctxUnit)} · compact at ${rangeNumText(thr, u.window, sNow.ctxUnit)}`)
       : null
-    const tipLines = (state: string): string[] => (ctxTip ? [ctxTip, state] : [state])
+    // B5(0.7.0 피드백 "게이지 칩이 컴팩트 버튼 칩과 똑같아 헷갈림"): 숫자(컨텍스트 · 구간)는 게이지 칩(gaugeDoor)에만, 컴팩트 버튼 칩은
+    // 지금 상태 · 할 일
+    const tipLines = (state: string): string[] => [state]
     // 0.5 묶음 2: "컴팩트하기 좋은 때" → "컴팩트할 때"(노랑은 기회가 아니라 구간 경고 — 사용자 정정). 단일 크기도 버튼에 상태를
     // ("곧 컴팩트할 때" — 예전엔 칩에만 있고 버튼은 "이지 컴팩트" 라 구간 모드와 달랐다)
     const compactText =
@@ -3538,13 +3619,17 @@ export const register: Register = on => {
     const motion = sNow.motion !== 'reduce'
     const shrink = await shrinkNow($)
     const gaugeBox = (blink: boolean) => {
+      const isBlink = blink && Boolean(u) && !shrink
       const el = gaugeEl(ui, e.surface, shrink ? shrink.to : (u?.contextTokens ?? 0), {
         key: 'compact-icon-svg',
         alt: u ? L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`) : L('컨텍스트 아직 모름', 'Context not known yet'),
         px: 16,
-        blink: blink && Boolean(u) && !shrink,
+        blink: isBlink,
         motion,
-        live: motion,
+        // B6(0.7.0 피드백 "바를 최소 · 최대로 열 때마다 게이지가 깜빡"): 틀(샌드박스 iframe)은 움직일 때만(깜빡임 · 컴팩트 끝 줄어듦) —
+        // 늘 틀이면 최소 ↔ 최대처럼 게이지가 다른 줄 · 다른 상자로 옮겨 갈 때 앱이 틀을 새로 띄워 빈칸이 번쩍였다. 가만히 있는 게이지는
+        // 그림(img)이라 다시 그려도 바로 그려진다(패널 머리 게이지와 같은 규칙)
+        live: motion && (isBlink || Boolean(shrink)),
         ...(shrink ? { fromCtx: shrink.from } : {}),
       })
       return el ? <Box key="compact-icon">{el}</Box> : null
@@ -3578,7 +3663,9 @@ export const register: Register = on => {
             : isConfirming
               ? ICON_W + btnW(`${label} ▾`)
               : (phase === 'held' ? txtW(withIcon('⏸', L('보류됨', 'On hold'))) + 1 : 0) + ICON_W + btnW(label)
-    const controlsW = (isTerm ? btnW(view === 'usage' ? L('패널 ▾', 'Pane ▾') : L('패널 ▸', 'Pane ▸')) : btnW('◔')) + 1 + (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
+    // B5: 게이지를 그리는 표면(데스크톱)은 게이지가 패널 문 — 창 버튼 줄에 패널 버튼이 없다
+    const hasGaugeDoor = !isTerm && offIcon !== null
+    const controlsW = (isTerm ? btnW(view === 'usage' ? L('패널 ▾', 'Pane ▾') : L('패널 ▸', 'Pane ▸')) + 1 : hasGaugeDoor ? 0 : btnW('◔') + 1) + (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
     const hasLimitsLine = hasLimitsRow && u !== null
     // 질문 줄을 뺀 화면이면 이지 컴팩트는 비용 줄 오른쪽(아래 그리기와 같은 판단)
     const spendNow = await spendShownOf($, sNow)
@@ -3609,8 +3696,32 @@ export const register: Register = on => {
     // "이지 컴팩트 · 답이 끝나면 누를 수 있음" 은 터미널에서 칸을 많이 먹고 끝나면 폭이 바뀌었다(2026-10-14 진단 T3).
     // 터미널은 버튼이 "[ 이름 ]" 로 그려져 같은 꼴 글로
     const busyTip = L('답이 끝나면 누를 수 있음', 'Available when the answer ends')
-    // 칩 자리(B2): 게이지 + 이름 폭 + 1 만큼 왼쪽 — 감싼 상자 = [게이지 · 이름]
-    const tipRight = (nameW: number) => ICON_W + nameW + 1
+    // 칩 자리(B2): 이름 폭 + 1 만큼 왼쪽 — 감싼 상자 = 버튼(B5 부터 게이지는 제 칸 · 제 칩)
+    const tipRight = (nameW: number) => nameW + 1
+    // B5(0.7.0 피드백 "버튼이 복잡 · ◔ 가 작아 안 보임 · 게이지를 누르면 뭔가 열려야 할 것 같음"): 게이지 = 이지 컴팩트 패널 문 — 앱 입력창
+    // 컨텍스트 고리를 누르면 내역이 뜨는 것과 같은 짝. 창 버튼 줄의 ◔ 는 뺐다(게이지와 닮은 동그라미가 다른 일을 했다). 그림(Svg)엔 누르기가
+    // 없어 게이지 위에 plain 버튼을 겹친다(absolute — 그림 위에 칠해지고 누름은 버튼이 받는다). plain 은 label 을 글로 그린다(children 은
+    // 안 그림) — 첫 실물에서 label "이지 컴팩트 패널 열기" 가 게이지 위에 글로 떠 컴팩트 버튼과 겹쳤다. 그래서 label =
+    // 빈 점자 칸(U+2800) 하나 — 공백이 아니라 데스크톱이 안 지우고, 안 보인다. dimColor 도 준다: plain 만이면 데스크톱이 회색 버튼 바탕을
+    // 그려 게이지가 "버튼 뒤에" 보였다(둘째 실물 캡처) — 예전 ◔(plain + dimColor)는 바탕이 없었다. 열린 동안 게이지 뒤 옅은 바탕도 같은
+    // 꼴이라 뺐다(열림은 옆 패널이 보이고 칩이 "닫기" 라 말한다). 무엇인지는 칩이 말한다: 지금 컨텍스트 · 걸린 구간 / 누르면 패널 열기 ·
+    // 닫기. 그림을 못 그리는 표면(터미널 등)은 게이지가 없어 창 버튼 줄의 패널 버튼 그대로
+    const isPaneOpen = view === 'usage'
+    const doorTip = isPaneOpen ? L(`누르면 ${paneTitle()} 패널 닫기`, `Click to close the ${paneTitle()} pane`) : L(`누르면 ${paneTitle()} 패널 열기`, `Click to open the ${paneTitle()} pane`)
+    const gaugeDoor = (icon: unknown) =>
+      icon === null || e.surface === 'terminal'
+        ? icon
+        : withTip(
+            `band-gauge-${isPaneOpen ? 'open' : 'closed'}`,
+            <Box key="gauge-door">
+              {icon}
+              <Box position="absolute" top={0} left={0}>
+                <Button key="usage" label={'\u2800'} plain dimColor onPress={async () => void (await toggleView($, 'usage'))} />
+              </Box>
+            </Box>,
+            [ctxTip ?? L('컨텍스트 아직 모름', 'Context not known yet'), doorTip],
+            ICON_W,
+          )
     const busyName = (name: string, icon: unknown) =>
       e.surface === 'terminal' ? (
         <Box columnGap={1} alignItems="center">
@@ -3618,27 +3729,23 @@ export const register: Register = on => {
           <Text dimColor>{`[ ${name} ]`}</Text>
         </Box>
       ) : (
-        withTip(
-          'band-compact-box-busy',
-          <Box columnGap={1} alignItems="center">
-            {icon}
-            <Text dimColor>{name}</Text>
-          </Box>,
-          tipLines(busyTip),
-          tipRight(txtW(name)),
-        )
+        // B5: 게이지는 제 칸(패널 문 · 제 칩) — 답이 도는 동안에도 패널을 열 수 있다
+        <Box columnGap={1} alignItems="center">
+          {gaugeDoor(icon)}
+          {withTip('band-compact-box-busy', <Text dimColor>{name}</Text>, tipLines(busyTip), tipRight(txtW(name)))}
+        </Box>
       )
     // 진행 중엔 버튼 대신 글자 — 눌러도 아무 일 없다
     const compactRow =
       phase === 'compacting' && look ? (
         <Box columnGap={1} alignItems="center">
-          {brandIcon}
+          {gaugeDoor(brandIcon)}
           {pulse(look.hex, L('컴팩트 중', 'Compacting'))}
           <Text color={look.color}>{look.text}</Text>
         </Box>
       ) : phase === 'tidying' && look ? (
         <Box columnGap={1} alignItems="center">
-          {brandIcon}
+          {gaugeDoor(brandIcon)}
           {pulse(look.hex, L('저장 중', 'Saving'))}
           <Text color={look.color}>{look.text}</Text>
           <Button key="compact-cancel" label={L('취소', 'Cancel')} variant="secondary" onPress={() => update($, compactPhase, () => 'idle')} />
@@ -3651,15 +3758,15 @@ export const register: Register = on => {
         // 아이콘은 버튼 밖 — 카드 제목 아이콘과 짝. 권하지 않는 동안 연 확인창이면 닫힌 바처럼 회색(회사 세션: 회색 🗜 를 눌렀더니 파랑으로
         // 바뀌어 권하는 것처럼 보였다). 0.5 묶음 2(N10): 열어도 이름 그대로 + ▾(아래 카드가 이 버튼의 것) — "이지 컴팩트 ✕" 는 이름이 바뀌고
         // ✕ 가 바로 위 창 버튼 ✕ 와 같아 닫기인지 무엇인지 헷갈렸다(동료 s09 · s10). 닫기는 다시 누르거나 카드의 [✕ 취소]
-        withTip(
-          'band-compact-box-open',
-          <Box columnGap={1} alignItems="center">
-            {isNotNow ? offIcon : brandIcon}
-            <Button key="compact-close" label={`${barLabel} ▾`} {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => update($, isConfirmingCompact, () => false)} />
-          </Box>,
-          tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
-          tipRight(btnW(`${barLabel} ▾`)),
-        )
+        <Box columnGap={1} alignItems="center">
+          {gaugeDoor(isNotNow ? offIcon : brandIcon)}
+          {withTip(
+            'band-compact-box-open',
+            <Button key="compact-close" label={`${barLabel} ▾`} {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => update($, isConfirmingCompact, () => false)} />,
+            tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
+            tipRight(btnW(`${barLabel} ▾`)),
+          )}
+        </Box>
       ) : (
         <Box columnGap={1} alignItems="center">
           {phase === 'held' ? (
@@ -3668,18 +3775,17 @@ export const register: Register = on => {
               <Text color="warning">{L('보류됨', 'On hold')}</Text>
             </Box>
           ) : null}
-          {/* 권하지 않는 동안 게이지는 단계 색만(깜빡임 없음). 게이지와 버튼을 한 마우스 올림 칸으로(B1 — 게이지에 올려도 칩) */}
+          {/* 권하지 않는 동안 게이지는 단계 색만(깜빡임 없음). B5(0.7.0 피드백): 게이지는 제 칸(패널 문 · 숫자 칩), 컴팩트 버튼은 제 칩 —
+              0.7.0 B1 은 둘을 한 마우스 올림 칸으로 묶어 칩이 같았다(사용자 "똑같아서 혼란") */}
+          {gaugeDoor(isNotNow ? offIcon : brandIcon)}
           {withTip(
             `band-compact-tip-${isNotNow ? 'not-now' : shownLevel}`,
-            <Box columnGap={1} alignItems="center">
-              {isNotNow ? offIcon : brandIcon}
-              <Button
-                key="compact"
-                label={barLabel}
-                {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
-                onPress={() => update($, isConfirmingCompact, () => true)}
-              />
-            </Box>,
+            <Button
+              key="compact"
+              label={barLabel}
+              {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
+              onPress={() => update($, isConfirmingCompact, () => true)}
+            />,
             // 둘째 줄 = 지금 상태 · 할 일. 이름을 줄였으면 상태 말을 칩에("컴팩트 늦어짐 · 누르면 …")
             tipLines(
               isNotNow
@@ -3711,8 +3817,16 @@ export const register: Register = on => {
     const gapBelowSummary = spare >= 1 ? 1 : 0
     const gapAboveSummary = spare >= 2 ? 1 : 0
     const gapAboveActions = spare >= 3 ? 1 : 0
+    // T2(0.7.0 피드백 "CLI 에서 바로 컴팩트는 Enter 를 쳐도 반응 없음" — PTY 로 0.7.0 CLI 재현: 초점이 문구 드롭다운에 들어가면 목록이 열리고
+    // ↓↑ 는 항목만 돌고 ←→ 는 안 먹어 아래 버튼에 못 갔다 · Enter = 항목 고르기. 화면은 "저장하고 컴팩트 / 바로 컴팩트" 두 줄 메뉴처럼 보였다.
+    // Tab 으로 버튼까지 가면 /compact 는 돈다): 드롭다운은 T1 로 가로 버튼, 터미널 버튼엔 숫자 단축키(1 저장하고 컴팩트 · 2 바로 컴팩트 ·
+    // 3 취소 — 엔진: 띠에 초점이 없어도 빈 입력창에서 숫자만 치면 눌림)를 달고 버튼 · 줄 이름 앞에 그 숫자. 데스크톱은 그대로(빈 입력창
+    // 숫자가 버튼을 누르면 놀란다)
+    const isTermCard = e.surface === 'terminal'
+    const keyOf = (digit: string) => (isTermCard ? { hotkey: digit } : {})
+    const numbered = (digit: string, text: string) => (isTermCard ? `${digit} ${text}` : text)
     // 선택지 이름 칸 = 가장 긴 이름("저장하고 컴팩트") + 1 — 예전 16칸 고정은 데스크톱에서 넉넉히 비었다(1칸 = 1ch, 2026-10-14 보정)
-    const choiceW = nameColW([L('저장하고 컴팩트', 'Save & compact'), L('바로 컴팩트', 'Compact now')])
+    const choiceW = nameColW([numbered('1', L('저장하고 컴팩트', 'Save & compact')), numbered('2', L('바로 컴팩트', 'Compact now'))])
     const explain = (key: string, name: string, desc: unknown) => (
       <Box key={key} columnGap={1}>
         <Box width={choiceW} flexShrink={0}>
@@ -3767,29 +3881,31 @@ export const register: Register = on => {
       <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapAboveActions}>
         {isLoss ? (
           // 닫기만 — 키는 취소와 같다(같은 일)
-          <Button key="compact-no" label={pad(L('✓ 확인 · 이어 가기', '✓ OK · keep working'))} variant="primary" onPress={() => update($, isConfirmingCompact, () => false)}>
-            {wide(L('✓ 확인 · 이어 가기', '✓ OK · keep working'))}
+          <Button key="compact-no" label={pad(numbered('1', L('✓ 확인 · 이어 가기', '✓ OK · keep working')))} variant="primary" {...keyOf('1')} onPress={() => update($, isConfirmingCompact, () => false)}>
+            {wide(numbered('1', L('✓ 확인 · 이어 가기', '✓ OK · keep working')))}
           </Button>
         ) : (
           [
             <Button
               key="compact-tidy"
-              label={pad(isColdFirst ? L('저장하고 컴팩트', 'Save & compact') : L('▶ 저장하고 컴팩트', '▶ Save & compact'))}
+              label={pad(numbered('1', isColdFirst ? L('저장하고 컴팩트', 'Save & compact') : L('▶ 저장하고 컴팩트', '▶ Save & compact')))}
               variant={isColdFirst ? 'secondary' : 'primary'}
+              {...keyOf('1')}
               onPress={() => tidyThenCompact($)}
             >
-              {wide(isColdFirst ? L('저장하고 컴팩트', 'Save & compact') : L('▶ 저장하고 컴팩트', '▶ Save & compact'))}
+              {wide(numbered('1', isColdFirst ? L('저장하고 컴팩트', 'Save & compact') : L('▶ 저장하고 컴팩트', '▶ Save & compact')))}
             </Button>,
             <Button
               key="compact-yes"
-              label={pad(isColdFirst ? L('▶ 바로 컴팩트', '▶ Compact now') : L('바로 컴팩트', 'Compact now'))}
+              label={pad(numbered('2', isColdFirst ? L('▶ 바로 컴팩트', '▶ Compact now') : L('바로 컴팩트', 'Compact now')))}
               variant={isColdFirst ? 'primary' : 'secondary'}
+              {...keyOf('2')}
               onPress={() => compactNow($, directKeep(sNow))}
             >
-              {wide(isColdFirst ? L('▶ 바로 컴팩트', '▶ Compact now') : L('바로 컴팩트', 'Compact now'))}
+              {wide(numbered('2', isColdFirst ? L('▶ 바로 컴팩트', '▶ Compact now') : L('바로 컴팩트', 'Compact now')))}
             </Button>,
-            <Button key="compact-no" label={pad(L('✕ 취소', '✕ Cancel'))} variant="secondary" onPress={() => update($, isConfirmingCompact, () => false)}>
-              {wide(L('✕ 취소', '✕ Cancel'))}
+            <Button key="compact-no" label={pad(numbered('3', L('✕ 취소', '✕ Cancel')))} variant="secondary" {...keyOf('3')} onPress={() => update($, isConfirmingCompact, () => false)}>
+              {wide(numbered('3', L('✕ 취소', '✕ Cancel')))}
             </Button>,
           ]
         )}
@@ -3855,28 +3971,29 @@ export const register: Register = on => {
     const saveRow = (isCold: boolean) => (
       <Box key="e-save" columnGap={1}>
         <Box width={choiceW} flexShrink={0}>
-          <Text bold>{L('저장하고 컴팩트', 'Save & compact')}</Text>
+          <Text bold>{numbered('1', L('저장하고 컴팩트', 'Save & compact'))}</Text>
         </Box>
         <Text dimColor>:</Text>
         <Box flexDirection="column" flexShrink={1} minWidth={0}>
           {/* 0.5 묶음 2(N11): 문구를 눌러도 바뀌는 게 흐린 한 줄 속 몇 낱말뿐 · 식은 캐시 카드는 0 이라 무슨 효과인지 몰랐다(동료 s10) —
               고른 문구가 하는 일을 늘 두 줄로(저장 · 답 — 문구마다 다른 값을 굵게), 식은 캐시면 그 아래 비용 한 줄. 붙은 두 칸(묶음 버튼 꼴, N20).
               N19 안 1: 앞에 붙일 글이 있으면 한 줄 더 */}
-          {/* R2: 문구 = 드롭다운(설정 탭과 같은 부품) — 고른 문구가 하는 일은 아래 두 줄 */}
+          {/* R2: 문구 = 드롭다운(설정 탭과 같은 부품) — 고른 문구가 하는 일은 아래 두 줄. T1(0.7.0): 터미널은 가로 고르기 버튼 */}
           <Box key="e-save-pick" columnGap={1} alignItems="center" flexWrap="wrap">
-            <Select
-              key="pick-tidy"
-              options={[
+            {choiceControl(
+              ui,
+              'pick-tidy',
+              [
                 ...TIDY_IDS.map(id => ({ value: id, label: tidyStyles()[id].name })),
                 // 직접 쓰기는 쓴 글이 있거나 지금 고른 때만 — 카드에선 글을 못 쓴다(설정 탭의 두 칸)
                 ...(sNow.tidy === 'custom' || sNow.tidyCustom !== '' || sNow.compactCustom !== '' ? [{ value: 'custom', label: L('직접 쓰기', 'Write my own') }] : []),
-              ]}
-              value={sNow.tidy}
-              onSelect={async v => {
+              ],
+              sNow.tidy,
+              async v => {
                 const s0 = await currentSettings($)
                 await saveSettings($, v === 'custom' ? { ...s0, tidy: 'custom' } : chooseTidy(s0, v))
-              }}
-            />
+              },
+            )}
           </Box>
           {sNow.tidy === 'custom' ? (
             // 직접 쓰기: ① 컴팩트 전에 보낼 글 앞부분(비었으면 일반 문구)
@@ -3908,7 +4025,7 @@ export const register: Register = on => {
     )
     const directRow = explain(
       'e-direct',
-      L('바로 컴팩트', 'Compact now'),
+      numbered('2', L('바로 컴팩트', 'Compact now')),
       <Text>
         <Text bold>{L('저장 없이 지금', 'Now, without saving')}</Text>
         <Text dimColor> · </Text>
@@ -4029,13 +4146,16 @@ export const register: Register = on => {
     // 아이콘만이면 창 버튼과 같이 묶여야 한다. "열림" 글은 옆에 패널이 보이니 겹치는 말이고, 최대에서 글 버튼
     // (📊 사용량 패널 열림 ✕)을 두니 한도 줄이 두 줄로 밀려 꼴이 안 났다. 터미널은 마우스 올리기가 없어 글 버튼.
     // 다른 mod 가 이 바를 감싸면(next) key "b-panels" 칸 끝에 자기 패널 버튼을 넣을 수 있다(두 크기 모두 이 칸이 있다).
-    // 바를 안 그리는 때(자동 숨김 · 안 보이기)엔 칸도 없다 — 늘 보여야 할 버튼은 바 밖에 둔다
+    // 바를 안 그리는 때(자동 숨김 · 안 보이기)엔 칸도 없다 — 늘 보여야 할 버튼은 바 밖에 둔다.
+    // B5(0.7.0 피드백): 게이지를 그리는 표면은 게이지가 패널 문이라 ◔ 를 안 그린다 — b-panels 칸은 남긴다(다른 mod 가 넣는 자리)
     const isPanelIcon = e.surface !== 'terminal'
     const panels = (
       <Box key="b-panels" columnGap={1} alignItems="center" flexShrink={0}>
         {!isPanelIcon
           ? panelButton('usage', L('패널', 'Pane'))
-          : withTip(
+          : hasGaugeDoor
+            ? null
+            : withTip(
               `band-panel-box-${view === 'usage' ? 'open' : 'closed'}`,
               // 열림 · 닫힘: 📊 는 색 그림이라 흐리게(dim)만으론 안 갈렸다 — 열렸으면 강조 버튼(설정 탭의 "✓ 고른 값" 과 같은 꼴)
               <Button key="usage" label="◔" {...(view === 'usage' ? { variant: 'secondary' as const } : { plain: true, dimColor: true })} onPress={async () => void (await toggleView($, 'usage'))} />,
@@ -4093,31 +4213,29 @@ export const register: Register = on => {
           // 못 누르는 동안은 게이지 · 이름 둘 다 색 없이 흐리게(버튼 자리 폭은 그대로)
           busyName(miniName, offIcon)
         ) : isConfirming ? (
-          withTip(
-            'band-compact-box-open',
-            <Box columnGap={1} alignItems="center">
-              {isNotNow ? offIcon : brandIcon}
-              <Button key="compact-close" label={`${miniName} ▾`} {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => update($, isConfirmingCompact, () => false)} />
-            </Box>,
-            tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
-            tipRight(btnW(`${miniName} ▾`)),
-          )
+          <Box columnGap={1} alignItems="center">
+            {gaugeDoor(isNotNow ? offIcon : brandIcon)}
+            {withTip(
+              'band-compact-box-open',
+              <Button key="compact-close" label={`${miniName} ▾`} {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => update($, isConfirmingCompact, () => false)} />,
+              tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
+              tipRight(btnW(`${miniName} ▾`)),
+            )}
+          </Box>
         ) : (
           <Box columnGap={1} alignItems="center">
             {/* 터미널은 그림 글자 대신 글(칸이 어긋난다 — glyph.ts) */}
             {phase === 'held' ? (decoIcon(ui, 'held', LEVEL_HEX.warn, L('보류됨', 'On hold'), 'held-icon', { color: 'warning' }) ?? <Text color="warning">{L('보류', 'Held')}</Text>) : null}
-            {/* 0.5 묶음 2: 상태 점은 뺐다 — 게이지가 맡는다. 게이지와 버튼을 한 마우스 올림 칸으로(B1) · 칩은 그 왼쪽 밖(B2) */}
+            {/* 0.5 묶음 2: 상태 점은 뺐다 — 게이지가 맡는다. B5: 게이지는 제 칸(패널 문 · 숫자 칩) · 버튼 칩은 그 왼쪽 밖(B2) */}
+            {gaugeDoor(isNotNow ? offIcon : brandIcon)}
             {withTip(
               `band-compact-box-${shownLevel}${isColdWin ? '-cold' : ''}`,
-              <Box columnGap={1} alignItems="center">
-                {isNotNow ? offIcon : brandIcon}
-                <Button
-                  key="compact"
-                  label={miniName}
-                  {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
-                  onPress={() => update($, isConfirmingCompact, () => true)}
-                />
-              </Box>,
+              <Button
+                key="compact"
+                label={miniName}
+                {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
+                onPress={() => update($, isConfirmingCompact, () => true)}
+              />,
               tipLines(isNotNow ? notNowTip : `${compactTip} · ${L('누르면 컴팩트할까요?', 'press to open Compact now?')}`),
               tipRight(btnW(miniName)),
             )}

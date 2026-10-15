@@ -5,9 +5,10 @@ import { COMPACT_MIN, penaltyAt, rangeThresholdsFor, thresholdsFor, WARN_RATIO }
 import { tidyScript } from './tidy'
 import { L } from './i18n'
 import type { Lang } from './i18n'
-import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, section, segButton, segGroup, appSection, settingRow, onOffControl, onOffW, buttonW, selectW } from './ui-common'
+import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, section, segButton, segGroup, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW } from './ui-common'
 import type { Fold } from './ui-common'
 import { fitLine } from './ui-band'
+import { onTerminal } from './glyph'
 import type { LineCell } from './ui-band'
 import { cellsOf, widthOf } from './text'
 import type { Ui } from './ui-common'
@@ -187,14 +188,15 @@ export function drawSettings(
       key,
       L(`${ttlName(forTtl)} 캐시 경고`, `${ttlName(forTtl)} cache warning`),
       L(`남은 시간이 이 값 아래면 노랑${isNow ? ' · 지금 이 세션' : ''}`, `Yellow below this much time left${isNow ? ' · this session' : ''}`),
-      // R2: 분 = 드롭다운(값 목록 — −/+ 를 여러 번 누르지 않게)
-      <Select
-        key={`${key}-pick`}
-        options={steps.map((m, i) => ({ value: String(m), label: labels[i]! }))}
-        value={String(v)}
-        onSelect={x => save(forTtl < 60 ? { ...s, cacheWarnMin5m: Number(x) } : { ...s, cacheWarnMin: Number(x) })}
-      />,
-      selectW(labels),
+      // R2: 분 = 드롭다운(값 목록 — −/+ 를 여러 번 누르지 않게). T1(0.7.0): 터미널은 가로 고르기 버튼
+      choiceControl(
+        ui,
+        `${key}-pick`,
+        steps.map((m, i) => ({ value: String(m), label: labels[i]! })),
+        String(v),
+        x => save(forTtl < 60 ? { ...s, cacheWarnMin5m: Number(x) } : { ...s, cacheWarnMin: Number(x) }),
+      ),
+      choiceW(labels),
     )
   }
   const stateLine = (
@@ -247,13 +249,14 @@ export function drawSettings(
       'tidy-pick-row',
       L('문구', 'Text'),
       L('고르면 아래 두 칸이 그 글로 채워집니다 — 칸을 고쳐 저장하면 "직접 쓰기"', 'Picking fills the two boxes below — saving an edited box switches to "Write my own"'),
-      <Select
-        key="tidy-pick"
-        options={[...TIDY_IDS.map(id => ({ value: id, label: tidyStyles()[id].name })), { value: 'custom', label: L('직접 쓰기', 'Write my own') }]}
-        value={s.tidy}
-        onSelect={v => save(v === 'custom' ? { ...s, tidy: 'custom' } : chooseTidy(s, v))}
-      />,
-      selectW(tidyLabels),
+      choiceControl(
+        ui,
+        'tidy-pick',
+        [...TIDY_IDS.map(id => ({ value: id, label: tidyStyles()[id].name })), { value: 'custom', label: L('직접 쓰기', 'Write my own') }],
+        s.tidy,
+        v => save(v === 'custom' ? { ...s, tidy: 'custom' } : chooseTidy(s, v)),
+      ),
+      choiceW(tidyLabels),
       [
         isCustom ? null : (
           <Text key="tidy-use" wrap="wrap">
@@ -370,7 +373,8 @@ export function drawSettings(
     { name: L('주황', 'orange'), hex: SESSION_TEXT[1] },
     { name: L('빨강', 'red'), hex: SESSION_TEXT[2] },
   ]
-  const colorsW = colorNames.length * (5 + selectW(['$100'])) + 2
+  // T1(0.7.0): 터미널은 값 목록(최대 16개)을 늘어놓는 대신 [ − ] $100 [ + ] — 이름 · 버튼 둘 · 값 · 사이 칸
+  const colorsW = onTerminal() ? colorNames.length * 22 + 2 : colorNames.length * (5 + selectW(['$100'])) + 2
   const presetRows = [
     isCustomScreen ? (
       row(
@@ -485,8 +489,8 @@ export function drawSettings(
           'spend-row',
           L('모든 세션', 'All sessions'),
           L(
-            '켜면 바 비용 줄과 간단 패널에도 보입니다. 자세히 패널엔 늘 보입니다. 이 PC 모든 세션의 금액(API 정가 환산 · 추정)이고, 세션 기록에 없는 앱 자체 요청은 빠져 조금 적게 잡힙니다. 날짜는 Claude 사용량 화면처럼 UTC 로 나눕니다(한국은 오전 9시에 바뀜).',
-            'When on, also shown on the bar’s cost row and the Simple pane. The Detailed pane always shows them. Cost of every session on this PC (API list prices, estimated); app-internal requests are not in the transcripts, so it runs a little low. Days are split in UTC, as on Claude’s usage page.',
+            '켜면 바 비용 줄과 간단 패널에도 보입니다. 자세히 패널엔 늘 보입니다. 이 PC 모든 세션의 금액(API 정가 환산 · 추정)이고, 세션 기록에 없는 컴팩트 요약 · 앱 자체 요청은 이지 컴팩트가 잰 값으로 더합니다(다른 기기 · 웹 사용은 빠짐). 날짜는 Claude 사용량 화면처럼 UTC 로 나눕니다(한국은 오전 9시에 바뀜).',
+            'When on, also shown on the bar’s cost row and the Simple pane. The Detailed pane always shows them. Cost of every session on this PC (API list prices, estimated); compact summaries and the app’s own requests, which aren’t in the transcripts, are added as easy-compact measured them (other devices and the web aren’t counted). Days are split in UTC, as on Claude’s usage page.',
           ),
           null,
           0,
@@ -505,16 +509,24 @@ export function drawSettings(
           return (
             <Box key={`color-${i}`} columnGap={1} alignItems="center">
               <Text color={c.hex}>{c.name}</Text>
-              <Select
-                key={`color-${i}-pick`}
-                options={vals.map(v => ({ value: String(v), label: fmtUsd0(v) }))}
-                value={String(s.sessionColors[i])}
-                onSelect={v => {
-                  const c2 = [...s.sessionColors] as [number, number, number]
-                  c2[i] = Number(v)
-                  save({ ...s, sessionColors: c2 })
-                }}
-              />
+              {onTerminal() ? (
+                <Box key={`color-${i}-step`} columnGap={1} alignItems="center">
+                  <Button key={`color-${i}-down`} label="−" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, -1))} />
+                  <Text>{fmtUsd0(s.sessionColors[i]!)}</Text>
+                  <Button key={`color-${i}-up`} label="+" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, 1))} />
+                </Box>
+              ) : (
+                <Select
+                  key={`color-${i}-pick`}
+                  options={vals.map(v => ({ value: String(v), label: fmtUsd0(v) }))}
+                  value={String(s.sessionColors[i])}
+                  onSelect={v => {
+                    const c2 = [...s.sessionColors] as [number, number, number]
+                    c2[i] = Number(v)
+                    save({ ...s, sessionColors: c2 })
+                  }}
+                />
+              )}
             </Box>
           )
         }),
@@ -525,8 +537,8 @@ export function drawSettings(
         'money-order-row',
         L('비용 표시 순서', 'Cost order'),
         L('바 비용 줄의 세션 · 오늘 · 이번 달 순서', 'Order of session · today · this month on the cost row'),
-        <Select key="money-order" options={MONEY_ORDERS.map(o => ({ value: o.join(','), label: moneyLabel(o) }))} value={moneyOf(s.bandOrder).join(',')} onSelect={v => save(withMoney(s, v.split(',')))} />,
-        selectW(MONEY_ORDERS.map(moneyLabel)),
+        choiceControl(ui, 'money-order', MONEY_ORDERS.map(o => ({ value: o.join(','), label: moneyLabel(o) })), moneyOf(s.bandOrder).join(','), v => save(withMoney(s, v.split(',')))),
+        choiceW(MONEY_ORDERS.map(moneyLabel)),
       ),
       // B1(0.6.1 피드백 "컨텍스트 범위 값 · % 값으로 보이게 하는 옵션"): 바 컨텍스트 · 컴팩트 구간 칸과 게이지 칩의 숫자 꼴
       row(
@@ -870,12 +882,14 @@ export function drawCompactTiming(
   const bandLabels = rangeBands().map(([a, b]) => bandName(a, b))
   const manualLabel = L('직접 입력…', 'Enter a size…')
   const allNote = <Text key="cmp-all" dimColor>{L('모든 세션에 적용', 'All sessions')}</Text>
-  const rangeSelect = (value: string) => (
-    <Select
-      key="cmp-range-select"
-      options={[...rangeBands().map(([a, b], i) => ({ value: `${a}-${b}`, label: bandLabels[i]! })), { value: 'manual', label: manualLabel }]}
-      value={value}
-      onSelect={v => {
+  // T1(0.7.0): 터미널은 가로 고르기 버튼(choiceControl)
+  const rangeSelect = (value: string) =>
+    choiceControl(
+      ui,
+      'cmp-range-select',
+      [...rangeBands().map(([a, b], i) => ({ value: `${a}-${b}`, label: bandLabels[i]! })), { value: 'manual', label: manualLabel }],
+      value,
+      v => {
         act.sizeError(null)
         if (v === 'manual') {
           if (d.follow) edit({ ...d, follow: false, compactAt: d.rangeEnd })
@@ -883,9 +897,8 @@ export function drawCompactTiming(
         }
         const [a, b] = v.split('-').map(Number)
         if (a && b) edit({ ...d, follow: true, rangeStart: a, rangeEnd: b })
-      }}
-    />
-  )
+      },
+    )
   const errLine = sizeErr ? (
     <Text key="cmp-size-err" color="error" wrap="wrap">
       {sizeErr}
@@ -949,7 +962,7 @@ export function drawCompactTiming(
         'Compact once the context is inside this band — applies to all sessions as soon as you pick. "Enter a size…" sets one size yourself',
       ),
       [allNote, rangeSelect(`${d.rangeStart}-${d.rangeEnd}`)],
-      selectW([...bandLabels, manualLabel]) + widthOf(L('모든 세션에 적용', 'All sessions'), isTerminal) + 1,
+      choiceW([...bandLabels, manualLabel]) + widthOf(L('모든 세션에 적용', 'All sessions'), isTerminal) + 1,
       // 고른 구간 금액 · 판정 한 줄은 간단 보기에도
       [rangeNow, errLine].filter(x => x !== null),
     )
@@ -1193,7 +1206,7 @@ export function drawCompactTiming(
           }}
         />,
       ],
-      selectW([...bandLabels, manualLabel]) + widthOf(L('모든 세션에 적용', 'All sessions'), isTerminal) + 12,
+      choiceW([...bandLabels, manualLabel]) + widthOf(L('모든 세션에 적용', 'All sessions'), isTerminal) + 12,
       // 직접 정한 크기의 판정 한 줄도 간단 보기에(구간 방식 금액 줄과 같게)
       [status, errLine].filter(x => x !== null),
     )
@@ -1266,16 +1279,17 @@ export function drawSettingsView(
       'lang-row',
       L('언어', 'Language'),
       null,
-      <Select
-        key="lang-pick"
-        options={[
+      choiceControl(
+        ui,
+        'lang-pick',
+        [
           { value: 'auto', label: autoLabel },
           { value: 'ko', label: '한국어' },
           { value: 'en', label: 'English' },
-        ]}
-        value={s.lang}
-        onSelect={v => act.setLang(v as Settings['lang'])}
-      />,
+        ],
+        s.lang,
+        v => act.setLang(v as Settings['lang']),
+      ),
     ),
   ], open['sec-lang'] === true ? undefined : langName, { isOpen: open['sec-lang'] === true, onToggle: () => act.toggleFold('sec-lang') })
   const dot = look ? pulseDot(ui, surface, look.hex, look.text) : null

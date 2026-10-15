@@ -2,21 +2,22 @@
 // 날짜(UTC — Claude 사용량 화면처럼, 한국은 오전 9시에 바뀜) · 모델 · 크기 묶음별로 합한다. 값(달러)은 mod 가 공식 요율표(hooks/cost.ts)로 센다 — 요율은 한 곳에만.
 // mod 의 $.fs.read 는 4 MiB 넘는 파일을 거부하고 기록은 수백 개라 $.process.run 으로 이 스크립트를 돌린다(scan-transcript.mjs 와 같은 길).
 //
-// 쓰는 법: node scan-spend.mjs <projects 폴더> <캐시 파일> <시작 시각 ms>
-// 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, files, scanned }
+// 쓰는 법: node scan-spend.mjs <projects 폴더> <캐시 파일> <시작 시각 ms> [<mod 데이터 폴더>]
+// 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, extra: { "YYYY-MM-DD": 달러 }, files, scanned }
+//   extra = 대화 기록에 없는 요청(컴팩트 요청 · 앱 자체 요청) — mod 데이터 폴더를 주면 그 안 extra/ · turns/ 만 읽는다(아래 끝)
 //   S = 프롬프트(입력 + 캐시 읽기 + 쓰기) 10만 이하 요청, L = 넘는 요청 — 긴 프롬프트 요율(지금은 Haiku 5.5 10만 초과 5배)을 가른다
 // 캐시: 파일마다 크기 · 수정 시각이 같으면 다시 안 읽는다 — 처음 켤 때만 이번 달 기록을 다 읽는다(기록이 크면 수십 초).
 // 규칙: assistant 줄의 message.usage, 같은 message.id 는 파일마다 첫 줄로 세고(날짜 · 모델 · 크기 묶음), 뒤 줄은 출력만 최댓값으로 —
 //   스트리밍 중 같은 응답이 출력이 늘며 여러 번 적힌다. 첫 줄만 세면 출력이 모자랐다(N1: 이 PC 이번 달 출력 약 243만 토큰 ≈ $49 빠짐).
 //   날짜는 첫 줄 timestamp(UTC).
 //   쓰기는 usage.cache_creation 의 ephemeral_5m · 1h 로 가르고, 그 칸이 없으면 메인은 1시간 · 하위 에이전트는 5분(엔진 기본).
-//   앱 자체 요청(다음 질문 제안 · 컴팩트 요청 등)은 기록에 없어 빠진다 — 화면엔 "~" 를 붙인다
+//   앱 자체 요청(다음 질문 제안 · 컴팩트 요청 등)은 기록에 없다 — mod 가 잰 값을 extra 로 따로 낸다(0.7.0 피드백 M1). 다른 기기 · 웹은 못 센다("~")
 
 import { createReadStream, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { dirname, join } from 'node:path'
 
-const [root, cacheFile, sinceArg] = process.argv.slice(2)
+const [root, cacheFile, sinceArg, dataArg] = process.argv.slice(2)
 if (!root || !cacheFile) {
   console.error('쓰는 법: node scan-spend.mjs <projects 폴더> <캐시 파일> <시작 시각 ms>')
   process.exit(2)
@@ -157,4 +158,44 @@ for (const entry of Object.values(next.files)) {
     }
   }
 }
-process.stdout.write(JSON.stringify({ days: out, files: files.length, scanned }))
+// M1(0.7.0 피드백 "이번 달 금액이 Claude 화면보다 작음"): 대화 기록에 없는 요청(컴팩트 요약 요청 · 앱 자체 요청 — 엔진 세션 집계엔 있다)의
+// 값은 mod 가 잰다. 세션마다 장부 <데이터>/extra/<세션>.json { v: 1, days: { 날짜: 달러 } }(0.8.0 부터)가 있으면 그것, 없으면 그 세션 질문 기록
+// <데이터>/turns/<세션>.json 의 동작 줄(compact · app)을 질문이 끝난 날짜로 — 장부 전 판 세션 · 끝난 세션도 채운다(장부는 처음 만들 때 질문
+// 기록에서 시작한다). 기록에서 다시 만든 질문(rebuilt)엔 이 줄이 없다. 달러 그대로(잰 때 요율)
+const extra = {}
+if (dataArg) {
+  const addDay = (day, usd) => {
+    if (day >= firstDay && usd > 0) extra[day] = (extra[day] ?? 0) + usd
+  }
+  const jsonIn = sub => {
+    try {
+      return readdirSync(join(dataArg, sub)).filter(n => n.endsWith('.json'))
+    } catch {
+      return []
+    }
+  }
+  const booked = new Set()
+  for (const n of jsonIn('extra')) {
+    try {
+      const j = JSON.parse(readFileSync(join(dataArg, 'extra', n), 'utf8'))
+      if (j?.v !== 1 || !j.days) continue
+      booked.add(n)
+      for (const [day, usd] of Object.entries(j.days)) addDay(day, num(usd))
+    } catch {
+      // 깨진 장부는 건너뛴다
+    }
+  }
+  for (const n of jsonIn('turns')) {
+    if (booked.has(n)) continue
+    try {
+      const j = JSON.parse(readFileSync(join(dataArg, 'turns', n), 'utf8'))
+      for (const t of j?.turns ?? []) {
+        if (t?.rebuilt || typeof t?.atMs !== 'number') continue
+        for (const d of t.details ?? []) if (d?.app || d?.compact) addDay(dayOf(t.atMs), num(d.usd))
+      }
+    } catch {
+      // 깨진 기록은 건너뛴다
+    }
+  }
+}
+process.stdout.write(JSON.stringify({ days: out, extra, files: files.length, scanned }))

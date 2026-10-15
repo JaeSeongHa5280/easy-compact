@@ -704,7 +704,9 @@ export function settingRow(ui: Ui, key: string, name: unknown, desc: unknown, co
  * 물음표 칩(0.6.0 — 사용자 "툴팁은 물음표 호버로, 글에 대면 바로 나와 칩이 있는 줄 · 없는 줄이 헷갈림"): mark = 이름 옆 "?" — 마우스를
  * 올리면 card 가 뜬다(같은 hover scope). card = 그 줄 너비의 불투명 칩 — 앱은 입력창 위 바의 칩만 떠 있는 창으로 띄워 주고(liftsHoverCards)
  * 패널(설정 · 현황) 칩은 그 자리에 그린다(앱 2.37337 렌더러) → 바탕이 없으면 아래 줄 글과 겹쳐 안 보였다. 그래서 바탕 · 테두리를
- * 직접: userMessageBackground(= 앱 surface-1, 불투명) · promptBorder 테두리. toggle 이 있으면 "?" 를 눌러 줄 아래에 펼친다(키보드 · 터미널 길)
+ * 직접: userMessageBackground(= 앱 surface-1, 불투명) · promptBorder 테두리. toggle 이 있으면 "?" 를 눌러 줄 아래에 펼친다(키보드 · 터미널 길).
+ * S7(0.7.0 피드백 "? 에 테두리를 넣고 제목에 딱 붙이면 더 보기 좋을 듯"): 데스크톱 "?" = 테두리 칩(보조 버튼 꼴 · 흐린 글), 이름과 사이 0
+ * (tipRow · hoverTip 의 qGap). 예전엔 바탕 없는 흐린 글 버튼이 한 칸 떨어져 이름과 따로 놀았다. 터미널은 이미 "[ ? ]" 꼴 — 한 칸 띄운다
  */
 export function helpTip(ui: Ui, key: string, text: unknown, top: number, toggle?: () => void): { mark: unknown; card: unknown } {
   const { Box, Button, Text } = ui
@@ -714,7 +716,7 @@ export function helpTip(ui: Ui, key: string, text: unknown, top: number, toggle?
   return {
     mark: (
       <Box key={`${key}-q`} hover={{ scope }}>
-        {toggle ? <Button key={`${key}-qb`} label="?" plain dimColor onPress={toggle} /> : <Text dimColor>?</Text>}
+        {toggle ? <Button key={`${key}-qb`} label="?" variant="secondary" dimColor onPress={toggle} /> : <Text dimColor>?</Text>}
       </Box>
     ),
     card: (
@@ -729,12 +731,15 @@ export function helpTip(ui: Ui, key: string, text: unknown, top: number, toggle?
  * 글(anchor) 옆 "?" 칩 — 미리보기 제목 · 크기별 비용 제목처럼 줄이 아닌 자리. toggle 이 있으면 "?" 를 눌러 아래에 펼친다(S5 · O1 — 0.6.1
  * 피드백: 같은 "?" 가 설정 줄은 눌리고 여기는 안 눌렸다)
  */
+/** "?" 와 그 앞 이름 사이(S7): 데스크톱은 붙인다(테두리 칩이라 붙어도 갈린다), 터미널은 "[ ? ]" 앞 한 칸 */
+const qGap = () => (onTerminal() ? 1 : 0)
+
 export function hoverTip(ui: Ui, key: string, anchor: unknown, text: unknown, toggle?: { isOpen: boolean; onToggle: () => void }) {
   const { Box, Text } = ui
   const tip = helpTip(ui, key, text, 1, toggle?.onToggle)
   return (
     <Box key={key} flexDirection="column">
-      <Box key={`${key}-line`} columnGap={1} alignItems="center">
+      <Box key={`${key}-line`} columnGap={qGap()} alignItems="center">
         {anchor}
         {tip.mark}
       </Box>
@@ -775,7 +780,7 @@ export function tipRow(
   const { Box, Text } = ui
   const tip = helpTip(ui, key, desc, 2, toggle?.onToggle)
   const named = (
-    <Box key={`${key}-nm`} columnGap={1} alignItems="center">
+    <Box key={`${key}-nm`} columnGap={qGap()} alignItems="center">
       {typeof nm === 'string' ? <Text>{nm}</Text> : nm}
       {tip.mark}
     </Box>
@@ -791,6 +796,28 @@ export function buttonW(label: string): number {
 
 export function selectW(labels: readonly string[]): number {
   return Math.max(...labels.map(l => widthOf(l, onTerminal())), 2) + 4
+}
+
+/**
+ * 하나 고르기(T1 — 0.7.0 피드백 "CLI 에선 드롭다운이 불편 · 항목을 못 누름 · 옆으로 늘어서 고르는 게 쓰기 편함"): 데스크톱은 드롭다운(Select —
+ * 엔진 부품, 마우스로 됨), 터미널은 가로로 늘어선 고르기 버튼(segGroup · segButton "[✓ 이름]" — 좁으면 줄바꿈). 앱 내장 엔진 키 묶음 실측:
+ * 터미널 드롭다운은 초점이 들어가면 ←→ 가 안 먹고(↑↓ = 항목, Enter = 고름) Tab 으로만 나간다. 터미널 버튼 키 = <key>-<값>
+ */
+export function choiceControl(ui: Ui, key: string, options: readonly { value: string; label: string }[], value: string, onPick: (value: string) => void) {
+  if (!onTerminal()) {
+    const { Select } = ui
+    return <Select key={key} options={options} value={value} onSelect={v => onPick(v)} />
+  }
+  return segGroup(
+    ui,
+    `${key}-seg`,
+    options.map(o => segButton(ui, `${key}-${o.value}`, o.label, o.value === value, () => onPick(o.value))),
+  )
+}
+
+/** choiceControl 칸 폭: 데스크톱 드롭다운 = selectW, 터미널 = 늘어선 버튼 합(사이 한 칸) */
+export function choiceW(labels: readonly string[]): number {
+  return onTerminal() ? labels.reduce((sum, l) => sum + buttonW(l) + 1, -1) : selectW(labels)
 }
 
 /**

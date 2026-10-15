@@ -418,8 +418,8 @@ export function paneAutoUse(isOn: boolean): string {
   return isOn
     ? L('새 세션은 이지 컴팩트 패널을 연 채로 시작합니다. 그 뒤 닫으면 닫힌 채로 둡니다.', 'New sessions start with the Easy Compact pane open. Once you close it, it stays closed.')
     : L(
-        `새 세션은 패널이 닫힌 채로 시작합니다. 바의 ${onTerminal() ? '패널' : '◔'} 버튼으로 엽니다.`,
-        `New sessions start with the pane closed. Open it with the ${onTerminal() ? 'Pane' : '◔'} button on the bar.`,
+        `새 세션은 패널이 닫힌 채로 시작합니다. ${onTerminal() ? '바의 [패널 ▸] 버튼으로 엽니다' : '바의 게이지(동그라미)를 누르면 열립니다'}.`,
+        `New sessions start with the pane closed. ${onTerminal() ? 'Open it with the [Pane ▸] button on the bar' : 'Click the gauge (the ring) on the bar to open it'}.`,
       )
 }
 

@@ -213,7 +213,8 @@ function costCellsRaw(ui: Ui, u: Usage, nowMs: number, show: BandShow, colors: r
       },
     })
   }
-  // 오늘 · 이번 달(설정에서 켰을 때만) — 이 세션 금액 바로 뒤 돈 묶음. 모든 세션 기록 합이라 "~"(앱 자체 요청은 기록에 없다).
+  // 오늘 · 이번 달(설정에서 켰을 때만) — 이 세션 금액 바로 뒤 돈 묶음. 모든 세션 기록 합 + 기록 밖 요청 장부(0.7.0 피드백 M1)여도 다른
+  // 기기 · 웹은 못 세 "~".
   // 좁으면 컴팩트 구간 → 요청당 → 캐시 짧은 꼴 다음에 이번 달 → 오늘 순으로 뺀다(사람이 켠 칸이라 캐시를 먼저 줄인다)
   const spendCell = (key: string, name: string, usd: number, drop: number): LineCell => ({
     key,
@@ -419,8 +420,9 @@ export function drawBandPreview(
   // 창 버튼은 바와 같게 — 바가 한 줄(간단 · 한도 줄 · 질문 줄 없음)이면 [—] 가 없다(register.tsx isOneRow). 간단 미리보기에도
   // "📊  —  ✕" 가 나왔다(공개 세션 발견, 2026-10-13)
   const isOneRow = isLean || (!limits && !show.lastTurn)
-  // 0.5 묶음 2: 패널 버튼 ◔ · 터미널 "패널 ▸", 컴팩트 버튼 이름 "컴팩트"(바와 같은 이름 — 게이지 그림은 미리보기 글 줄에 못 넣어 뺌)
-  const winText = onDesktop() ? (isOneRow ? '◔  ✕' : '◔  —  ✕') : isOneRow ? L('[패널 ▸] [✕]', '[Pane ▸] [✕]') : L('[패널 ▸] [—] [✕]', '[Pane ▸] [—] [✕]')
+  // 0.5 묶음 2: 터미널 "패널 ▸", 컴팩트 버튼 이름 "컴팩트"(바와 같은 이름 — 게이지 그림은 미리보기 글 줄에 못 넣어 뺌). B5(0.7.0 피드백):
+  // 데스크톱은 게이지가 패널 문이라 창 버튼은 — ✕ 만
+  const winText = onDesktop() ? (isOneRow ? '✕' : '—  ✕') : isOneRow ? L('[패널 ▸] [✕]', '[Pane ▸] [✕]') : L('[패널 ▸] [—] [✕]', '[Pane ▸] [—] [✕]')
   const compactText = L('컴팩트', 'Compact')
   const win = fake('pv-win', winText)
   const compact = fake('pv-compact', compactText)

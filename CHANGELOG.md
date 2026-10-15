@@ -4,6 +4,19 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.8.0] — 2026-10-15
+
+### Changed
+- **The gauge opens the pane** — on the desktop, click the ring gauge before **Compact** to open or close the Easy Compact pane, like the app's own context ring. The small **◔** button is gone (it looked like the gauge but did something else), so the top right of the bar holds only **—** and **✕**. Hovering the gauge shows the context and your compact range; hovering **Compact** shows the state and what to do — the two used to show the same chip. A one-time notice on the desktop says so. The terminal keeps **[Pane ▸]**.
+- **Terminal: value lists are buttons in a row** — a dropdown in a terminal opened as soon as it got the focus and kept the arrow keys (← → did nothing, ↑ ↓ went round its list), so the buttons after it were hard to reach. Compact text, language, cost order, the cache warning, the compact range and the confirm card's text are now buttons in a row; session-cost colors are **[ − ] $10 [ + ]**. The desktop keeps its dropdowns.
+- **Terminal: numbered confirm card** — **1** Save & compact · **2** Compact now · **3** Cancel, on the rows and the buttons. Typing the number in an empty prompt presses it.
+- **The ? beside a name is a small bordered chip right after the name** (desktop).
+
+### Fixed
+- **Today · this month came out a little low** — compact summaries and Claude Code's own background requests (next-prompt suggestions, memory upkeep, compact precompute) aren't in the session records. easy-compact already measured them per question; now each session keeps them by day and they're added to today · this month (earlier days come from the cost-per-question history). Use on other computers and on the web still can't be counted.
+- **The gauge blinked when the bar changed size** — shrinking the bar to one line and back redrew the gauge in a new frame each time. The gauge is now a plain picture while it isn't moving.
+- **Terminal: Compact now didn't respond to Enter** — the focus got stuck in the text dropdown above it (see the terminal changes above).
+
 ## [0.7.0] — 2026-10-15
 
 ### Added

@@ -24,7 +24,7 @@ easy-compact is a Claude Code mod (`modules` in `hooks/hooks.json`), so it runs 
 - **Node.js**, with three scripts from this plugin's `tools/` folder, for session records over 4 MB (Claude Code's file reader for plugins stops there):
   - `node tools/scan-transcript.mjs <session record>` prints, one line each, every request's token counts, every compact, and the first 200 characters of each of your questions (to rebuild the cost-per-question list).
   - `node tools/last-ttl.mjs <session record>` prints the cache lifetime of the last request (5 or 60 minutes).
-  - `node tools/scan-spend.mjs <~/.claude/projects> <its cache file> <start of this month>` prints token totals by day and model for today and this month, and keeps that cache file in its data folder.
+  - `node tools/scan-spend.mjs <~/.claude/projects> <its cache file> <start of this month> <its data folder>` prints token totals by day and model for today and this month, plus the cost by day of requests that aren't in the session records (compact summaries, Claude Code's own background requests) from its own data folder, and keeps that cache file in its data folder.
 
   Their arguments are only those file paths and that time. They read files on this computer, print back to easy-compact, and don't connect anywhere. They need Node.js 14.8 or later. Without it those parts are skipped, and the pane says so.
 - **Claude Code's own `claude` command** — the one on your PATH, or else the copy inside the Claude desktop app — and only these two, written as fixed text in the code: `claude plugin marketplace update easy-compact` when you press **Check for updates**, and `claude plugin update easy-compact@easy-compact` when you press **Update**. Claude Code then fetches this repository from GitHub. These buttons don't appear when you installed from Anthropic's directory.
@@ -38,7 +38,7 @@ easy-compact is a Claude Code mod (`modules` in `hooks/hooks.json`), so it runs 
 ## What it writes
 
 - Its settings, to Claude Code's plugin store on this computer.
-- Each session's question history (question text, cost, the end of each answer), each session's running cost (so it survives an app restart) and its own small caches, to its data folder under `~/.claude/plugins/data`.
+- Each session's question history (question text, cost, the end of each answer), each session's running cost (so it survives an app restart), each session's cost by day of requests that aren't in the session records (compact summaries, Claude Code's own background requests — so today and this month include them) and its own small caches, to its data folder under `~/.claude/plugins/data`.
 - A troubleshooting file, `debug-<session>.json` in that same folder (this session's pane state and question history), only when you type `/easy-compact dump`.
 
 ## What its hooks do
