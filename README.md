@@ -181,7 +181,7 @@ Claude Code re-reads the whole context on every request — a session at 300k pa
 
 ## Demo · 60 s
 
-https://github.com/user-attachments/assets/0926dba9-ce9f-42fe-a3c0-fef808131a56
+https://github.com/user-attachments/assets/f357e96b-41fe-496e-8a1c-4e3b05c8c397
 
 ## Features
 
@@ -192,7 +192,7 @@ https://github.com/user-attachments/assets/0926dba9-ce9f-42fe-a3c0-fef808131a56
 **Context, next-request cost and this question's cost — updated after every request.**
 Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** under Settings → **Screen**; to choose single parts, **Custom** → **What the bar shows** — the bar preview follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, under the preview. Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
 
-<img src="docs/img/screen.png" width="520" alt="Settings → Screen: Simple · Detailed · Custom, who each is for, and a preview of the bar and the question-cost chip">
+<img src="docs/img/screen.png" width="520" alt="Settings → Screen type: Simple · Detailed · Custom, a “?” on each row, and a preview of the bar and the question-cost chip">
 
 **Settings → Screen: Simple, Detailed or Custom.** The preview shows the bar and the question-cost chip as you choose, with this session's values. The screen type sets the bar's parts, Overview's first view and whether the chip under each answer shows details (**Answer chip details**); Custom lets you pick each one.
 
@@ -212,7 +212,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 ### 3. Know when to compact
 
-<img src="docs/img/settings.png" width="640" alt="Settings: a cost table per compact size with the best range starred">
+<img src="docs/img/settings.png" width="640" alt="Overview → Compact: the compact range dropdown and the Cost by size table, colored by verdict, with the picked range outlined">
 
 **Pick a compact range in the Overview tab.** The Simple view has the range dropdown in the *This session* card, with one line under it: the verdict (★ Best · good · fair · not advised) and the cost of one read, one question and a cold cache. The Detailed view adds the suggested and not-advised ranges and the **Cost by size** table in the Compact card — one read and one question per size (10 requests assumed × the current model's rates); a wider pane adds the cold-cache cost and how far each size is from the cheapest (★) — a narrow one drops the least important columns first. Cell colors are the verdicts and the picked range is outlined. Picking applies to all sessions at once, and **Enter a size…** at the end of the dropdown sets a single size by number.
 
