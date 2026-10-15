@@ -1,7 +1,7 @@
 // 설정: 컴팩트 시점(구간 · 직접 지정) · 캐시 경고 · 정리 후 컴팩트 문구.
 //
 // 값은 $.store 'settings' 한 곳(모든 세션이 같이 쓰고 앱을 껐다 켜도 남는다). 화면(사용량 패널 안 설정)과
-// (숨은) /easy-compact 명령이 같은 함수를 부른다. 숫자는 ◀ ▶ · −/+ 단계로, 직접 쓰는 컴팩트 문구는 입력칸으로 받는다.
+// (개발본의 숨은) 단축 명령이 같은 함수를 부른다. 숫자는 ◀ ▶ · −/+ 단계로, 직접 쓰는 컴팩트 문구는 입력칸으로 받는다.
 //
 // 예전엔 기준 프리셋(빡빡하게 · 기본 · 느슨하게 · 내 프리셋)과 자동(내 질문 값 분포)이 있었다. 기준이 습관 따라 움직이고
 // 공유하면 남의 값이 되는 문제로 뺐다 — 권장 크기 하나를 계산식 최적이 따라가거나 손으로 고정한다.
@@ -15,6 +15,7 @@ import { onTerminal } from './glyph'
 import type { Lang } from './i18n'
 import { COMPACT_MAX, COMPACT_MIN, rangeThresholdsFor, thresholdsFor } from './optimal'
 import { CACHE_WARN_5M_DEFAULT, fmtUsd } from './cost'
+import type { Level } from './cost'
 
 /**
  * 정리 후 컴팩트 문구 프리셋. body 는 "무엇을 남기고 무엇을 답할지" 만 — 손해 판단과 [컴팩트 진행] ·
@@ -238,6 +239,10 @@ export const DEFAULT_SETTINGS: Settings = {
   bandOrder: ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache'],
   motion: 'system',
   ctxUnit: 'size',
+  // B8: 기본은 가로 막대
+  gaugeShape: 'bar',
+  // B10: 입력창 아래 한 줄은 기본 끔(바와 같은 내용이 두 번 — 바가 빠질 때만 쓸모)
+  statusLine: false,
 }
 
 /** 바 비용 줄 칸 순서의 기본(0.5 묶음 2 N15) — 세션 · 오늘 · 이번 달(돈) → 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시 */
@@ -456,18 +461,32 @@ export function bandModeUse(m: BandMode): string {
 }
 
 /**
- * 접힌 바(입력창 아래 오른쪽 버튼)의 글: 이지 컴팩트 그림 + 이름 + ⇱(최소화된 창을 다시 펴는 느낌, ⇲ 접기와
- * 짝). 작업 표시줄의 최소화된 창처럼 이름만 — 자동 숨김(노랑에 저절로 펴짐)은 강조색(파랑)으로 그려 살아 있음을 보이고
- *, ✕ 로 닫았으면 회색 + "닫힘". 처음엔 "최소화 중" 을 붙였는데 파랑이면 말이 겹친다. 마우스 올리기 칩은 그 줄
- * (SessionMode)이 못 숨겨 칩 글이 "자동 …" 으로 잘려 늘 보였다. 터미널은 그림 글자를 안 써 글로.
- * 그림은 이 자리만 🔽(REVEAL_ICON) — 이 줄은 버튼만 제자리에 두고 버튼 밖 글자는 줄 끝으로 모으며(파란 🗜 를 버튼 밖에 두자
- * 🌳 뒤로 떨어졌다), 버튼 안 글자는 어떤 색을 줘도 앱 버튼 색이다. 원래 파란 그림 글자만 버튼 안에서 파랗다(🌳 초록처럼)
+ * 접힌 바(입력창 아래 오른쪽 버튼)의 글: 지금 크기 단계 색 네모 하나 + 이름 — 작업 표시줄의 최소화된 창처럼. 자동 숨김(노랑에
+ * 저절로 펴짐)은 강조 버튼으로 살아 있음을 보이고, ✕ 로 닫았으면 회색 + "닫힘". 마우스 올리기 칩은 그 줄(SessionMode)이 못
+ * 숨겨 칩 글이 "자동 …" 으로 잘려 늘 보였다. 터미널은 그림 글자를 안 써 글로.
+ * 0.8.1 B7: 예전 [🔽 이지 컴팩트 ⇱] 는 두
+ * 화살표의 뜻이 엇갈리고 ⇱ 는 버튼 글자색이라 따로 놀았다 → 사용자 고름 "막대 1개로 색상만" — 네모 색 = 바 게이지 · 현황 막대와 같은
+ * 말(🟦 여유 · 🟧 컴팩트할 때 · 🟥 늦어짐, 단계를 모르면 🟦). 버튼 안 글자는 어떤 색을 줘도 앱 버튼 색이라 원래 색이 있는 그림 글자만
+ * 제 색이다(🌳 초록처럼) — 이 줄은 버튼만 제자리에 두고 버튼 밖 글자는 줄 끝으로 모은다(파란 🗜 를 버튼 밖에 두자 🌳 뒤로 떨어졌다)
  */
-export const REVEAL_ICON = '🔽'
+export const REVEAL_SQUARE: Record<Level, string> = { ok: '🟦', warn: '🟧', cut: '🟥' }
 
-export function revealLabel(isClosed: boolean): string {
+export function revealLabel(isClosed: boolean, level: Level | null = null): string {
   const name = isClosed ? L('이지 컴팩트 닫힘', 'Easy Compact closed') : L('이지 컴팩트', 'Easy Compact')
-  return onTerminal() ? `⇱ ${name}` : `${REVEAL_ICON} ${name} ⇱`
+  return onTerminal() ? `⇱ ${name}` : `${REVEAL_SQUARE[level ?? 'ok']} ${name}`
+}
+
+/**
+ * 접힌 바를 펴는 버튼의 자리 — 데스크톱 = 입력창 아래 모드 줄, 터미널 = 바 자리 한 줄(입력창 위, ctrl+x tab 으로 닿음). 0.9.0: 터미널의
+ * 모드 줄엔 키보드 초점이 안 간다(엔진 초점 고리는 바 · 패널만) — 마켓 판엔 단축 명령도 없어 터미널은 바 자리에 둔다(실제 CLI 로 확인)
+ */
+export function revealWhere(): string {
+  return onTerminal() ? L('입력창 위', 'above the input') : L('입력창 아래', 'below the input')
+}
+
+/** 버튼까지 가는 키(터미널만) */
+function revealKeys(): string {
+  return onTerminal() ? '(ctrl+x tab)' : ''
 }
 
 /** 컴팩트할 때 자동으로 펴기 풀이(설정 탭) */
@@ -477,7 +496,10 @@ export function bandAutoUse(isOn: boolean): string {
         `✕ 로 접어 둔 바가 컴팩트 구간 시작(주황) · 캐시 만료에 닿으면 저절로 펴지고, 컴팩트하면 다시 접힙니다. 펴진 바를 ✕ 로 접으면 더 급해질 때(빨강 · 캐시 만료)까지 기다립니다.`,
         `A bar folded with ✕ opens by itself at the start of the compact range (yellow) or when the cache expires, and folds again after a compact. Fold it again with ✕ and it waits until things get more urgent (red · cache expired).`,
       )
-    : L(`✕ 로 접은 바는 입력창 아래 [${revealLabel(true)}] 를 누를 때까지 접힌 채입니다.`, `A bar folded with ✕ stays folded until you press [${revealLabel(true)}] below the input.`)
+    : L(
+        `✕ 로 접은 바는 ${revealWhere()} [${revealLabel(true)}]${revealKeys()} 를 누를 때까지 접힌 채입니다.`,
+        `A bar folded with ✕ stays folded until you press [${revealLabel(true)}] ${revealWhere()}${revealKeys() ? ` ${revealKeys()}` : ''}.`,
+      )
 }
 
 /**
@@ -507,22 +529,22 @@ export function foldName(folded: boolean): string {
   return folded ? L('접음', 'Folded') : L('펼침', 'Open')
 }
 
-/** 접은 바를 다시 펴는 법 두 가지(버튼 · 단축 명령) */
+/** 접은 바를 다시 펴는 법 — 그 버튼(0.9.0: 공개 · 마켓 판엔 단축 명령이 없어 두 판 다 버튼만 알린다) */
 function turnBackOn(isAuto: boolean): string {
   return L(
-    `다시 펴기: 입력창 아래 [${revealLabel(!isAuto)}] 를 누르거나 /easy-compact 보이기`,
-    `Open it again: press [${revealLabel(!isAuto)}] below the input, or type /easy-compact show`,
+    `다시 펴기: ${revealWhere()} [${revealLabel(!isAuto)}]${revealKeys()}`,
+    `open it again with [${revealLabel(!isAuto)}] ${revealWhere()}${revealKeys() ? ` ${revealKeys()}` : ''}`,
   )
 }
 
 /**
- * 바를 접은 직후 알림 — 접는 길(바의 ✕ · 설정 탭 · /easy-compact 안보이기)이 같은 말로 다시 펴는 법을 알린다. 컴팩트할 때
- * 저절로 펴지는지도(설정 "컴팩트할 때 자동으로 펴기")
+ * 바를 접은 직후 알림 — 접는 길(바의 ✕ · 설정 탭 · 개발본 단축 명령)이 같은 말로 다시 펴는 법을 알린다. 컴팩트할 때
+ * 저절로 펴지는지도(설정 "컴팩트할 때 자동으로 펴기"). 0.9.0: 다시 펴는 법을 앞에 — 터미널 알림은 한 줄이라 뒤가 잘렸다(실제 CLI)
  */
 export function hiddenNote(s: Pick<Settings, 'bandAutoOpen'>): string {
   return s.bandAutoOpen
-    ? L(`이지 컴팩트 바를 접었습니다 — 컴팩트할 때 저절로 펴집니다. ${turnBackOn(true)}`, `Easy Compact bar folded — it opens by itself when it is time to compact. ${turnBackOn(true)}`)
-    : L(`이지 컴팩트 바를 모든 세션에서 접었습니다. ${turnBackOn(false)}`, `Easy Compact bar is folded in every session. ${turnBackOn(false)}`)
+    ? L(`이지 컴팩트 바를 접었습니다 — ${turnBackOn(true)} · 컴팩트할 때 저절로 펴집니다`, `Easy Compact bar folded — ${turnBackOn(true)} · it opens by itself when it is time to compact`)
+    : L(`이지 컴팩트 바를 모든 세션에서 접었습니다 — ${turnBackOn(false)}`, `Easy Compact bar is folded in every session — ${turnBackOn(false)}`)
 }
 
 /** 끈 직후 토스트가 떠 있는 시간 — 기본 4초는 다시 켜는 법을 읽기에 짧다 */
@@ -740,6 +762,10 @@ export function normalizeSettings(raw: unknown): Settings {
   // B1(0.6.1 피드백): 컨텍스트 · 컴팩트 구간 숫자 꼴 — 크기(281k) · %(최대 컨텍스트 대비 28%) · 둘 다
   const rawUnit = (r as { ctxUnit?: unknown }).ctxUnit
   const ctxUnit = rawUnit === 'pct' || rawUnit === 'both' ? rawUnit : 'size'
+  // B8(0.8.1): 게이지 꼴 — 모르는 값 · 없음이면 가로 막대(0.8.0 까지 쓰던 사람도 새 기본으로)
+  const rawShape = (r as { gaugeShape?: unknown }).gaugeShape
+  const gaugeShape = rawShape === 'ring' || rawShape === 'vbar' || rawShape === 'cells' ? rawShape : 'bar'
+  const statusLine = (r as { statusLine?: unknown }).statusLine === true
   const custom = normalizeView((r as { custom?: unknown }).custom)
   // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)
   const rawScreen = (r as { screen?: unknown }).screen
@@ -764,7 +790,7 @@ export function normalizeSettings(raw: unknown): Settings {
           : screen === 'custom'
             ? limitFrom(rawCustomShow, ALL_LIMITS)
             : ALL_LIMITS
-    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit }
+    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit, gaugeShape, statusLine }
   }
   // 화면이 없는 저장값 = 0.4.0 전부터 쓰던 사람: 칸(bandShow) · 패널 보기(paneMode — 없으면 자세히)를 옮긴다. 한도 칸은 한도 줄로,
   // 비용 · 질문 줄 칸을 다 켰으면(손대지 않음) 간단 — 업데이트 뒤 첫 화면. 하나라도 껐으면 고른 것이라 그 칸 ·
@@ -778,7 +804,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const allOn = (Object.keys(oldShow) as (keyof CostShow)[]).every(k => oldShow[k])
   const migrated: Pick<Settings, 'screen' | 'custom'> =
     allOn ? { screen: 'simple', custom } : { screen: 'custom', custom: { ...SCREEN_VIEWS.detail, bandShow: oldShow, info: oldPane === 'simple' ? 'lean' : 'full' } }
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit }
+  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit, gaugeShape, statusLine }
 }
 
 /** 저장값 안의 객체(아니면 빈 객체) */

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/demo.gif" width="900" alt="easy-compact: the Easy Compact bar above the Claude Code input, then one-click Save &amp; compact">
+  <img src="docs/demo.gif" width="900" alt="easy-compact: the Easy Compact bar above the Claude Code input, then a one-click Easy Compact (save, then compact)">
 </p>
 
 <h1 align="center">easy-compact</h1>
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.8.0-4c9be8" alt="Version 0.8.0">
+  <img src="https://img.shields.io/badge/version-0.9.0-4c9be8" alt="Version 0.9.0">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-080">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-090">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 ---
@@ -78,7 +78,7 @@ No `claude` command (usual if you only use the desktop app)? Send the one line a
 
 ## Update
 
-**From 0.5.0, inside the app:** the bar's **gauge** — the ring before **Compact** (**◔** on 0.6–0.7, **📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *New N* (on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
+**From 0.5.0, inside the app:** the bar's **gauge** — the bar before **Compact** (a ring on 0.8.x, **◔** on 0.6–0.7, **📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *New N* (on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
 
 **On 0.4.1 or earlier, or to do it yourself, send this one line to Claude**, then restart Claude:
 
@@ -109,7 +109,20 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.8.0
+## What's new in 0.9.0
+
+- **The gauge is a horizontal bar by default** — the ring looked exactly like the app's own context ring next to the input. **Gauge shape** in the Settings **Bar** tab offers **Bar** · **Ring** · **Vertical bar** · **Steps** (the bar, the pane header and the compact card change together).
+- **Compact card: Easy Compact · Clear · Cancel** — *Save & compact* is now **Easy Compact**, and **Clear** (/clear) takes the place of *Compact now*. With a cold cache the card skips the save question: **Plain compact** (Claude's /compact — it shows the text it adds) · **Clear** · **Cancel**.
+- **Settings in tabs** — under the screen type at the top: **Bar · Answer chip · Pane · Compact · General**. The Bar tab has a card each for **Whole bar · Limits row · Cost row · Question row**, each previewing only its own row.
+- **The folded-bar button is one colored square** — **🟦 Easy Compact** below the input; the square follows the size step (🟦 room · 🟧 time to compact · 🟥 late). In a terminal a folded bar leaves one **[⇱ Easy Compact]** line in its place (ctrl+x tab → Enter).
+- **A line below the input** (optional) — while the app's end-of-turn "next step" box takes the bar away, the gist of the bar stays below the input.
+- **Overview** — the bars breathe while compacting and shrink when it ends, the compact timing bar fills from the left, Cost by size marks the row you are in, and **Context numbers** (size · % · both) reach the compact card.
+- **Diagnostics · reporting** — **[Diagnose]** in the pane's version drawer saves this session's state to one file — see [Something wrong?](#something-wrong--report-it). The `/easy-compact` command is gone (the bar's ✕ and the folded-bar button do the same).
+
+Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.8.0</b></summary>
 
 - **The gauge opens the pane** — click the ring before **Compact** to open or close the Easy Compact pane, like the app's own context ring. The **◔** button is gone, so the bar's top right holds only **—** and **✕**. Hover the gauge for the context and your compact range, the **Compact** button for what to do.
 - **Terminal: buttons instead of dropdowns** — value lists are buttons in a row (a dropdown kept the arrow keys), session-cost colors are **[ − ] $10 [ + ]**, and the compact card is numbered: **1** Save & compact · **2** Compact now · **3** Cancel — typing the number in an empty prompt presses it.
@@ -117,7 +130,7 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 - **? chips** — the **?** beside a setting is a small bordered chip right after its name.
 - **Fixed** — the gauge blinking when the bar changed size, and *Compact now* not responding to Enter in a terminal.
 
-Full list: [CHANGELOG](CHANGELOG.md).
+</details>
 
 <details>
 <summary><b>What's new in 0.7.0</b></summary>
@@ -204,7 +217,7 @@ Claude Code re-reads the whole context on every request — a session at 300k pa
 
 ## Demo · 60 s
 
-https://github.com/user-attachments/assets/793eb759-3f15-4e0d-882d-5d234479d873
+https://github.com/user-attachments/assets/fccb5b10-1437-41d5-bd04-761c8ff97eaa
 
 ## Features
 
@@ -213,11 +226,11 @@ https://github.com/user-attachments/assets/793eb759-3f15-4e0d-882d-5d234479d873
 <img src="docs/img/band.png" width="900" alt="The Easy Compact bar: plan usage, per-request cost, context, compact range, cache, and this question's cost">
 
 **Context, next-request cost and this question's cost — updated after every request.**
-Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** under Settings → **Screen**; to choose single parts, pick **Custom** there and switch the rows below it — the bar preview follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both under **Bar — every screen**. Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
+Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** as the **Screen type** at the top of Settings; to choose single parts, pick **Custom** and switch them in the row cards of the **Bar** tab (Limits row · Cost row · Question row) — each card's preview of its row follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both in the **Cost row** card. The gauge's look is **Gauge shape** in the **Whole bar** card (Bar · Ring · Vertical bar · Steps). Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
 
-<img src="docs/img/screen.png" width="520" alt="Settings → Screen type: Simple · Detailed · Custom, a “?” on each row, and a preview of the bar and the question-cost chip">
+<img src="docs/img/screen.png" width="520" alt="Settings: the screen type (Simple · Detailed · Custom) above the tabs Bar · Answer chip · Pane · Compact · General; the Bar tab previews each row in its own card">
 
-**Settings → Screen: Simple, Detailed or Custom.** The preview shows the bar and the question-cost chip as you choose, with this session's values. The screen type sets the bar's parts, Overview's first view and whether the chip under each answer shows details (**Answer chip details**); Custom lets you pick each one.
+**Settings: the screen type at the top (Simple · Detailed · Custom), then tabs — Bar · Answer chip · Pane · Compact · General.** The Bar tab draws a preview of each row with this session's values in its own card — **Whole bar · Limits row · Cost row · Question row** — right above the options that change it (a row that isn't on the current screen says why). The screen type sets the bar's parts, Overview's first view and whether the chip under each answer shows details (**Answer chip details**); Custom lets you pick each one, and the parts a preset decides are dimmed.
 
 ### 2. Cost per question, step by step
 
@@ -231,7 +244,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 <img src="docs/img/question-cost.png" width="900" alt="The blue question-cost chip under an answer, opened into main requests, agents and steps; hovering it highlights the answer and its row in the Easy Compact pane">
 
-**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and the answer, the chip and the row turn gray together (desktop; Settings → Bar · pane → **Highlight**).
+**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and the answer, the chip and the row turn gray together (desktop; Settings **Answer chip** tab → **Highlight**).
 
 ### 3. Know when to compact
 
@@ -244,21 +257,21 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 | Dim gauge · plain **Compact** | Not now — before your range, right after a compact, or compacting would cost more. Hover for the reason |
 | 🟠 Orange gauge · *Time to compact* | Inside your range |
 | 🔴 Red gauge (pulsing) · *Compact overdue* | Past your range — the deeper, the faster it pulses |
-| 🔴 *Cache expired* · **Compact now advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
+| 🔴 *Cache expired* · **Plain compact advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
 
-Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do.
+Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as a horizontal bar — **Gauge shape** in the Settings **Bar** tab switches it to a ring (like the app's context ring), a vertical bar or steps. Colors, pulsing and the post-compact shrink are the same in every shape.
 
-### 4. Save & compact — one click
+### 4. Easy Compact — one click
 
-<img src="docs/img/confirm.png" width="860" alt="Compact now? card: context 312k to 82k, savings per question, Save &amp; compact or Compact now">
+<img src="docs/img/confirm.png" width="860" alt="Compact now? card: context 312k to 82k, savings per question, Easy Compact · Clear · Cancel">
 
 <img src="docs/img/keep-working.png" width="860" alt="The cache has expired and compacting now would cost more: the card says Keep working, with only an OK button">
 
-**"Compact now?" shows what you save per question and what the compact costs.** Its text dropdown (Normal · Long-session handoff · Wrap-up) picks what to keep, and what the chosen text does is shown in two lines (*Save* · *Reply*) — you can write both texts yourself in Settings → **Compact text** (**① Text sent before compacting** · **② Text after /compact**). With a cold cache it's the *Cache expired* card — continuing vs compacting now, with ▶ Compact now as the main button (a save question would first re-send everything). **When compacting now would cost more** (a cold cache where continuing is cheaper, or little to save), the card has no compact buttons, just *Keep working* — easy-compact decides the money side with numbers and doesn't leave it to the session. In a terminal the card's buttons are numbered — **1** Save & compact · **2** Compact now · **3** Cancel — and typing the number in an empty prompt presses it. Pressing **Save & compact**:
+**"Compact now?" shows what you save per question and what the compact costs.** Its text dropdown (Normal · Long-session handoff · Wrap-up) picks what to keep, and what the chosen text does is shown in two lines (*Save* · *Reply*) — you can write both texts yourself in Settings **Compact** tab → **Compact text** (**① Text sent before compacting** · **② Text after /compact**). The buttons are **▶ Easy Compact** · **Clear** (/clear — start over with an empty conversation, no summary) · **✕ Cancel**. With a cold cache it's the *Cache expired* card — continuing vs a plain compact, with no save question: **▶ Plain compact** (Claude's /compact, showing the text it adds) · **Clear** · **✕ Cancel** (a save question would first re-send everything). **When compacting now would cost more** (a cold cache where continuing is cheaper, or little to save), the card has no compact buttons, just *Keep working* — easy-compact decides the money side with numbers and doesn't leave it to the session. In a terminal the card's buttons are numbered — **1** Easy (Plain) compact · **2** Clear · **3** Cancel — and typing the number in an empty prompt presses it. Pressing **Easy Compact**:
 
 ```mermaid
 flowchart LR
-  A["▶ Save & compact<br/>(offered only when it pays)"] --> B{"Session: would compacting<br/>lose anything it needs?"}
+  A["▶ Easy Compact<br/>(offered only when it pays)"] --> B{"Session: would compacting<br/>lose anything it needs?"}
   B -- yes --> H["Hold — nothing changes"]
   B -- no --> C["Save decisions,<br/>progress, to-dos"]
   C --> D["Write next steps<br/>in 3–5 lines"]
@@ -268,19 +281,19 @@ flowchart LR
 
 <img src="docs/img/summary.png" width="860" alt="After the compact: next steps in the summary card, context back to about 82k">
 
-**After the compact, the next steps are in the summary — and every request costs less.** *Compact now* skips the save step.
+**After the compact, the next steps are in the summary — and every request costs less.** **Plain compact** skips the save step, and **Clear** empties the conversation without a summary. While compacting, the Overview's context and compact timing bars breathe slowly (*Compacting…*), then shrink from the old size to the new one.
 
 ### 5. The Easy Compact pane
 
 <img src="docs/img/simple.png" width="900" alt="The Simple screen: a one-line bar and the Simple Easy Compact pane with This session and cost per question">
 
-Open it by clicking the bar's **gauge** (in a terminal, **[Pane ▸]**). The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested · not advised · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen type in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in Settings → **Bar · pane**.
+Open it by clicking the bar's **gauge** (in a terminal, **[Pane ▸]**). The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested · not advised · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen type in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in the Settings **Pane** tab. In the Detailed view, **Cost by size** marks the row your context is in with a light blue background (the picked range is outlined).
 
 ### 6. Terminal too
 
 <img src="docs/img/terminal.png" width="900" alt="The same bar and Easy Compact pane in the Claude Code terminal">
 
-**The same bar and pane in the CLI.** To press the bar's buttons, press ctrl+x tab to move into the bar (or click, in fullscreen mode).
+**The same bar and pane in the CLI.** To press the bar's buttons, press ctrl+x tab to move into the bar (or click, in fullscreen mode). A folded bar leaves one **[⇱ Easy Compact]** line in its place — reach it the same way and press Enter to open the bar again.
 
 ## Hide, fold, bring it back
 
@@ -289,16 +302,18 @@ The window buttons sit at the top right of the bar. Every choice applies to all 
 | Button | What it does | How it comes back |
 |---|---|---|
 | **—** / **□** | One line / full | Press it again |
-| **✕** fold | Folds the bar below the input in every session | By itself when it's time to compact (orange · cache expired) — or press **🔽 Easy Compact ⇱** below the input, or type `/easy-compact show` |
+| **✕** fold | Folds the bar below the input in every session | By itself when it's time to compact (orange · cache expired) — or press **🟦 Easy Compact** below the input (the square shows the current size step: 🟦 room · 🟧 time to compact · 🟥 late). In a terminal, the **[⇱ Easy Compact]** line in the bar's place (ctrl+x tab → Enter) |
 | **Gauge** (the ring before **Compact**) | Opens or closes the Easy Compact pane (in a terminal, **[Pane ▸]**) | Press it again |
 
-Whether a folded bar opens by itself is **Open the bar when compacting** under Settings → **Bar · pane** (on by default). Turn it off and the bar stays folded — the button below the input turns grey (*closed*) — until you press it: a pause before you decide to uninstall. Folding an opened-by-itself bar again keeps it folded until things get more urgent (red · cache expired).
+Whether a folded bar opens by itself is **Open the bar when compacting** in the Settings **Bar** tab (on by default). Turn it off and the bar stays folded — the folded-bar button turns grey (*closed*) — until you press it: a pause before you decide to uninstall. Folding an opened-by-itself bar again keeps it folded until things get more urgent (red · cache expired).
 
 <img src="docs/img/fold.png" width="900" alt="After folding the bar: a note that it opens by itself when it is time to compact, and the Easy Compact button below the input">
 
-**There are only two commands: `/easy-compact show` · `hide`** — use `show` to open a folded bar. Everything else is on the bar's buttons and the **⚙ Settings** tab of the pane. Like the app's side panel, each section folds under its title (**⌄** open · **›** folded; only **Screen** is open at first, and a folded section shows its current value beside the title), and each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). In a terminal, value lists are buttons in a row instead of dropdowns. The sections: **Screen** (Simple · Detailed · Custom with a preview, then what that screen shows — answer chip details · cost row · question row, changed on Custom and dimmed on the presets), **Bar — every screen** (limits row · All sessions · session-cost colors · cost order · context numbers as size, % or both · bar size · animations), **Bar · pane** (keep the bar folded · open the bar when compacting · open the pane in new sessions · open and close together · highlight — switches), **Compact text** · **Cache** · **Language**. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version: press it for what changed in each newer version, **Check for updates** and **Update**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
+**There are no slash commands** (from 0.9.0) — everything is on the bar's buttons and the **⚙ Settings** tab of the pane. Settings has the **Screen type** (Simple · Detailed · Custom) at the top, then tabs: **Bar** (Whole bar — bar size · gauge shape · keep the bar folded · open the bar when compacting · line below the input / Limits row / Cost row — its parts · All sessions · session-cost colors · cost order · context numbers as size, % or both / Question row — each card with a preview of its row), **Answer chip** (answer chip details · highlight), **Pane** (open the pane in new sessions · open and close together), **Compact** (compact text · cache), **General** (animations · language). The parts the screen type decides are changed on Custom and dimmed on the presets. Each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). In a terminal, value lists are buttons in a row instead of dropdowns. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version: press it for what changed in each newer version, **Check for updates**, **Update** and **Diagnose**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
 
-**Buttons cost nothing.** Typed commands don't call the model either, but the command and its one-line answer stay in the conversation, so they are re-sent with your next request.
+**Buttons cost nothing** — they leave nothing in the conversation.
+
+**While the end-of-turn "next step" box is up, the bar steps aside.** When Claude ends a turn asking what to do next with buttons, the app takes plugin bars away until the box goes (that is the app; a plugin can't stop it — close the box and the bar comes back). Turn on **Line below the input** in the Settings **Bar** tab to keep the gist of the bar below the input meanwhile, e.g. *🟦 Easy Compact · Context 140k · compact range 200k~250k · Session $8.40*.
 
 ## Bar not showing?
 
@@ -306,8 +321,17 @@ Whether a folded bar opens by itself is **Open the bar when compacting** under S
 2. **Installed?** — in a terminal, `claude plugin list` should show `easy-compact@easy-compact` enabled. If adding the marketplace failed, `git` is usually missing.
 3. **Restart** — quit the desktop app completely (not just the window), open it and start a new session. In a terminal, start a new `claude` session.
 4. **Managed work machines** — if an administrator has blocked plugins or mods, it won't show.
+5. **The end-of-turn "next step" box** — the app takes the bar away while it is up (close it and the bar comes back). [Line below the input](#hide-fold-bring-it-back) keeps the gist meanwhile.
 
-Still stuck? Open an [issue](https://github.com/JaeSeongHa5280/easy-compact/issues) with your OS, the Claude Code version from `/status` and the exact error.
+Still stuck? See [Something wrong?](#something-wrong--report-it) below.
+
+## Something wrong? — report it
+
+1. **Save a diagnostics file** — the Easy Compact pane (the bar's gauge; in a terminal, **[Pane ▸]**) → the version button at the right of the tab row (`v0.9.0 ▸`) → **[Diagnose]** in the drawer. The file's path shows in the drawer and a notice (nothing goes into the conversation).
+2. **What's in it** — every setting, the pane's state (open tab, open cards), usage numbers · the running question · compact phase, the question history (question text · cost per question · the end of each answer), the cost cross-check (the engine's total · what easy-compact measured), and counts of unpaired surrogates and control characters (candidates for a pane that doesn't draw at all).
+3. **Where** — `~/.claude/plugins/data/easy-compact-easy-compact/debug-<session id>.json` (`plugins/data/easy-compact-synced/` if you installed from Anthropic's directory). The same session overwrites it.
+4. **It stays on your computer** — easy-compact never sends it. Attach it yourself; it contains your questions and costs, so look it over and remove anything private before you post it.
+5. **Open an [issue](https://github.com/JaeSeongHa5280/easy-compact/issues) with** — what happened, how to reproduce it, which screen (desktop app / terminal), the version (the version button · Claude Code's from `/status`), your OS, and the diagnostics file.
 
 ## Good to know
 

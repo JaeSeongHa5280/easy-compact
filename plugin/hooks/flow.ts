@@ -5,7 +5,7 @@
 // 그 구간은 그때 캐시 상태로 추정하고(compactEffects), mod 가 본 컴팩트는 엔진이 준 실제 토큰으로 잰다.
 
 import type { CompactEvent, CtxPoint } from '../types'
-import { CACHE_TTL_MIN, costOf, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
+import { barAnimCss, CACHE_TTL_MIN, costOf, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
 import type { Tokens } from './cost'
 import { L } from './i18n'
 
@@ -530,16 +530,17 @@ export const TIMING_H = 30
 
 /**
  * 컴팩트 시점 막대(데스크톱): 지금 컨텍스트가 적용 중인 기준(구간 시작 · 끝, 직접 지정이면 노랑 · 빨강 크기)의 어디쯤인지.
- * 회색 = 상주(컴팩트해도 남는 몫), 그 뒤 지금까지 채움(상태 색), 시작 · 끝 자리에 그 색 세로선과 아래 이름.
+ * 0 부터 지금까지 상태 색 하나, 시작 · 끝 자리에 그 색 세로선과 아래 이름. 0.8.1 O3: 예전 앞 회색 칸(상주 — 컴팩트해도 남는 몫)은
+ * 채움이 왼쪽 끝에서 떨어져 고정값처럼 보였다 — 상주는 위 컨텍스트 카드 범례가 보인다.
  * 예전엔 "미룬 비용 ÷ 컴팩트 한 번 값" 게이지였는데 100% 가 비용만 본 최적이라 고른 구간과 따로 놀았고(구간 안인데 7.5배 ·
  * 빨강), 100% 눈금이 눈에 안 들어왔다
  */
 export function timingSvg(
   ctx: number,
-  base: number | null,
   marks: { warn: number; cut: number; warnName: string; cutName: string },
   hex: string,
   width: number,
+  anim: { pulse?: boolean; fromCtx?: number; fromHex?: string } | null = null,
 ): string {
   const barY = 4
   const barH = 8
@@ -548,10 +549,13 @@ export function timingSvg(
   const x = (v: number) => Math.max(0, Math.min(width, (v / top) * width))
   let body = `<clipPath id="timing-clip"><rect x="0" y="${barY}" width="${width}" height="${barH}" rx="4"/></clipPath><g clip-path="url(#timing-clip)">`
   body += `<rect x="0" y="${barY}" width="${width}" height="${barH}" fill="#888888" fill-opacity="0.25"/>`
-  const baseX = base !== null && base > 0 ? x(Math.min(base, ctx)) : 0
-  if (baseX > 0) body += `<rect x="0" y="${barY}" width="${baseX.toFixed(1)}" height="${barH}" fill="#888888" fill-opacity="0.6"/>`
   const nowX = x(ctx)
-  if (nowX > baseX) body += `<rect x="${baseX.toFixed(1)}" y="${barY}" width="${(nowX - baseX).toFixed(1)}" height="${barH}" fill="${hex}"/>`
+  // O4(0.8.1): 컴팩트 중 숨쉬기(pulse) · 컴팩트 끝 옛 크기(지금 눈금으로 — 끝을 넘으면 오른쪽 끝)에서 줄어듦, 앞 단계 색에서 시작
+  const fromX = anim?.fromCtx !== undefined ? x(anim.fromCtx) : null
+  const shrink = fromX !== null && fromX > nowX + 0.5 ? `@keyframes cs{from{width:${fromX.toFixed(1)}px${anim?.fromHex ? `;fill:${anim.fromHex}` : ''}}}` : ''
+  const cls = [anim?.pulse ? 'fl' : '', shrink ? 'sh' : ''].filter(Boolean).join(' ')
+  body += barAnimCss(anim?.pulse === true, shrink)
+  if (nowX > 0) body += `<rect${cls ? ` class="${cls}"` : ''} x="0" y="${barY}" width="${nowX.toFixed(1)}" height="${barH}" fill="${hex}"/>`
   body += '</g>'
   // 시작 · 끝 세로선: 막대 위아래로 4px 더 길게, 3px 굵기 — 1 · 2px 은 막대 색에 묻혔다
   const line = (v: number, color: string) =>

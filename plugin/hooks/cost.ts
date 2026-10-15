@@ -2,6 +2,8 @@
 //
 // 요율: Anthropic 1차 API 정가(claude-api 스킬 가격표, 2026-10-06 기준). 모델마다 다르다 — API 가 요청마다
 // 알려 주는 모델 id 로 고른다. 캐시 쓰기는 입력의 1.25배(5분) · 2배(1시간), 읽기는 모델마다 다른 배수.
+// 엔진(claude 실행 파일)의 모델 요율 등급과 같다 — tools/check-rates.mjs 가 빠른 시험마다 견준다(2026-10-15, mod API 는 요율을 주지 않는다).
+// 조직이 관리 설정 modelPricing 을 두면 엔진 세션 금액은 그 요율을 쓴다 — 이 mod 는 정가
 // 2026-10-10 이전 판은 Opus 5 요율($5/$25, 읽기 $0.50)을 고정으로 써서 Opus 5.5 세션을 높게 쟀다.
 //
 // 2026-10-10 실측(이 mod 를 만든 세션 14턴): 턴당 호출 1~39회, 평균 9회 — 턴당 호출 수를 가정하면
@@ -29,6 +31,8 @@ const PRICE_TABLE: { match: RegExp; base: Rates; long?: { over: number; rates: R
   { match: /opus-5-5/, base: rates('Opus 5.5', 4, 20, 0.2) },
   { match: /opus-5/, base: rates('Opus 5', 5, 25, 0.5) },
   { match: /opus-4-[5-8]/, base: rates('Opus 4.x', 5, 25, 0.5) },
+  // 옛 모델 — 엔진 요율 등급(tier_15_75 · tier_3_15 · haiku_35)에 맞춰 넣었다(M2, tools/check-rates.mjs 가 엔진 등급과 견준다)
+  { match: /opus-4/, base: rates('Opus 4 · 4.1', 15, 75, 1.5) },
   { match: /sonnet-5/, base: rates('Sonnet 5.x', 2, 10, 0.2) },
   { match: /sonnet-4/, base: rates('Sonnet 4.x', 3, 15, 0.3) },
   // Haiku 5.5 는 프롬프트가 10만 토큰을 넘으면 요율이 5배다
@@ -38,6 +42,8 @@ const PRICE_TABLE: { match: RegExp; base: Rates; long?: { over: number; rates: R
     long: { over: 100_000, rates: rates('Haiku 5.5 (>100k)', 0.5, 2.5, 0.05) },
   },
   { match: /haiku-4-5/, base: rates('Haiku 4.5', 1, 5, 0.1) },
+  { match: /3-[57]-sonnet/, base: rates('Sonnet 3.x', 3, 15, 0.3) },
+  { match: /3-5-haiku/, base: rates('Haiku 3.5', 0.8, 4, 0.08) },
 ]
 
 /**
@@ -55,12 +61,18 @@ const KNOWN_MODELS = new Set([
   'opus-4-6',
   'opus-4-7',
   'opus-4-8',
+  'opus-4',
+  'opus-4-0',
+  'opus-4-1',
   'sonnet-5-5',
   'sonnet-5',
   'sonnet-4-5',
   'sonnet-4-6',
   'haiku-5-5',
   'haiku-4-5',
+  '3-5-sonnet',
+  '3-7-sonnet',
+  '3-5-haiku',
 ])
 
 /** 모델 id → 견줄 이름: "claude-haiku-4-5-20251001" → "haiku-4-5", "claude-opus-5-5[1m]" → "opus-5-5" */
@@ -131,6 +143,67 @@ export function extraUsd(extra: Record<string, number> | undefined, from: string
   let usd = 0
   for (const [day, v] of Object.entries(extra ?? {})) if (day >= from && day <= to && typeof v === 'number' && Number.isFinite(v)) usd += v
   return usd
+}
+
+/**
+ * M2(0.8.0 뒤 피드백 "이번 달 금액이 설정 화면보다 $4.75 낮음"): 대화 기록의 컴팩트 경계 중 이지 컴팩트가 잰 값이 없는 것(장부 전 · 질문 기록
+ * 60개 밖) — 날짜 → 모델 → [개수, 컴팩트 전 크기 합](tools/scan-spend.mjs retro)
+ */
+export type RetroCompacts = Record<string, Record<string, number[]>>
+
+/** 잰 컴팩트 [컴팩트 전 크기, 모델, 달러](scan-spend calib) — 요약 출력 몫을 거꾸로 구하는 재료 */
+export type CompactCalib = readonly (readonly [number, string, number])[]
+
+/**
+ * 거꾸로 구한 요약 출력(토큰)이 이 범위 밖이면 뺀다 — 아래: 엔진이 미리 계산한 요약을 쓴 자동 컴팩트(요청 값 0 에 가까움), 위: 식은 캐시의
+ * 컴팩트(정가 입력이라 거꾸로 구하면 십몇만)
+ */
+const RETRO_OUT_MIN = 1_000
+const RETRO_OUT_MAX = 50_000
+
+/** 컴팩트 요청 입력 1토큰의 값($/MTok) — 입력 몫대로 정가 · 캐시 읽기 · 쓰기 */
+function compactInputRate(r: Rates, mix: CompactMix): number {
+  return mix.input * r.input + mix.read * r.read + mix.write * r.write1h
+}
+
+/**
+ * 컴팩트 한 번의 요약 출력 몫 — 이 PC 에서 잰 컴팩트에서 거꾸로(값 − 크기 × 입력 요율 = 출력 × 출력 요율)의 가운데 값. 마지막 한 번 값
+ * (compactOutputTokens)은 들쭉날쭉해(이 PC 0.46만 ~ 1만, 잰 값 가운데는 1.5만) 잰 것이 없을 때만 fallback
+ */
+export function compactOutputOf(calib: CompactCalib | undefined, mix: CompactMix, fallback: number): number {
+  const outs: number[] = []
+  for (const [pre, model, usd] of calib ?? []) {
+    const r = ratesFor(model, pre)
+    if (!r || !(pre > 0) || !Number.isFinite(usd)) continue
+    const out = (usd * 1e6 - pre * compactInputRate(r, mix)) / r.output
+    if (out >= RETRO_OUT_MIN && out <= RETRO_OUT_MAX) outs.push(out)
+  }
+  if (outs.length === 0) return fallback
+  outs.sort((a, b) => a - b)
+  const mid = outs.length >> 1
+  return Math.round(outs.length % 2 ? outs[mid]! : (outs[mid - 1]! + outs[mid]!) / 2)
+}
+
+/**
+ * 잰 값이 없는 컴팩트의 날짜 범위 합(어림): 캐시가 살아 있던 컴팩트로 센다 — 크기 × 입력 몫 요율 + 요약 출력. 식은 캐시의 컴팩트는 정가
+ * 입력이라 더 비싸지만 기록으로는 못 가려 아래로 잡는다. n = 센 컴팩트 수(요율을 모르는 모델은 뺀다)
+ */
+export function retroUsd(retro: RetroCompacts | undefined, from: string, to: string, mix: CompactMix, out: number): { usd: number; n: number } {
+  let usd = 0
+  let n = 0
+  for (const [day, byModel] of Object.entries(retro ?? {})) {
+    if (day < from || day > to) continue
+    for (const [model, v] of Object.entries(byModel)) {
+      const count = v?.[0] ?? 0
+      const sum = v?.[1] ?? 0
+      if (!(count > 0)) continue
+      const r = ratesFor(model, sum / count)
+      if (!r) continue
+      usd += (sum * compactInputRate(r, mix) + count * out * r.output) / 1e6
+      n += count
+    }
+  }
+  return { usd, n }
 }
 
 export function spendDay(ms: number): string {
@@ -580,6 +653,19 @@ export const PERM_HEX = '#c3c9d4'
 /** 컨텍스트 막대 눈금이 막대 위아래로 삐져나오는 길이(px) — 눈금이 있으면 그림 높이 = 막대 + 2 × 이 값 */
 export const CTX_MARK_PAD = 4
 
+/**
+ * 현황 막대 움직임(O4, 0.8.1 사용자 "컴팩트 진행 중일 때 그대로 — 깜빡이거나 맞춰서 감소하는 애니"): pulse = 컴팩트 중 채움이 느리게 숨
+ * 쉬듯(밝기만, 초당 1번 아래), fromPercent / fromCtx = 컴팩트 끝 옛 크기에서 지금으로 줄어듦(0.8초 — 바 게이지와 같은 때). 그림 안
+ * prefers-reduced-motion 이면 멈춤, 설정 "움직임" 끔이면 부르는 쪽이 안 준다. 움직이는 동안만 샌드박스 틀(isInteractive)로 그린다
+ */
+export type BarAnim = { pulse?: boolean; fromPercent?: number }
+
+/** 막대 움직임 CSS — 키프레임엔 고정 값만(color-mix 금지) */
+export function barAnimCss(pulse: boolean, shrink: string): string {
+  const rules = `${pulse ? '@keyframes cp{50%{opacity:.35}}.fl{animation:cp 1.4s ease-in-out infinite}' : ''}${shrink ? `${shrink}.sh{animation:cs .8s ease-out}` : ''}`
+  return rules ? `<style>${rules}@media (prefers-reduced-motion:reduce){.fl,.sh{animation:none!important}}</style>` : ''
+}
+
 export function ctxBarSvg(
   percent: number,
   parts: readonly { percent: number; hex: string }[],
@@ -587,6 +673,7 @@ export function ctxBarSvg(
   width: number,
   height: number,
   marks: readonly { percent: number; hex: string }[] = [],
+  anim: BarAnim | null = null,
 ): string {
   const p = Math.max(0, Math.min(100, percent))
   const fw = p === 0 ? 0 : Math.max(height, (width * p) / 100)
@@ -595,15 +682,21 @@ export function ctxBarSvg(
   const pad = marks.length > 0 ? CTX_MARK_PAD : 0
   const total = height + pad * 2
   const y = pad > 0 ? ` y="${pad}"` : ''
+  const fl = anim?.pulse ? ' class="fl"' : ''
   let body = `<rect${y} width="${width}" height="${height}" fill="#888888" fill-opacity="0.28"/>`
   let x = 0
   for (const part of parts) {
     const w = Math.min(fw - x, (width * Math.max(0, part.percent)) / 100)
     if (w <= 0) break
-    body += `<rect x="${x.toFixed(1)}"${y} width="${Math.max(0, w - 1).toFixed(1)}" height="${height}" fill="${part.hex}"/>`
+    body += `<rect${fl} x="${x.toFixed(1)}"${y} width="${Math.max(0, w - 1).toFixed(1)}" height="${height}" fill="${part.hex}"/>`
     x += w
   }
-  if (fw > x) body += `<rect x="${x.toFixed(1)}"${y} width="${(fw - x).toFixed(1)}" height="${height}" fill="${hex}"/>`
+  // 줄어듦은 뒤칸(대화 몫)이 옛 끝에서 지금 끝으로 — 앞칸(남는 몫)은 컴팩트해도 그대로라 안 움직인다
+  const fromW = anim?.fromPercent !== undefined ? Math.min(width, (width * Math.max(0, anim.fromPercent)) / 100) - x : null
+  const shrink = fromW !== null && fromW > fw - x + 0.5 ? `@keyframes cs{from{width:${fromW.toFixed(1)}px}}` : ''
+  const cls = [anim?.pulse ? 'fl' : '', shrink ? 'sh' : ''].filter(Boolean).join(' ')
+  if (fw > x) body += `<rect${cls ? ` class="${cls}"` : ''} x="${x.toFixed(1)}"${y} width="${(fw - x).toFixed(1)}" height="${height}" fill="${hex}"/>`
+  body = barAnimCss(anim?.pulse === true, shrink) + body
   const xOf = (at: number) => Math.min(width - 1.5, Math.max(1.5, (width * at) / 100))
   const shown = marks.filter(m => m.percent > 0 && m.percent < 100)
   // 기준 눈금(노랑 · 빨강이 시작하는 크기): 막대 위아래로 삐져나오는 3px 세로선 하나씩 — 막대 안의 좁은 칸(컴팩트 요약 등)과

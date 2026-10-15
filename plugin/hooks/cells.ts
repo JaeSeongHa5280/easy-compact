@@ -9,10 +9,9 @@ import { COMPACT_HEX, MODEL_HEX } from './flow'
 
 /** 터미널 기본색(엔진 Raster 규칙: 0x01000000) */
 const DEFAULT_COLOR = 0x01000000
-/** 기준 점선 · 빈 칸 · 상주 회색 — 데스크톱 RULE_HEX · 바탕 회색과 맞춘다 */
+/** 기준 점선 · 빈 칸 — 데스크톱 RULE_HEX · 바탕 회색과 맞춘다 */
 const RULE = 0x9aa0a8
 const TRACK = 0x6b7079
-const PERM = 0x8a8f98
 
 const hexInt = (hex: string) => parseInt(hex.replace('#', ''), 16)
 
@@ -185,14 +184,13 @@ export function barCells(
 }
 
 /**
- * 컴팩트 시점 막대(터미널): timingSvg 와 같은 눈금 — 끝 = 구간 끝의 1.25배(또는 지금 크기), 회색 = 상주, 그 뒤 지금까지
- * 상태 색, 시작(노랑) · 끝(빨강) 자리에 ┃
+ * 컴팩트 시점 막대(터미널): timingSvg 와 같은 눈금 — 끝 = 구간 끝의 1.25배(또는 지금 크기), 0 부터 지금까지 상태 색 하나
+ * (0.8.1 O3 — 앞 회색 상주 칸 뺌), 시작(노랑) · 끝(빨강) 자리에 ┃
  */
-export function timingCells(ctx: number, base: number | null, warn: number, cut: number, hex: string, columns: number): CellGrid {
+export function timingCells(ctx: number, warn: number, cut: number, hex: string, columns: number): CellGrid {
   const top = Math.max(cut * 1.25, ctx * 1.04)
   const pct = (v: number) => (v / top) * 100
-  const parts = base !== null && base > 0 ? [{ percent: pct(Math.min(base, ctx)), hex: `#${PERM.toString(16)}` }] : []
-  return barCells(pct(ctx), parts, hex, columns, [
+  return barCells(pct(ctx), [], hex, columns, [
     { percent: pct(warn), hex: LEVEL_HEX.warn },
     { percent: pct(cut), hex: LEVEL_HEX.cut },
   ])

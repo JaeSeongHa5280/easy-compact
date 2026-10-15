@@ -47,8 +47,23 @@ function lerpHex(a: string, b: string, t: number): string {
   return `#${A.map((v, i) => hex2(v + (B[i]! - v) * t)).join('')}`
 }
 
+/**
+ * 게이지 꼴(0.8.1 B8 — 사용자 "클로드 기본 컨텍스트 아이콘 말고 다른 아이콘 · 전부 제공해 주고 옵션으로 바꿀 수 있으면, 기본은 가로 막대"):
+ * 고리는 0.6.0 에 앱 컨텍스트 고리를 일부러 따른 꼴이라 입력창 오른쪽 앱 고리와 나란히 보여 헷갈렸다(동료 — 같은 고리가 싫다). 양 · 색 ·
+ * 깜빡임 · 컴팩트 끝 줄어듦은 꼴과 무관하게 같다. 바 · 패널 머리 · 확인 카드 제목이 이 한 함수라 같이 바뀐다
+ */
+export type GaugeShape = 'bar' | 'ring' | 'vbar' | 'cells'
+export const GAUGE_SHAPES: readonly GaugeShape[] = ['bar', 'ring', 'vbar', 'cells']
+
+/** 그림 폭(px) — 가로 막대 · 칸 막대는 높이의 1.625배(16px → 26px), 고리 · 세로 막대는 정사각 */
+export function gaugeWidth(shape: GaugeShape, px: number): number {
+  return shape === 'bar' || shape === 'cells' ? Math.round(px * 1.625) : px
+}
+
 export type GaugeLook = {
   px: number
+  /** 꼴 — 없으면 고리(예전 꼴 · 시험) */
+  shape?: GaugeShape
   /** 채움 0~1(gaugeFrac) */
   frac: number
   level: Level
@@ -64,6 +79,7 @@ export type GaugeLook = {
 
 /** 게이지 SVG 글 — 순수 함수(시험 · README 그림이 같이 쓴다) */
 export function gaugeSvg(g: GaugeLook): string {
+  if (g.shape !== undefined && g.shape !== 'ring') return barGaugeSvg(g, g.shape)
   const f = Math.max(0, Math.min(1, g.frac))
   const pct = Math.max(0.01, f * 100)
   const motion = g.motion !== false
@@ -84,4 +100,63 @@ export function gaugeSvg(g: GaugeLook): string {
   const track = `<path d="${RING}Z" stroke="currentColor" stroke-opacity=".2" stroke-width="8"/>`
   const fill = `<path class="f" d="${RING}" pathLength="100" stroke="${stroke}" stroke-opacity="${opacity}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${pct.toFixed(2)} 100"/>`
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${g.px}" height="${g.px}" viewBox="0 0 64 64" fill="none">${css}${track}${fill}</svg>`
+}
+
+/**
+ * 막대 꼴 게이지(B8): 가로 막대(왼쪽부터) · 세로 막대(아래부터) · 칸 막대(4칸) — 바탕 = 글자색 20%, 채움 = 단계 색(아직 = 글자색 .8),
+ * 굵기 = 높이의 38%(16px → 6px — 고리 2px 은 막대엔 너무 가늘다). 움직임은 고리와 같은 이름 · 같은 때: gs = 앞 채움에서 지금으로(컴팩트
+ * 끝 줄어듦 — 앞 단계 색에서 시작), gp = 권할 때 깜빡임(빨강 구간 위치로 세기). 키프레임엔 고정 hex 만(color-mix 는 렌더러를 죽인다)
+ */
+function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
+  const clamp = (v: number) => Math.max(0, Math.min(1, v))
+  const f = clamp(g.frac)
+  const motion = g.motion !== false
+  const from = g.from !== undefined && motion && Math.abs(g.from - f) > 0.005 ? clamp(g.from) : null
+  const color = g.level === 'ok' ? 'currentColor' : GAUGE_HEX[g.level]
+  const opacity = f === 0 && from === null ? '0' : g.level === 'ok' ? '.8' : '1'
+  const t = g.blink === null || g.blink === undefined || !motion ? null : clamp(g.blink)
+  const dur = from !== null && from - f > 0.15 ? 1.3 : 0.5
+  const fromFill = from !== null && g.fromLevel !== undefined && g.fromLevel !== g.level && g.fromLevel !== 'ok' ? `;fill:${GAUGE_HEX[g.fromLevel]};fill-opacity:1` : ''
+  const W = gaugeWidth(shape, g.px)
+  const H = g.px
+  const th = Math.max(4, Math.round(H * 0.38))
+  const n2 = (v: number) => v.toFixed(2)
+  let shapes = ''
+  let slide = ''
+  if (shape === 'bar') {
+    const y = (H - th) / 2
+    const len = W - 2
+    shapes = `<rect x="1" y="${n2(y)}" width="${len}" height="${th}" rx="${th / 2}" fill="currentColor" fill-opacity=".2"/>`
+    shapes += `<rect class="f" x="1" y="${n2(y)}" width="${n2(Math.max(th, len * f))}" height="${th}" rx="${th / 2}" fill="${color}" fill-opacity="${opacity}"/>`
+    if (from !== null) slide = `@keyframes gs{from{width:${n2(Math.max(th, len * from))}px${fromFill}}}`
+  } else if (shape === 'vbar') {
+    const x = (W - th) / 2
+    const len = H - 2
+    const h = Math.max(th, len * f)
+    shapes = `<rect x="${n2(x)}" y="1" width="${th}" height="${len}" rx="${th / 2}" fill="currentColor" fill-opacity=".2"/>`
+    shapes += `<rect class="f" x="${n2(x)}" y="${n2(1 + len - h)}" width="${th}" height="${n2(h)}" rx="${th / 2}" fill="${color}" fill-opacity="${opacity}"/>`
+    if (from !== null) {
+      const hf = Math.max(th, len * from)
+      slide = `@keyframes gs{from{height:${n2(hf)}px;y:${n2(1 + len - hf)}px${fromFill}}}`
+    }
+  } else {
+    // 칸 막대: 단계가 칸으로(4칸 — 25%씩). 컴팩트로 줄면 비워지는 칸이 앞 색에서 바탕으로 옅어진다(.g)
+    const gap = Math.max(1, Math.round(H * 0.08))
+    const ch = Math.max(5, Math.round(H * 0.5))
+    const y = (H - ch) / 2
+    const cw = (W - 2 - gap * 3) / 4
+    const filled = (v: number) => (v <= 0 ? 0 : Math.min(4, Math.ceil(v * 4 - 1e-9)))
+    const n = filled(f)
+    const nFrom = from !== null ? filled(from) : n
+    for (let i = 0; i < 4; i++) {
+      const at = `x="${n2(1 + i * (cw + gap))}" y="${n2(y)}" width="${n2(cw)}" height="${ch}" rx="1.5"`
+      shapes += i < n ? `<rect class="f" ${at} fill="${color}" fill-opacity="${opacity}"/>` : i < nFrom ? `<rect class="g" ${at} fill="currentColor" fill-opacity=".2"/>` : `<rect ${at} fill="currentColor" fill-opacity=".2"/>`
+    }
+    if (nFrom > n) slide = `@keyframes gs{from{fill-opacity:1${fromFill || `;fill:${g.level === 'ok' ? '#888888' : GAUGE_HEX[g.level]}`}}}`
+  }
+  const pulse = t === null ? '' : `@keyframes gp{50%{fill:${lerpHex('#ea7c7c', '#ffe2e2', t)}}}`
+  const fAnim = [slide && shape !== 'cells' ? `gs ${dur}s ease-out` : '', t !== null ? `gp ${(1.6 - 0.9 * t).toFixed(2)}s ease-in-out infinite` : ''].filter(Boolean).join(',')
+  const rules = [fAnim ? `.f{animation:${fAnim}}` : '', slide && shape === 'cells' ? `.g{animation:gs ${dur}s ease-out}` : ''].join('')
+  const css = rules ? `<style>${slide}${pulse}${rules}@media (prefers-reduced-motion:reduce){.f,.g{animation:none!important}}</style>` : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${css}${shapes}</svg>`
 }

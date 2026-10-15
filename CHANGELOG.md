@@ -4,6 +4,31 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.9.0] — 2026-10-16
+
+### Added
+- **Diagnostics file · reporting a problem** — the drawer under the pane's version button (`v0.9.0` at the right of the tab row) has **[Diagnose]**. It saves this session's settings, pane state, usage and question history to one `debug-<session id>.json` and shows the path in the drawer and a notice (nothing goes into the conversation, nothing is sent anywhere). If something goes wrong, open a [GitHub issue](https://github.com/JaeSeongHa5280/easy-compact/issues) with what happened, how to reproduce it, which screen (desktop/terminal), the version, and this file — it contains your questions and costs, so look it over before you post it.
+- **A line below the input** (Settings **Bar** tab, off by default) — while the app shows its "next step" box at the end of a turn (the one asking with buttons), the app takes the bar away for a moment (that is the app; a plugin can't stop it). Turn this on to keep the gist of the bar in the footer below the input, e.g. *🟦 Easy Compact · Context 140k · compact range 200k~250k · Session $8.40* (with *Time to compact* · *Compact overdue* when orange · red, and *Compacting…* during a compact).
+
+### Changed
+- **Settings in tabs · a preview per card** — Settings had grown too long to keep a preview and the options that change it on one screen. Under **Screen type** there are now tabs **Bar · Answer chip · Pane · Compact · General**, and the Bar tab has a card each for **Whole bar · Limits row · Cost row · Question row**, each previewing only its own row (a row that isn't on the current screen says why). The folding sections from 0.7.0 give way to the tabs.
+- **The ? beside a name gets its one-space gap back** (desktop) — in 0.8.0 the bordered chip sat right against the name, which looked cramped.
+- **The compact timing bar fills from the left edge** — the gray part in front (what stays after a compact) read like a fixed offset, so the fill looked detached. The whole current size is now one state color (what stays is shown on the Context card above).
+- **The Overview bars move while compacting** — before, they sat still during a compact and jumped when it ended. Now the Context and Compact timing bars breathe slowly with **Compacting…** in their header, then shrink from the old size to the new one like the bar gauge. With *Animations* off you get the text only.
+- **Pick the gauge shape — a horizontal bar by default** — the ring gauge looked exactly like the app's own context ring next to the input. **Gauge shape** in the Settings **Bar** tab offers **Bar** (default) · **Ring** (as before) · **Vertical bar** · **Steps**; the bar, the pane header and the compact card change together, and the fill, colors, pulse and post-compact shrink stay the same.
+- **Compact card: Easy Compact · Clear · Cancel** — *Save & compact* is now **Easy Compact**, and *Compact now* gives its place to **Clear** (/clear — start over with an empty conversation, no summary). When the cache is cold the card has no save question (no text picker): **▶ Plain compact** (Claude's /compact) · **Clear** · **Cancel**, and it shows the text a plain compact adds after /compact. The bar's *Compact now advised* reads **Plain compact advised**. Terminal numbers: **1** Easy/Plain compact · **2** Clear · **3** Cancel.
+- **The folded-bar button below the input is one colored square** — the old **🔽 Easy Compact ⇱** had two arrows pointing different ways. It is now **🟦 Easy Compact**, and the square follows the current size step (🟦 room · 🟧 time to compact · 🟥 late). A bar you closed still reads grey "closed".
+- **Terminal: the button that reopens a folded bar sits in the bar's place** — the keyboard can't reach the line below the input, so reopening a folded bar took a command. While folded, the terminal now shows one **[⇱ Easy Compact]** line where the bar was — reach it with `ctrl+x tab`, then Enter. The fold notice also says how to reopen first (a terminal notice is one line, and its end got cut off).
+- **Context numbers (size · % · both) now reach the Overview compact card** — before, only the bar followed them. The compact timing line ("Time to compact from 25% · 15% to go"), the bar labels, the range dropdown, ★ Suggested and Cost by size use the same form (with both, the table keeps sizes only — the columns would overflow).
+- **Cost by size marks where you are now** — the range holding the current context gets a light blue row (the applied range keeps its border), with a one-line key under the table. Below the first range it says "Now 98k — below the first range (100k)" above the table.
+
+### Removed
+- **The `/easy-compact` command** — showing and folding the bar is the bar's **✕** and the folded-bar button (below the input on the desktop, in the bar's place in a terminal), and the diagnostics file is **[Diagnose]** in the version drawer. It leaves the slash-command list.
+
+### Fixed
+- **This month came out a little below Claude's settings page** — compacts from before easy-compact measured them (before 0.8.0, or older questions) were missing. Their cost is now estimated from each compact's size in the session records and shown at the end of the pane's "All sessions" row as **+$X est. compacts not included** — it is not added to today · this month yet (to be decided after comparing with the settings page). The summary length is matched to the compacts measured on this computer. Claude Code's own background requests from that time leave no record, so they still can't be counted.
+- **Switching between Overview and Settings didn't take the pane back to the top** — coming from a long Overview, Settings could open scrolled past its content (the move to the top was always being refused). The pane now goes to the top of the tab you open.
+
 ## [0.8.0] — 2026-10-15
 
 ### Changed

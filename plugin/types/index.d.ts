@@ -97,10 +97,15 @@ export type Settings = {
   motion: 'system' | 'reduce'
   /** B1(0.6.1 피드백): 바 · 설명 칩의 컨텍스트 · 컴팩트 구간 숫자 꼴 — size = 281k, pct = 최대 컨텍스트 대비 28%(앱 '11% 사용됨' 과 같은 셈), both = 281k(28%) */
   ctxUnit: 'size' | 'pct' | 'both'
+  /** 0.8.1 B8: 게이지 꼴(바 · 패널 머리 · 확인 카드) — bar 가로 막대(기본) · ring 고리(앱 컨텍스트 고리 꼴) · vbar 세로 막대 · cells 칸 막대 */
+  gaugeShape: 'bar' | 'ring' | 'vbar' | 'cells'
+  /** 0.9.0 B10: 입력창 아래 한 줄($.ui.status — 크기 단계 · 컨텍스트 · 컴팩트 구간 · 세션 금액). 앱이 "다음 단계" 상자 동안 바를 빼서. 기본 끔 */
+  statusLine: boolean
 }
 
 /** 오늘 · 이번 달 사용량(달러) — atMs 에 잰 값. tools/scan-spend.mjs 결과를 cost.ts spendUsd 로 센 것 */
-export type SpendTotals = { atMs: number; today: number; month: number }
+/** retroMonth = 이번 달 값 중 잰 값이 없는 컴팩트 어림(M2 — 장부 전 · 질문 기록 60개 밖, 대화 기록의 컴팩트 크기로) */
+export type SpendTotals = { atMs: number; today: number; month: number; retroMonth?: number }
 
 /**
  * 설정 탭 easy-compact 칸(업데이트, 마켓 설치본만 — 2026-10-14 사용자 1~3안 · 자동 확인 없음). phase: idle(아직) · checking(마켓 받는 중) ·
@@ -469,6 +474,10 @@ declare module 'claude-code' {
        * 제목 줄에 지금 값만(캐시 경고는 접지 않는다). 세션마다 따로
        */
       settingsOpen: Record<string, boolean>
+      /** S10(0.9.0): 설정 안 탭 — 바 · 답변 칩 · 패널 · 컴팩트 · 일반. 이 세션, 패널을 닫으면 바 탭으로 */
+      settingsTab: 'bar' | 'chip' | 'pane' | 'compact' | 'gen'
+      /** 0.9.0: 판 서랍 [진단] 으로 마지막에 만든 진단 파일 경로(이 세션) — 서랍에 보인다 */
+      diagFile: string | null
       /** 사용량 카드 펼침: 접으면 제목 줄의 요약만. 패널을 열 때 이 세션 카드는 펼침 · 질문별 비용은 접힘(CARDS_OPEN_DEFAULT) */
       cardsOpen: { now: boolean; history: boolean; compact: boolean }
       /** 오늘 · 이번 달 사용량(설정에서 켰거나 패널 자세히를 볼 때 잰다) — 못 쟀으면 null */

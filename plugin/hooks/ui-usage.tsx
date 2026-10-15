@@ -1,7 +1,7 @@
 import type { CompactInputs, LiveTurn, Optimal, QuestionDetail, TurnSummary, Usage } from '../types'
 import { average, PERM_HEX, compactPayoff, coldFor, estimateFor, fmtTokens, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, LITTLE_SHRINK, modelKey, modelName, ratesFor, thresholds, cacheWarnFor, sessionColorOf, ttlName, priceWarnings } from './cost'
 import { OUTPUT_GUESS, SUMMARY_GUESS } from './optimal'
-import { SESSION_COLORS_DEFAULT } from './settings'
+import { contextWindowNow, SESSION_COLORS_DEFAULT } from './settings'
 import {
   afterInNowTokens,
   COMPACT_HEX,
@@ -21,7 +21,7 @@ import {
   pendingCompact,
 } from './flow'
 import type { CompactEffect, Flow } from './flow'
-import { APP_MIN_USD, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, callsOf, costBreakdown, modelText, switchText, recentSteps } from './text'
+import { APP_MIN_USD, ctxNumText, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, callsOf, costBreakdown, modelText, switchText, recentSteps } from './text'
 import {
   ACCENT,
   TALK_HEX,
@@ -59,7 +59,7 @@ import {
   segGroup,
 } from './ui-common'
 import type { Ui, Grid, Fold } from './ui-common'
-import { fitLine, rewriteNote } from './ui-band'
+import { ctxUnitNow, fitLine, rewriteNote } from './ui-band'
 import type { LineCell } from './ui-band'
 import { L, plural } from './i18n'
 import { iconOf, onDesktop, withIcon } from './glyph'
@@ -68,6 +68,18 @@ import { flowCells, flowLayout, timingCells } from './cells'
 
 /** 터미널 흐름 그래프 높이(줄) — 8줄은 작은 컨텍스트일 때 거의 빈 칸이라 패널만 길게 했다(2026-10-11 CLI) */
 const FLOW_ROWS = 6
+
+/**
+ * O4(0.8.1 사용자 "컨텍스트 · 컴팩트쪽 전부 컴팩트 진행 중일 때 그대로 — 깜빡이거나 맞춰서 감소하는 애니", 시안 ④): 현황 막대 둘(컨텍스트 ·
+ * 컴팩트 시점)의 움직임 — 컴팩트 중 = 채움 숨쉬기 + 머리 "컴팩트 중…", 컴팩트 끝 = 옛 크기에서 지금으로 줄어듦(바 게이지와 같은 때).
+ * on = 설정 "움직임"(끄면 글만). register 가 패널을 그리기 전에 넣는다(숫자 꼴 · 게이지 꼴과 같은 길)
+ */
+export type PaneBarMotion = { compacting: boolean; shrink: { from: number; to: number } | null; on: boolean }
+let paneBarMotion: PaneBarMotion = { compacting: false, shrink: null, on: true }
+
+export function setPaneBarMotion(m: PaneBarMotion): void {
+  paneBarMotion = m
+}
 
 /** 현황 탭(옛 📊 사용량 패널) — 컨텍스트 · 비용, 질문별 비용, 컴팩트(시점 · 흐름 그래프 · 효과), 참고 */
 
@@ -440,16 +452,18 @@ export function drawFlow(
     : { ok: L('여유', 'Room left'), warn: L('곧 컴팩트할 때', 'Compact soon'), cut: L('컴팩트 권장', 'Compact advised') }
   const nowCtx = u && u.contextTokens > 0 ? u.contextTokens : flow.points[n - 1]!.ctx
   const extraLevel = levelOf(nowCtx)
+  // 0.8.1 S9: 시점 줄 · 막대 이름의 크기는 설정 숫자 꼴(크기 · % · 둘 다)을 따른다 — 예전엔 바만 따랐다
+  const num = (v: number) => ctxNumText(v, u?.window ?? contextWindowNow(), ctxUnitNow())
   // 상태 말 옆에 다음 자리까지 얼마 — "좋은 때인지 놓쳤는지" 를 말로
   const stateNote =
     extraLevel === 'ok'
       ? L(
-          `${fmtTokens(applied.ctxWarn)}부터 ${fillWord.warn} · ${fmtTokens(applied.ctxWarn - nowCtx)} 남음`,
-          `${fillWord.warn} from ${fmtTokens(applied.ctxWarn)} · ${fmtTokens(applied.ctxWarn - nowCtx)} to go`,
+          `${num(applied.ctxWarn)}부터 ${fillWord.warn} · ${num(applied.ctxWarn - nowCtx)} 남음`,
+          `${fillWord.warn} from ${num(applied.ctxWarn)} · ${num(applied.ctxWarn - nowCtx)} to go`,
         )
       : extraLevel === 'warn'
-        ? L(`${fmtTokens(applied.ctxCut)} 전에 · ${fmtTokens(applied.ctxCut - nowCtx)} 남음`, `before ${fmtTokens(applied.ctxCut)} · ${fmtTokens(applied.ctxCut - nowCtx)} to go`)
-        : L(`${fmtTokens(applied.ctxCut)}를 ${fmtTokens(nowCtx - applied.ctxCut)} 넘음`, `${fmtTokens(nowCtx - applied.ctxCut)} past ${fmtTokens(applied.ctxCut)}`)
+        ? L(`${num(applied.ctxCut)} 전에 · ${num(applied.ctxCut - nowCtx)} 남음`, `before ${num(applied.ctxCut)} · ${num(applied.ctxCut - nowCtx)} to go`)
+        : L(`${num(applied.ctxCut)}를 ${num(nowCtx - applied.ctxCut)} 넘음`, `${num(nowCtx - applied.ctxCut)} past ${num(applied.ctxCut)}`)
   // 지난 구간(마지막 컴팩트 전)에 컴팩트 전까지 쌓인 미룬 비용 — 지금이 그때와 견줘 어떤지
   const lastC = flow.compactions[flow.compactions.length - 1]
   const prev =
@@ -457,13 +471,14 @@ export function drawFlow(
       ? segmentExtra({ points: flow.points.slice(0, lastC.index), compactions: flow.compactions.slice(0, -1) }, u.model, opt?.inputs?.after ?? lastC.before)
       : null
   const prevTotal = prev ? prev.cum[prev.cum.length - 1]! : 0
-  // 막대의 회색 = 상주(컴팩트해도 남는 몫, 지금 모델로 센 값)
-  const baseTokens = extra?.baseNow ?? lastC?.after ?? opt?.inputs?.after ?? null
   // 막대는 컴팩트 카드의 판단 타일 안에 들어가 그만큼 좁다(흐름 그래프는 타일 밖이라 그대로)
   const tilePx = Math.max(120, widthPx - tilePxOf(surface))
   const markNames = applied.isRange
-    ? { warnName: L(`${fmtTokens(applied.ctxWarn)} 컴팩트할 때`, `${fmtTokens(applied.ctxWarn)} compact`), cutName: L(`${fmtTokens(applied.ctxCut)} 늦어짐`, `${fmtTokens(applied.ctxCut)} late`) }
-    : { warnName: L(`${fmtTokens(applied.ctxWarn)} 곧`, `${fmtTokens(applied.ctxWarn)} soon`), cutName: L(`${fmtTokens(applied.ctxCut)} 정한 크기`, `${fmtTokens(applied.ctxCut)} set size`) }
+    ? { warnName: L(`${num(applied.ctxWarn)} 컴팩트할 때`, `${num(applied.ctxWarn)} compact`), cutName: L(`${num(applied.ctxCut)} 늦어짐`, `${num(applied.ctxCut)} late`) }
+    : { warnName: L(`${num(applied.ctxWarn)} 곧`, `${num(applied.ctxWarn)} soon`), cutName: L(`${num(applied.ctxCut)} 정한 크기`, `${num(applied.ctxCut)} set size`) }
+  // O4: 컴팩트 중 숨쉬기 · 끝에 옛 크기(앞 단계 색)에서 줄어듦 — 움직이는 동안만 샌드박스 틀
+  const pm = paneBarMotion
+  const timingAnim = !pm.on ? null : pm.compacting ? { pulse: true } : pm.shrink ? { fromCtx: pm.shrink.from, fromHex: LEVEL_HEX[levelOf(pm.shrink.from)] } : null
   const extraEl = (
     <Box key="f-extra" flexDirection="column">
       <Box columnGap={1} flexWrap="wrap" alignItems="center">
@@ -472,14 +487,16 @@ export function drawFlow(
         <Text dimColor wrap="wrap">
           {stateNote}
         </Text>
+        {pm.compacting ? <Text color={ACCENT}>{L('컴팩트 중…', 'Compacting…')}</Text> : null}
       </Box>
       {Svg ? (
         <Svg
           key="f-timing"
-          source={timingSvg(nowCtx, baseTokens, { warn: applied.ctxWarn, cut: applied.ctxCut, ...markNames }, LEVEL_HEX[extraLevel], tilePx)}
+          source={timingSvg(nowCtx, { warn: applied.ctxWarn, cut: applied.ctxCut, ...markNames }, LEVEL_HEX[extraLevel], tilePx, timingAnim)}
           alt={L(`컴팩트 시점 — 지금 ${fmtTokens(nowCtx)}, ${fillWord[extraLevel]}(${stateNote})`, `Compact timing — now ${fmtTokens(nowCtx)}, ${fillWord[extraLevel]} (${stateNote})`)}
           width={tilePx}
           height={TIMING_H}
+          {...(timingAnim ? { isInteractive: true as const } : {})}
         />
       ) : Raster ? (
         // 터미널: 칸 그림 한 줄 + 아래 시작 · 끝 이름(데스크톱은 그림 안에 있다). 이름은 데스크톱과 같이 시작은 왼쪽 끝,
@@ -490,7 +507,7 @@ export function drawFlow(
           const [warnName, cutName] = timingNames(markNames.warnName, markNames.cutName, cols - 4, cellsOf)
           return (
             <Box key="f-timing" flexDirection="column" width={cols}>
-              <Raster key="f-timing-cells" columns={cols} rows={1} cells={timingCells(nowCtx, baseTokens, applied.ctxWarn, applied.ctxCut, LEVEL_HEX[extraLevel], cols).toBase64()} />
+              <Raster key="f-timing-cells" columns={cols} rows={1} cells={timingCells(nowCtx, applied.ctxWarn, applied.ctxCut, LEVEL_HEX[extraLevel], cols).toBase64()} />
               <Box key="f-timing-names" justifyContent="space-between" columnGap={2}>
                 <Text>
                   <Text color={LEVEL_HEX.warn}>┃</Text>
@@ -1133,6 +1150,9 @@ export function drawNow(
 
   // 컨텍스트 크기 · 막대 · 상주/대화는 타일로 묶는다(지금 볼 값). 막대는 타일 안쪽 폭에 맞춰 좁게
   const tilePx = Math.max(120, widthPx - tilePxOf(surface))
+  // O4: 컴팩트 중 숨쉬기 · 끝에 옛 크기에서 줄어듦(움직임 끔이면 글만)
+  const pm = paneBarMotion
+  const ctxAnim = !pm.on ? null : pm.compacting ? { pulse: true } : pm.shrink ? { fromPercent: (pm.shrink.from / Math.max(1, u.window)) * 100 } : null
   const ctxRows = [
     <Box key="c-head" columnGap={1}>
       <Text>{L('컨텍스트', 'Context')}</Text>
@@ -1140,6 +1160,7 @@ export function drawNow(
       <Text dimColor>
         / {fmtTokens(u.window)} · {u.contextEstimated ? '~' : ''}{Math.round(ctxPercent)}%
       </Text>
+      {pm.compacting ? <Text color={ACCENT}>{L('컴팩트 중…', 'Compacting…')}</Text> : null}
     </Box>,
     u.contextEstimated ? emptyLine(ui, 'c-estimated', L('컴팩트 직후라 추정값입니다. 다음 요청 때 실제 크기를 잽니다.', 'Estimated right after a compact. The real size is measured at the next request.')) : null,
     ctxBar(
@@ -1159,6 +1180,7 @@ export function drawNow(
         { percent: pctOf(t.ctxWarn), hex: LEVEL_HEX.warn },
         { percent: pctOf(t.ctxCut), hex: LEVEL_HEX.cut },
       ],
+      ctxAnim,
     ),
     // 눈금 이름 — 막대 위 노랑 · 빨강 선이 무엇인지 카드 안에 설명이 없었다. 눈금은 데스크톱 막대에만 있다.
     // 조각 사이는 칸 간격으로(데스크톱은 글 조각 앞뒤 공백을 지운다)
@@ -1486,7 +1508,8 @@ export function drawCompactCard(ui: Ui, parts: FlowParts, effEl: unknown, fold?:
 }
 
 /** 패널 맨 위 "모든 세션" 줄의 값: 보일 금액(안 보일 것은 null) · 상태(값 · 처음 재는 중 · 못 잼) */
-export type AllSpendLine = { today: number | null; month: number | null; state: 'ok' | 'measuring' | 'failed' }
+/** retro = 이번 달 값 중 잰 값이 없는 컴팩트 어림(M2 — 장부 전 · 질문 기록 60개 밖) — 이번 달을 보일 때만 */
+export type AllSpendLine = { today: number | null; month: number | null; retro?: number | null; state: 'ok' | 'measuring' | 'failed' }
 
 /**
  * 패널 맨 위 "모든 세션  오늘 ~$ · 이번 달 ~$"(0.5.1 — 2026-10-14 uxi 작은 질문 2): 이 PC 모든 세션의 합(tools/scan-spend.mjs, 앱 자체
@@ -1510,6 +1533,9 @@ export function drawAllSpend(ui: Ui, line: AllSpendLine | null) {
     line.state === 'failed'
       ? L('못 잼 — 기록을 읽으려면 Node 14.8 이상이 필요합니다', 'Not measured — reading transcripts needs Node 14.8+')
       : L('재는 중…', 'Measuring…')
+  // M2(0.8.0 뒤 피드백 "이번 달 금액이 설정 화면보다 낮음"): 이번 달의 안 잰 컴팩트 어림을 따로 — 0.9.0 은 합계에 안 더하고(회사 PC 대조
+  // 전) 끝에 "별도" 로만. 설정 화면과 견줄 때 그만큼이 빠져 있다는 것. 좁으면 먼저 빠진다
+  const retroText = line.retro !== undefined && line.retro !== null && line.retro >= 0.005 ? L(`컴팩트 어림 +${fmtUsd(line.retro)} 별도`, `+${fmtUsd(line.retro)} est. compacts not included`) : null
   const cells: LineCell[] =
     line.state === 'ok'
       ? [
@@ -1527,6 +1553,7 @@ export function drawAllSpend(ui: Ui, line: AllSpendLine | null) {
               ),
             }
           }),
+          ...(retroText ? [{ key: 'a-retro', text: ` · ${retroText}`, drop: 1, el: () => <Text dimColor>{` · ${retroText}`}</Text> }] : []),
         ]
       : [head, { key: 'a-state', text: ` ${stateText}`, el: () => <Text dimColor>{` ${stateText}`}</Text> }]
   return (

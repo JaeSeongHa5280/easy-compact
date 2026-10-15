@@ -1,7 +1,9 @@
 import type { EngineInterface } from 'claude-code'
 import type { StepDetail } from '../types'
 import { barSvg, CTX_MARK_PAD, ctxBarSvg, fmtTokens, fmtUsd, levelOf, modelName, pulseSvg, REWRITE_NOTE_USD, textBar, thresholds } from './cost'
-import { gaugeFrac, gaugeSvg, redDepth } from './gauge'
+import type { BarAnim } from './cost'
+import { gaugeFrac, gaugeSvg, gaugeWidth, redDepth } from './gauge'
+import type { GaugeShape } from './gauge'
 import { agentCharSvg } from './agent-char'
 import { L } from './i18n'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
@@ -87,8 +89,10 @@ export function gaugeEl(
   const t = thresholds()
   // 컴팩트 끝 줄어듦: 앞 크기(fromCtx)의 채움 · 단계에서 지금으로
   const hasFrom = o.fromCtx !== undefined && o.fromCtx > 0
+  const shape = gaugeShapeNow()
   const source = gaugeSvg({
     px: o.px,
+    shape,
     frac: gaugeFrac(ctx, t.ctxWarn, t.ctxCut),
     level: levelOf(ctx),
     blink: o.blink ? redDepth(ctx, t.ctxCut) : null,
@@ -98,7 +102,18 @@ export function gaugeEl(
   })
   // live = 샌드박스 틀(isInteractive). 앱은 화면을 다시 그릴 때 같은 틀(iframe)만 남기고 img 는 새로 만든다 — img 면 깜빡임 · 줄어듦이
   // 다시 그릴 때마다 처음부터라 움직이지 않는 것처럼 보였다(앱 2.37337 렌더러 실측 · 사용자 "애니메이션 안 됨"). 같은 그림이면 틀이 남아 이어진다
-  return <Svg key={o.key} source={source} alt={o.alt} width={o.px} height={o.px} {...(o.live === true ? { isInteractive: true } : {})} />
+  return <Svg key={o.key} source={source} alt={o.alt} width={gaugeWidth(shape, o.px)} height={o.px} {...(o.live === true ? { isInteractive: true } : {})} />
+}
+
+/** 설정 "게이지 모양"(B8) — register 가 설정을 읽을 때 넣는다(움직임과 같은 방식). 기본 가로 막대 */
+let gaugeShape: GaugeShape = 'bar'
+
+export function setGaugeShape(shape: GaugeShape): void {
+  gaugeShape = shape
+}
+
+export function gaugeShapeNow(): GaugeShape {
+  return gaugeShape
 }
 
 export type RasterElement = (props: { key: string; columns: number; rows: number; cells: string }) => unknown
@@ -185,13 +200,15 @@ export function ctxBar(
   width: number,
   alt: string,
   marks: readonly { percent: number; hex: string }[] = [],
+  anim: BarAnim | null = null,
 ) {
   const { Text } = ui
   const Svg = svgOf(ui, surface)
   if (Svg) {
     // 이름을 h 로 두면 JSX 함수(h)를 가린다
     const svgHeight = 8 + (marks.length > 0 ? CTX_MARK_PAD * 2 : 0)
-    return <Svg key="c-bar" source={ctxBarSvg(percent, parts, hex, width, 8, marks)} alt={alt} width={width} height={svgHeight} />
+    // O4: 움직이는 동안만 샌드박스 틀 — 가만히 있을 땐 그림(img)이라 다시 그려도 바로 그려진다(B6 과 같은 규칙)
+    return <Svg key="c-bar" source={ctxBarSvg(percent, parts, hex, width, 8, marks, anim)} alt={alt} width={width} height={svgHeight} {...(anim ? { isInteractive: true } : {})} />
   }
   // 터미널: 칸 그림 한 줄 — 상주 몫 색 · 대화 색 · 노랑 · 빨강 기준 ┃ 까지 데스크톱과 같게(글자 막대엔 기준 눈금이 없었다)
   const Raster = rasterOf(ui, surface)
@@ -594,6 +611,31 @@ export function foldCard(ui: Ui, key: string, title: string, fold: Fold, childre
   )
 }
 
+/**
+ * 접지 않는 카드(S10, 0.8.1 — 설정 탭 안): 제목 줄 + 테두리 카드, 줄 사이 선(appSection 과 같은 나누기). 탭이 한 번에 한 묶음만
+ * 그려 접기가 필요 없다. title 은 글이나 요소("?" 칩을 단 제목)
+ */
+export function plainCard(ui: Ui, key: string, title: unknown, rows: unknown[], hint?: unknown) {
+  const { Box, Text } = ui
+  const units = rows.filter(r => r !== null && r !== undefined && r !== false)
+  const body: unknown[] = []
+  units.forEach((r, i) => {
+    if (i > 0) body.push(rowLine(ui, `${key}-line-${i}`))
+    body.push(r)
+  })
+  return (
+    <Box key={key} flexDirection="column" marginTop={1}>
+      <Box key={`${key}-head`} columnGap={1} alignItems="center" flexWrap="wrap">
+        {typeof title === 'string' ? <Text bold>{title}</Text> : title}
+        {hint === undefined || hint === null || hint === '' ? null : <Box key={`${key}-hint`}>{typeof hint === 'string' ? <Text dimColor>{hint}</Text> : hint}</Box>}
+      </Box>
+      <Box key={`${key}-card`} flexDirection="column" {...CARD}>
+        {body}
+      </Box>
+    </Box>
+  )
+}
+
 /** 카드 접기 버튼 — 질문 줄의 펼치기 아이콘과 같은 꼴. 오른쪽 끝은 데스크톱에서 잘려 맨 앞에 */
 export function foldButton(ui: Ui, key: string, fold: Fold) {
   const { Button } = ui
@@ -705,8 +747,9 @@ export function settingRow(ui: Ui, key: string, name: unknown, desc: unknown, co
  * 올리면 card 가 뜬다(같은 hover scope). card = 그 줄 너비의 불투명 칩 — 앱은 입력창 위 바의 칩만 떠 있는 창으로 띄워 주고(liftsHoverCards)
  * 패널(설정 · 현황) 칩은 그 자리에 그린다(앱 2.37337 렌더러) → 바탕이 없으면 아래 줄 글과 겹쳐 안 보였다. 그래서 바탕 · 테두리를
  * 직접: userMessageBackground(= 앱 surface-1, 불투명) · promptBorder 테두리. toggle 이 있으면 "?" 를 눌러 줄 아래에 펼친다(키보드 · 터미널 길).
- * S7(0.7.0 피드백 "? 에 테두리를 넣고 제목에 딱 붙이면 더 보기 좋을 듯"): 데스크톱 "?" = 테두리 칩(보조 버튼 꼴 · 흐린 글), 이름과 사이 0
- * (tipRow · hoverTip 의 qGap). 예전엔 바탕 없는 흐린 글 버튼이 한 칸 떨어져 이름과 따로 놀았다. 터미널은 이미 "[ ? ]" 꼴 — 한 칸 띄운다
+ * S7(0.7.0 피드백 "? 에 테두리를 넣고 제목에 딱 붙이면 더 보기 좋을 듯"): 데스크톱 "?" = 테두리 칩(보조 버튼 꼴 · 흐린 글). 0.8.0 은 이름에
+ * 붙였는데(사이 0) 테두리 · 색이 들어가니 붙은 꼴이 답답해, 이름 · 제목과 다시 한 칸 띄운다(S8 — 0.8.0 피드백 "? 색상 넣으니깐 한칸 원래대로
+ * 띄우는게 맞을듯", tipRow · hoverTip). 터미널은 "[ ? ]" 꼴 — 늘 한 칸
  */
 export function helpTip(ui: Ui, key: string, text: unknown, top: number, toggle?: () => void): { mark: unknown; card: unknown } {
   const { Box, Button, Text } = ui
@@ -731,15 +774,12 @@ export function helpTip(ui: Ui, key: string, text: unknown, top: number, toggle?
  * 글(anchor) 옆 "?" 칩 — 미리보기 제목 · 크기별 비용 제목처럼 줄이 아닌 자리. toggle 이 있으면 "?" 를 눌러 아래에 펼친다(S5 · O1 — 0.6.1
  * 피드백: 같은 "?" 가 설정 줄은 눌리고 여기는 안 눌렸다)
  */
-/** "?" 와 그 앞 이름 사이(S7): 데스크톱은 붙인다(테두리 칩이라 붙어도 갈린다), 터미널은 "[ ? ]" 앞 한 칸 */
-const qGap = () => (onTerminal() ? 1 : 0)
-
 export function hoverTip(ui: Ui, key: string, anchor: unknown, text: unknown, toggle?: { isOpen: boolean; onToggle: () => void }) {
   const { Box, Text } = ui
   const tip = helpTip(ui, key, text, 1, toggle?.onToggle)
   return (
     <Box key={key} flexDirection="column">
-      <Box key={`${key}-line`} columnGap={qGap()} alignItems="center">
+      <Box key={`${key}-line`} columnGap={1} alignItems="center">
         {anchor}
         {tip.mark}
       </Box>
@@ -780,7 +820,7 @@ export function tipRow(
   const { Box, Text } = ui
   const tip = helpTip(ui, key, desc, 2, toggle?.onToggle)
   const named = (
-    <Box key={`${key}-nm`} columnGap={qGap()} alignItems="center">
+    <Box key={`${key}-nm`} columnGap={1} alignItems="center">
       {typeof nm === 'string' ? <Text>{nm}</Text> : nm}
       {tip.mark}
     </Box>

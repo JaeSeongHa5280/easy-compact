@@ -407,11 +407,36 @@ export function drawBandPreview(
   spend: SpendShown | null = null,
   /** 견본 바 안쪽 폭(칸) — 비용 줄을 칸 사이에서 직접 나눈다(줄 머리 " · " 없이). 모르면 null(엔진이 꺾음) */
   boxW: number | null = null,
+  /**
+   * S10 · S11(0.8.1 — 사용자 "한 화면에 못 담으면 부분별로 나눠 그 구간만큼 미리보기"): all = 바 전체, limits · cost · turn = 그 줄만 —
+   * 설정 바 탭에서 그 줄을 바꾸는 칸 바로 위에. 그 줄이 지금 화면에 없으면 까닭 한 줄
+   */
+  part: 'all' | 'limits' | 'cost' | 'turn' = 'all',
 ) {
   const { Box, Text } = ui
   // 간단 화면은 한 줄 고정 — 한도 줄을 안 그린다(바와 같다)
   const limits = !isLean && u && u.rateLimits.length > 0 ? drawLimitsLine(ui, surface, u, nowMs, show) : null
   const turn = show.lastTurn ? drawLastTurnLine(ui, last, null) : null
+  const why = (key: string, text: string) => (
+    <Box key={key} flexDirection="column" {...TILE}>
+      <Text dimColor wrap="wrap">
+        {text}
+      </Text>
+    </Box>
+  )
+  if (part === 'limits' && !limits) {
+    return why(
+      'band-preview-limits',
+      isLean
+        ? L('간단 화면은 바가 한 줄이라 한도 줄이 안 보입니다', 'The one-row Simple screen has no limits row')
+        : u && u.rateLimits.length > 0
+          ? L('한도 줄이 꺼져 있습니다', 'The limits row is off')
+          : L('이 세션엔 한도 값이 아직 없습니다(첫 응답 뒤 · API 키 세션엔 없음)', 'No limit values in this session yet (after the first answer · none with an API key)'),
+    )
+  }
+  if (part === 'turn' && (isLean || !turn)) {
+    return why('band-preview-turn', isLean ? L('간단 화면은 바가 한 줄이라 질문 줄이 안 보입니다', 'The one-row Simple screen has no question row') : L('질문 줄이 꺼져 있습니다', 'The question row is off'))
+  }
   const fake = (key: string, text: string) => (
     <Text key={key} dimColor>
       {text}
@@ -445,6 +470,15 @@ export function drawBandPreview(
       ) : null}
     </Box>
   )
+  // 줄 미리보기(S10): 그 줄 글만 — 창 버튼은 바 전체에만, 컴팩트 버튼은 질문 줄 끝에(바와 같은 자리)
+  if (part !== 'all') {
+    const one = part === 'limits' ? line('pv-1', limits, null) : part === 'cost' ? line('pv-2', est, null) : line('pv-3', turn, compact)
+    return (
+      <Box key={`band-preview-${part}`} flexDirection="column" {...TILE}>
+        {one}
+      </Box>
+    )
+  }
   const rows = limits
     ? [line('pv-1', limits, win), est ? line('pv-2', est, hasTurnRow ? null : compact) : null, hasTurnRow || !est ? line('pv-3', turn, compact) : null]
     : [line('pv-1', est, hasTurnRow ? win : [compact, win]), hasTurnRow ? line('pv-3', turn, compact) : null]

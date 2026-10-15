@@ -4,6 +4,11 @@ import { L, plural } from './i18n'
 import { onTerminal, withIcon } from './glyph'
 import { isTidyPrompt } from './tidy'
 
+// 사용량 = 지금(컨텍스트 · 비용) · 컴팩트 · 질문별 비용, 설정은 패널 안 탭(예전 이름 '비용' 은 내용보다 좁았다)
+// 0.5 묶음 2(N13): 패널 이름 "이지 컴팩트" — 사용량뿐 아니라 컴팩트 판단 · 시점 · 효과까지 담은 mod 의 상세 본체.
+// 패널 머리(register.tsx) · 바 게이지 칩(ui-bar.tsx)이 같이 쓴다
+export const paneTitle = () => L('이지 컴팩트', 'Easy Compact')
+
 /** 글 도우미 — 칸 세기 · 자르기 · 금액 · 시간 · 모델 이름 글. 그리기 함수처럼 $ 를 받지 않는다 */
 
 /** 이보다 작으면 다음 확인에 모은다 */
@@ -35,7 +40,7 @@ export function promptHead(text: string): string {
 }
 
 /** 저장 턴 질문 이름(한국어 · 영어) */
-const TIDY_TURN = ['저장하고 컴팩트 — 저장 턴', 'Save & compact — save turn'] as const
+const TIDY_TURN = ['이지 컴팩트 — 저장 턴', 'Easy Compact — save turn'] as const
 
 /**
  * mod 가 지어 붙인 이름(한국어 · 영어 짝) — 질문 기록에 그때 언어 글로 남아(질문별 비용 파일 N3), 언어를 바꾼 뒤에도 "답변 작성" · "하위
@@ -324,6 +329,18 @@ export function rangeNumText(t: { isRange?: boolean; ctxWarn: number; ctxCut: nu
   if (!window || !(window > 0) || unit === 'size') return sizes
   const pct = (n: number) => Math.round((n / window) * 100)
   const pcts = t.isRange ? `${pct(t.ctxWarn)}~${pct(t.ctxCut)}%` : `${pct(t.ctxCut)}%`
+  return unit === 'pct' ? pcts : `${sizes}(${pcts})`
+}
+
+/**
+ * 크기 구간 이름(현황 컴팩트 카드 — 드롭다운 · ★ 추천 · 크기별 비용 표)의 숫자 꼴: "250k ~ 300k" · "25 ~ 30%" · "250k ~ 300k(25 ~ 30%)".
+ * 0.8.1 S9: 예전엔 바만 설정 숫자 꼴을 따르고 현황은 늘 크기였다
+ */
+export function bandNumText(a: number, b: number, window: number | null | undefined, unit: CtxUnit): string {
+  const sizes = `${fmtTokens(a)} ~ ${fmtTokens(b)}`
+  if (!window || !(window > 0) || unit === 'size') return sizes
+  const pct = (n: number) => Math.round((n / window) * 100)
+  const pcts = `${pct(a)} ~ ${pct(b)}%`
   return unit === 'pct' ? pcts : `${sizes}(${pcts})`
 }
 

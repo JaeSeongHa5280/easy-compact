@@ -3,8 +3,10 @@
 // mod 의 $.fs.read 는 4 MiB 넘는 파일을 거부하고 기록은 수백 개라 $.process.run 으로 이 스크립트를 돌린다(scan-transcript.mjs 와 같은 길).
 //
 // 쓰는 법: node scan-spend.mjs <projects 폴더> <캐시 파일> <시작 시각 ms> [<mod 데이터 폴더>]
-// 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, extra: { "YYYY-MM-DD": 달러 }, files, scanned }
+// 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, extra: { "YYYY-MM-DD": 달러 },
+//   retro: { "YYYY-MM-DD": { "<model>": [개수, 컴팩트 전 크기 합] } }, calib: [[컴팩트 전 크기, 모델, 달러], …], files, scanned }
 //   extra = 대화 기록에 없는 요청(컴팩트 요청 · 앱 자체 요청) — mod 데이터 폴더를 주면 그 안 extra/ · turns/ 만 읽는다(아래 끝)
+//   retro = 기록의 컴팩트 경계(compact_boundary) 중 mod 가 잰 값이 없는 것(장부 전 · 질문 기록 60개 밖) — 값은 mod 가 잰 컴팩트(calib)로 어림(M2)
 //   S = 프롬프트(입력 + 캐시 읽기 + 쓰기) 10만 이하 요청, L = 넘는 요청 — 긴 프롬프트 요율(지금은 Haiku 5.5 10만 초과 5배)을 가른다
 // 캐시: 파일마다 크기 · 수정 시각이 같으면 다시 안 읽는다 — 처음 켤 때만 이번 달 기록을 다 읽는다(기록이 크면 수십 초).
 // 규칙: assistant 줄의 message.usage, 같은 message.id 는 파일마다 첫 줄로 세고(날짜 · 모델 · 크기 묶음), 뒤 줄은 출력만 최댓값으로 —
@@ -57,19 +59,35 @@ function walk(dir, depth, out) {
 
 async function scanFile(f) {
   const days = {}
+  // 컴팩트 경계 [시각 ms, 컴팩트 전 크기, 그 앞 마지막 응답 모델] — 같은 경계가 한 기록에 2~3번 다시 적혀(되감기 · 이어 받기) 시각 · 크기로 한 번만
+  const compacts = []
+  const seenCompact = new Set()
+  let lastModel = '?'
   // 응답 id → { 그 응답이 더해진 칸, 센 출력 } — 뒤 줄은 출력만 늘어난 만큼 더한다
   const seen = new Map()
   const lines = createInterface({ input: createReadStream(f.path, 'utf8'), crlfDelay: Infinity })
   for await (const line of lines) {
-    if (!line.includes('"usage"')) continue
+    const isCompact = line.includes('"compact_boundary"')
+    if (!isCompact && !line.includes('"usage"')) continue
     let r
     try {
       r = JSON.parse(line)
     } catch {
       continue
     }
+    if (isCompact && r.type === 'system' && r.subtype === 'compact_boundary') {
+      const at = Date.parse(String(r.timestamp ?? '')) || 0
+      const pre = num(r.compactMetadata?.preTokens)
+      const key = `${at}|${pre}`
+      if (at >= since && pre > 0 && !seenCompact.has(key)) {
+        seenCompact.add(key)
+        compacts.push([at, pre, lastModel])
+      }
+      continue
+    }
     const m = r.message
     if (r.type !== 'assistant' || !m?.usage || !m.id) continue
+    if (typeof m.model === 'string' && m.model !== '<synthetic>') lastModel = m.model
     const prev = seen.get(m.id)
     if (prev) {
       const more = num(m.usage.output_tokens) - prev.output
@@ -104,7 +122,7 @@ async function scanFile(f) {
     t[4] += w1
     seen.set(m.id, { t, output })
   }
-  return days
+  return { days, compacts }
 }
 
 /** obj[key] 가 없으면 empty 를 넣고 돌려준다 — `??=` 는 Node 15 부터라 안 쓴다(README: Node.js 14.8 이상) */
@@ -113,17 +131,17 @@ function slot(obj, key, empty) {
   return obj[key]
 }
 
-// v2(N1): 출력 셈 · UTC 날짜가 바뀌어 v1 캐시는 버린다
-let cache = { v: 2, files: {} }
+// v2(N1): 출력 셈 · UTC 날짜가 바뀌어 v1 캐시는 버린다. v3(M2): 파일마다 컴팩트 경계도 담아 v2 는 버린다(처음 한 번 다시 읽음)
+let cache = { v: 3, files: {} }
 try {
   const old = JSON.parse(readFileSync(cacheFile, 'utf8'))
-  if (old && old.v === 2 && old.files) cache = old
+  if (old && old.v === 3 && old.files) cache = old
 } catch {
   // 처음
 }
 const files = []
 walk(root, 0, files)
-const next = { v: 2, files: {} }
+const next = { v: 3, files: {} }
 let scanned = 0
 for (const f of files) {
   const hit = cache.files[f.path]
@@ -132,7 +150,8 @@ for (const f of files) {
     continue
   }
   try {
-    next.files[f.path] = { size: f.size, mtimeMs: f.mtimeMs, days: await scanFile(f) }
+    const got = await scanFile(f)
+    next.files[f.path] = { size: f.size, mtimeMs: f.mtimeMs, days: got.days, compacts: got.compacts }
     scanned++
   } catch {
     // 못 읽은 파일은 다음에 다시
@@ -163,6 +182,13 @@ for (const entry of Object.values(next.files)) {
 // <데이터>/turns/<세션>.json 의 동작 줄(compact · app)을 질문이 끝난 날짜로 — 장부 전 판 세션 · 끝난 세션도 채운다(장부는 처음 만들 때 질문
 // 기록에서 시작한다). 기록에서 다시 만든 질문(rebuilt)엔 이 줄이 없다. 달러 그대로(잰 때 요율)
 const extra = {}
+// 세션 파일 이름(<세션>.json) → 잰 컴팩트 [컴팩트 전 크기, 달러] — 장부 compacts(M2 부터) · 질문 기록 compact.before(아래 M2 가 맞춘다)
+const measured = new Map()
+const addMeasured = (n, before, usd) => {
+  let list = measured.get(n)
+  if (!list) measured.set(n, (list = []))
+  if (!list.some(([b]) => b === before)) list.push([before, usd])
+}
 if (dataArg) {
   const addDay = (day, usd) => {
     if (day >= firstDay && usd > 0) extra[day] = (extra[day] ?? 0) + usd
@@ -181,21 +207,71 @@ if (dataArg) {
       if (j?.v !== 1 || !j.days) continue
       booked.add(n)
       for (const [day, usd] of Object.entries(j.days)) addDay(day, num(usd))
+      for (const c of Array.isArray(j.compacts) ? j.compacts : []) if (Array.isArray(c) && num(c[0]) > 0) addMeasured(n, num(c[0]), num(c[1]))
     } catch {
       // 깨진 장부는 건너뛴다
     }
   }
   for (const n of jsonIn('turns')) {
-    if (booked.has(n)) continue
     try {
       const j = JSON.parse(readFileSync(join(dataArg, 'turns', n), 'utf8'))
       for (const t of j?.turns ?? []) {
         if (t?.rebuilt || typeof t?.atMs !== 'number') continue
-        for (const d of t.details ?? []) if (d?.app || d?.compact) addDay(dayOf(t.atMs), num(d.usd))
+        for (const d of t.details ?? []) {
+          // 잰 컴팩트는 장부가 있는 세션도 맞추기 재료로(장부 전 판이 남긴 줄)
+          if (d?.compact && num(d.compact.before) > 0) addMeasured(n, num(d.compact.before), num(d.usd))
+          if (!booked.has(n) && (d?.app || d?.compact)) addDay(dayOf(t.atMs), num(d.usd))
+        }
       }
     } catch {
       // 깨진 기록은 건너뛴다
     }
   }
 }
-process.stdout.write(JSON.stringify({ days: out, extra, files: files.length, scanned }))
+
+// M2(0.8.0 뒤 피드백 "이번 달 금액이 설정 화면보다 $4.75 낮음"): 장부 전 · 질문 기록 60개 밖의 컴팩트는 잰 값이 없어 extra 에 없다 — 기록의
+// 컴팩트 경계(compact_boundary · preTokens)는 남으니 그 크기로 어림한다. 같은 경계가 한 기록에 2~3번, 이어 받은 기록에도 다시 적혀 시각 ·
+// 크기로 한 번만. 세션의 잰 컴팩트(장부 compacts · 질문 기록 compact.before)와 크기로 1:1 맞춰, 맞으면 calib(요약 출력 몫을 거꾸로 구하는 재료),
+// 안 맞으면 retro(날짜 · 모델별 [개수, 크기 합]). 값은 mod 가 요율표로 센다
+const retro = {}
+const calib = []
+{
+  const SID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
+  // projects/<프로젝트>/<세션>.jsonl · projects/<프로젝트>/<세션>/subagents/… → 세션
+  const sidOf = path => {
+    const parts = path.slice(root.length).split(/[\\/]/).filter(Boolean)
+    return SID.exec(parts[1] ?? '')?.[0] ?? null
+  }
+  const bounds = new Map()
+  for (const [path, entry] of Object.entries(next.files)) {
+    const sid = sidOf(path)
+    for (const [at, pre, model] of entry.compacts ?? []) {
+      if (dayOf(at) < firstDay) continue
+      const key = `${at}|${pre}`
+      const b = bounds.get(key)
+      if (!b) bounds.set(key, { at, pre, model, sids: new Set(sid ? [sid] : []) })
+      else {
+        if (sid) b.sids.add(sid)
+        if (b.model === '?') b.model = model
+      }
+    }
+  }
+  for (const b of [...bounds.values()].sort((x, y) => x.at - y.at)) {
+    let hit = null
+    for (const sid of b.sids) {
+      const list = measured.get(`${sid}.json`) ?? []
+      const i = list.findIndex(([before]) => Math.abs(before - b.pre) <= Math.max(1000, b.pre * 0.001))
+      if (i >= 0) {
+        hit = list.splice(i, 1)[0]
+        break
+      }
+    }
+    if (hit) calib.push([b.pre, b.model, hit[1]])
+    else {
+      const sum = slot(slot(retro, dayOf(b.at), {}), b.model, [0, 0])
+      sum[0] += 1
+      sum[1] += b.pre
+    }
+  }
+}
+process.stdout.write(JSON.stringify({ days: out, extra, retro, calib, files: files.length, scanned }))

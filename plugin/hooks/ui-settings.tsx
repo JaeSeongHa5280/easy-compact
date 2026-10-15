@@ -1,16 +1,24 @@
 import type { ChangeGroup, CostShow, Optimal, ScreenView, Settings, Source, TidyStyleId, TtlConfig, UpdateState } from '../types'
 import { cacheWarnFor, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_TEXT, ttlName, writeRate } from './cost'
-import { BAND_MODES, BAND_PARTS, bandModeName, bandAutoUse, bandStateText, bandModeUse, bandPartName, bandShowOf, chooseScreen, editView, foldName, fmtUsd0, nudgeSessionColor, SESSION_COLOR_STEPS, paneAutoUse, paneSyncUse, infoName, infoUse, resetCustom, SCREEN_PRESETS, screenName, screenUse, screenStateText, setBandPart, setFolded, setLimits, viewOf, chooseTidy, customName, customUse, DEFAULT_SETTINGS, nudgeCache, CACHE_STEPS, CACHE_STEPS_5M, parseTokens, RANGE_BANDS, RANGE_ROWS, setCompactAt, thresholdsOf, TIDY_IDS, tidyStyles, tidySteps, usesCustom, BAND_ORDER_DEFAULT, moveEarlier, normalizeOrder, MONEY_ORDERS, moneyOf, withMoney, compactText, tidyBody, rangeBands, rangeRows, compactMax, autoCompactAt } from './settings'
+import { BAND_MODES, BAND_PARTS, bandModeName, bandAutoUse, bandStateText, bandModeUse, bandPartName, bandShowOf, chooseScreen, editView, foldName, fmtUsd0, nudgeSessionColor, SESSION_COLOR_STEPS, paneAutoUse, paneSyncUse, infoName, infoUse, resetCustom, SCREEN_PRESETS, screenName, screenUse, screenStateText, setBandPart, setFolded, setLimits, viewOf, chooseTidy, customName, customUse, DEFAULT_SETTINGS, nudgeCache, CACHE_STEPS, CACHE_STEPS_5M, parseTokens, RANGE_BANDS, RANGE_ROWS, setCompactAt, thresholdsOf, TIDY_IDS, tidyStyles, tidySteps, usesCustom, BAND_ORDER_DEFAULT, moveEarlier, normalizeOrder, MONEY_ORDERS, moneyOf, withMoney, compactText, tidyBody, rangeBands, rangeRows, compactMax, contextWindowNow, autoCompactAt, revealWhere } from './settings'
 import { COMPACT_MIN, penaltyAt, rangeThresholdsFor, thresholdsFor, WARN_RATIO } from './optimal'
 import { tidyScript } from './tidy'
 import { L } from './i18n'
 import type { Lang } from './i18n'
-import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, section, segButton, segGroup, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW } from './ui-common'
+import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, section, segButton, segGroup, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW, plainCard } from './ui-common'
 import type { Fold } from './ui-common'
 import { fitLine } from './ui-band'
 import { onTerminal } from './glyph'
 import type { LineCell } from './ui-band'
-import { cellsOf, widthOf } from './text'
+import { bandNumText, cellsOf, ctxNumText, paneTitle, widthOf } from './text'
+import { GAUGE_SHAPES } from './gauge'
+import type { GaugeShape } from './gauge'
+import { statusLineUse } from './status-line'
+
+/** 게이지 꼴 이름(B8) */
+function gaugeShapeName(g: GaugeShape): string {
+  return g === 'bar' ? L('가로 막대', 'Bar') : g === 'ring' ? L('고리', 'Ring') : g === 'vbar' ? L('세로 막대', 'Vertical bar') : L('칸 막대', 'Steps')
+}
 import type { Ui } from './ui-common'
 
 /** ⚙ 설정 탭 — 컴팩트 시점(구간 · 직접 지정)과 컴팩트 문구 */
@@ -54,9 +62,27 @@ export type SettingsActions = {
   checkUpdate: () => void
   applyUpdate: () => void
   toggleUpdate: (key: 'changes' | 'error' | 'note') => void
+  /** 판 서랍 [진단](0.9.0): 진단 파일을 만들고 경로를 서랍 · 토스트로 */
+  diagnose: () => void
   /** 컴팩트 시점 안내 줄의 [현황에서 고르기] — 현황 탭으로(0.6.0, 컴팩트 시점을 현황으로 옮김) */
   openOverview: () => void
+  /** 설정 안 탭(S10, 0.8.1) */
+  setTab: (tab: SettingsTab) => void
 }
+
+/**
+ * 설정 안 탭(S10 · S11, 0.8.1 — 사용자 "화면이 미리보기 내용인 바인데 뒤에 바 공통 · 바 · 패널 등이 따로 있어 안 맞음 · 큰 단위로 좌우 탭, 그
+ * 화면 하나에서 하나의 미리보기" + "한 화면에 못 담으면 부분별로 나눠 그 구간만큼 미리보기", 시안 C): 바 · 답변 칩 · 패널 · 컴팩트(문구 · 캐시) · 일반
+ */
+export type SettingsTab = 'bar' | 'chip' | 'pane' | 'compact' | 'gen'
+export const SETTINGS_TABS: readonly SettingsTab[] = ['bar', 'chip', 'pane', 'compact', 'gen']
+
+export function settingsTabName(t: SettingsTab): string {
+  return t === 'bar' ? L('바', 'Bar') : t === 'chip' ? L('답변 칩', 'Answer chip') : t === 'pane' ? L('패널', 'Pane') : t === 'compact' ? L('컴팩트', 'Compact') : L('일반', 'General')
+}
+
+/** 설정 탭 미리보기 — register 가 그린다($ 로 읽는 값): 바 전체(제목 "?" 포함) · 줄마다(한도 · 비용 · 질문) · 답변 칩 */
+export type SettingsPreviews = { bar: unknown; limits: unknown; cost: unknown; turn: unknown; chip: unknown }
 
 /** 설정 탭 캐시 칸의 재료: 이 세션 유지 시간(분) · 기록에서 쟀나 · 무엇이 정하나 */
 export type CacheInfo = {
@@ -82,11 +108,14 @@ export function drawSettings(
   cols: number | null = null,
   open: Record<string, boolean> = {},
   cache: CacheInfo | null = null,
-  preview: unknown = null,
+  previews: SettingsPreviews | null = null,
   hasLimits: boolean | null = null,
   compactDraft: string | null = null,
+  tab: SettingsTab = 'bar',
+  /** 일반 탭 끝에 붙일 줄(언어 — drawSettingsView 가 그린다) */
+  genExtra: unknown[] = [],
 ) {
-  const { Box, Button, Code, Input, Markdown, Select, Text } = ui
+  const { Box, Button, Code, Input, Select, Text } = ui
   const ttl = cache?.ttl ?? 60
   const isTerminal = surface === 'terminal'
   const save = act.save
@@ -222,14 +251,7 @@ export function drawSettings(
       ) : null}
     </Box>
   )
-  const cacheSection = appSection(
-    ui,
-    'set-cache',
-    L('캐시', 'Cache'),
-    [stateLine, ttlRow, warnRow('cache', 60), warnRow('cache5', 5), whyLine],
-    open['sec-cache'] === true ? undefined : `${ttlName(ttl)} ${L('캐시', 'cache')} · ${stateText}`,
-    { isOpen: open['sec-cache'] === true, onToggle: () => act.toggleFold('sec-cache') },
-  )
+  const cacheSection = plainCard(ui, 'set-cache', L('캐시', 'Cache'), [stateLine, ttlRow, warnRow('cache', 60), warnRow('cache5', 5), whyLine])
 
   // ── 컴팩트 문구: 드롭다운으로 프리셋을 고르면
   // 두 칸이 그 글로 채워지고, 칸을 고쳐 저장하면 "직접 쓰기". ① 은 [저장하고 컴팩트] 저장 턴의 가운데(앞뒤 잃을 정보 확인 · [컴팩트 진행]
@@ -244,7 +266,7 @@ export function drawSettings(
       {el}
     </Box>
   )
-  const tidy = appSection(ui, 'set-tidy', L('컴팩트 문구', 'Compact text'), [
+  const tidy = plainCard(ui, 'set-tidy', L('컴팩트 문구', 'Compact text'), [
     row(
       'tidy-pick-row',
       L('문구', 'Text'),
@@ -280,7 +302,7 @@ export function drawSettings(
     row(
       'tidy-pre-row',
       L('① 컴팩트 전에 보낼 글', '① Text sent before compacting'),
-      L('[저장하고 컴팩트]의 저장 턴에 보냅니다 — 잃을 정보 확인과 [컴팩트 진행] 표시는 mod 가 앞뒤에 붙입니다.', 'Sent in the save turn of [Save & compact] — the mod adds the lost-information check and the [Compact go] mark around it.'),
+      L('[이지 컴팩트]의 저장 턴에 보냅니다 — 잃을 정보 확인과 [컴팩트 진행] 표시는 mod 가 앞뒤에 붙입니다.', 'Sent in the save turn of [Easy Compact] — the mod adds the lost-information check and the [Compact go] mark around it.'),
       null,
       0,
       [
@@ -300,7 +322,7 @@ export function drawSettings(
     row(
       'tidy-post-row',
       L('② /compact 뒤에 붙일 글', '② Text after /compact'),
-      L('요약에 남길 것 — [저장하고 컴팩트]는 mod 의 "직전 답 남김" 지시 뒤에, [바로 컴팩트]는 이 글만 붙습니다.', 'What the summary keeps — after the mod’s "keep the previous answer" for [Save & compact], alone for [Compact now].'),
+      L('요약에 남길 것 — [이지 컴팩트]는 mod 의 "직전 답 남김" 지시 뒤에, [기본 컴팩트]는 이 글만 붙습니다.', 'What the summary keeps — after the mod’s "keep the previous answer" for [Easy Compact], alone for [Plain compact].'),
       null,
       0,
       [
@@ -327,21 +349,12 @@ export function drawSettings(
         {rawOpen ? <Code key="tidy-script" source={tidyScript(s).map(l => l.text).join('\n')} /> : null}
       </Box>
     ),
-  ], open['sec-tidy'] === true ? undefined : isCustom ? L('직접 쓰기', 'Write my own') : tidyStyles()[s.tidy as TidyStyleId].name, { isOpen: open['sec-tidy'] === true, onToggle: () => act.toggleFold('sec-tidy') })
+  ])
 
-  // ── 화면: 프리셋 셋 — 간단 · 자세히 · 커스텀. 미리보기(자세히)로 고른 화면의 바를 이 세션 값으로 보인다
+  // ── 화면 종류: 프리셋 셋 — 간단 · 자세히 · 커스텀. 바 칸 · 답변 칩을 같이 정해 탭 위에 둔다(S10 — 예전엔 "화면" 카드
+  // 안에 미리보기 · 그 화면이 정하는 칸이 있고, 바 칸이 바 공통 · 바 · 패널 카드로 흩어져 있었다)
   const view = viewOf(s)
   const isCustomScreen = s.screen === 'custom'
-  // 커스텀이면 고르기 버튼, 프리셋이면 같은 이름을 글로(✓ 켬 · · 끔)
-  const choose = (key: string, label: string, isOn: boolean, onPress: () => void) =>
-    isCustomScreen ? (
-      pick(key, label, isOn, onPress)
-    ) : (
-      // 글은 키로 못 찾아(시험 · 다른 mod) 상자에 키를 단다
-      <Box key={key}>
-        <Text {...(isOn ? {} : { dimColor: true })}>{`${isOn ? '✓' : '·'} ${label}`}</Text>
-      </Box>
-    )
   const editV = (change: (v: ScreenView) => ScreenView) => save(editView(s, change))
   // 무리 한 덩어리(이름 줄 + 들여 쓴 항목 줄) — 칸 안 선은 덩어리 사이에만
   const unit = (key: string, rows: unknown[]) => (
@@ -356,16 +369,23 @@ export function drawSettings(
     </Box>
   )
   const moneyLabel = (o: readonly string[]) => o.map(k => (k === 'session' ? L('세션', 'Session') : k === 'today' ? L('오늘', 'Today') : L('이번 달', 'This month'))).join(' · ')
-  // S3 · S6(0.6.1 피드백): 칸마다 접는 카드(앱 옆 패널 꼴) — 처음엔 화면만 펼침(패널을 닫으면 처음대로), 접으면 제목 옆 지금 값 한 줄
-  const foldOf = (id: string) => ({ isOpen: open[`sec-${id}`] === true, onToggle: () => act.toggleFold(`sec-${id}`) })
-  const hintOf = (id: string, text: string) => (open[`sec-${id}`] === true ? undefined : text)
-
-  // ── 바에 보일 칸 중 화면 종류가 정하는 것(답변 칩 자세히 · 비용 줄 · 질문 줄): S4(0.6.1 피드백 "화면 종류 아래 어디까지가 화면 옵션인지 안
-  // 갈림 · 미리보기를 보며 바꾸기 어려움") — 화면 카드 안 미리보기 바로 아래에 둔다. 간단 · 자세히 화면이면 그 화면 값이라 흐린 스위치
-  const groups = [
-    { id: 'cost', name: L('비용 줄', 'Cost row') },
-    { id: 'turn', name: L('질문 줄', 'Question row') },
-  ] as const
+  // 화면 종류가 정하는 칸(간단 · 자세히 화면이면 흐린 스위치) — 그 칸이 있는 카드마다 까닭 한 줄
+  const lockNote = (key: string) =>
+    isCustomScreen ? null : (
+      <Text key={key} dimColor wrap="wrap">
+        {L(`흐린 칸은 ${screenName(s.screen)} 화면이 정합니다 — 바꾸려면 위 화면 종류를 [커스텀]으로`, `Dimmed rows follow the ${screenName(s.screen)} screen — choose [Custom] above to change them`)}
+      </Text>
+    )
+  const partRow = (k: keyof CostShow) =>
+    row(
+      `show-${k}-row`,
+      bandPartName(k),
+      null,
+      onOffControl(ui, `show-${k}`, view.bandShow[k], on => editV(v => ({ ...v, bandShow: { ...v.bandShow, [k]: on } })), !isCustomScreen),
+      onOffW(),
+      [],
+      subName(bandPartName(k), !isCustomScreen),
+    )
   const limitsOn = s.limitShow.fiveHour || s.limitShow.sevenDay
   const limitParts = BAND_PARTS.filter(p => p.group === 'limits')
   const colorNames = [
@@ -375,228 +395,199 @@ export function drawSettings(
   ]
   // T1(0.7.0): 터미널은 값 목록(최대 16개)을 늘어놓는 대신 [ − ] $100 [ + ] — 이름 · 버튼 둘 · 값 · 사이 칸
   const colorsW = onTerminal() ? colorNames.length * 22 + 2 : colorNames.length * (5 + selectW(['$100'])) + 2
-  const presetRows = [
-    isCustomScreen ? (
-      row(
-        'custom-reset-row',
-        L('처음 값 가져오기', 'Start from'),
-        L('커스텀 값을 그 화면의 값으로 되돌립니다', 'Reset Custom to that screen’s values'),
-        (['simple', 'detail'] as const).map(p => <Button key={`custom-from-${p}`} label={screenName(p)} variant="secondary" onPress={() => save(resetCustom(s, p))} />),
-        chipsW((['simple', 'detail'] as const).map(p => screenName(p))),
-      )
-    ) : (
-      <Text key="parts-locked" dimColor wrap="wrap">
-        {L(`아래 칸은 ${screenName(s.screen)} 화면이 정합니다 — 바꾸려면 화면 종류를 [커스텀]으로`, `The rows below follow the ${screenName(s.screen)} screen — choose [Custom] to change them`)}
-      </Text>
-    ),
-    // 0.6.0 실물: 칸마다 스위치 줄. 무리 이름 줄 아래 항목을 들여 쓴다.
-    // 답변 칩 자세히(예전 "정보량"): 답변 끝 칩의 [▸ 자세히] 만 정한다. 현황 보기는 현황 위 [간단|자세히], 설정 탭은 늘 같은 꼴
-    row(
-      'info-row',
-      L('답변 칩 자세히', 'Answer chip details'),
-      L('답변 끝 질문 비용 칩에 [▸ 자세히] — 그 질문의 메인 · 에이전트 · 동작별 값', 'A [▸ Details] on the question-cost chip under each answer — its main, agent and per-step costs'),
-      onOffControl(ui, 'chipDetail', view.info === 'full', on => editV(v => ({ ...v, info: on ? 'full' : 'lean' })), !isCustomScreen),
-      onOffW(),
-      [],
-      subName(L('답변 칩 자세히', 'Answer chip details'), !isCustomScreen, 0),
-    ),
-    ...groups.map(g => {
-      const parts = BAND_PARTS.filter(p => p.group === g.id)
-      return unit(`band-g-${g.id}-unit`, [
-        row(`band-g-${g.id}`, g.name, null, null, 0),
-        ...parts.map(p => {
-          const k = p.key as keyof CostShow
-          return row(
-            `show-${k}-row`,
-            bandPartName(k),
-            null,
-            onOffControl(ui, `show-${k}`, view.bandShow[k], on => editV(v => ({ ...v, bandShow: { ...v.bandShow, [k]: on } })), !isCustomScreen),
-            onOffW(),
-            [],
-            subName(bandPartName(k), !isCustomScreen),
-          )
-        }),
-      ])
-    }),
-  ]
-  const screenSection = appSection(
-    ui,
-    'set-screen',
-    L('화면', 'Screen'),
-    [
-      row(
-        'screen-row',
-        L('화면 종류', 'Screen type'),
-        screenUse(s.screen),
-        segGroup(ui, 'screen-seg', SCREEN_PRESETS.map(p => one(`screen-${p}`, screenName(p), s.screen === p, () => save(chooseScreen(s, p))))),
-        segW(SCREEN_PRESETS.map(p => screenName(p))),
-        // 미리보기: 고른 화면으로 이 세션 값을 바처럼 — 흐린 각진 테두리로 묶어 진짜 바 · 칩과 갈린다
-        preview && !isLean
-          ? [
-              <Box key="screen-preview" flexDirection="column" marginTop={1} borderStyle="single" borderDimColor paddingX={1}>
-                <Text dimColor>{L('미리보기 — 이 화면을 고르면 이렇게 보입니다', 'Preview — how this screen looks')}</Text>
-                <Box key="screen-preview-body" flexDirection="column" paddingLeft={2}>
-                  {preview}
-                </Box>
-              </Box>,
-            ]
-          : [],
-      ),
-      ...presetRows,
-    ],
-    hintOf('screen', screenName(s.screen)),
-    foldOf('screen'),
-  )
-
-  // ── 바 공통(S4): 화면 종류와 상관없는 바 칸 · 꼴 — 한도 줄 · 모든 세션 · 세션 금액 색 · 비용 표시 순서(S2 — 나누지 않고 여기 한 줄) · 숫자
-  // 꼴(B1) · 바 크기 · 움직임(S1)
   const units = [
     { id: 'size' as const, name: L('크기', 'Size') },
     { id: 'pct' as const, name: '%' },
     { id: 'both' as const, name: L('둘 다', 'Both') },
   ]
-  const barSection = appSection(
-    ui,
-    'set-bar',
-    L('바 공통', 'Bar — every screen'),
-    [
-      // 요청이 끝났는데도 엔진이 한도를 안 준 세션(API 키 등 — 단정은 안 한다)엔 한도 줄 줄을 뺀다: 켜도 그릴 게 없다
-      hasLimits === false
-        ? null
-        : unit('limits-unit', [
-            row(
-              'limits-row',
-              L('한도 줄', 'Limits row'),
-              L('구독 요금제의 5시간 · 7일 한도(계정 전체 — 다른 세션 몫도 들어 있음).', 'Your plan’s 5-hour and 7-day limits (whole account — other sessions count too).'),
-              null,
-              0,
-              s.screen === 'simple'
-                ? [
-                    <Text key="limits-simple" dimColor wrap="wrap">
-                      {L('간단 화면은 바가 한 줄이라 한도 줄이 안 보입니다 — 자세히 · 커스텀에서 보입니다.', 'Hidden on the one-row Simple screen — shown on Detailed and Custom.')}
-                    </Text>,
-                  ]
-                : [],
-            ),
-            row('show-limits-row', L('한도 전체', 'All limits'), null, onOffControl(ui, 'limits', limitsOn, on => save(setLimits(s, on))), onOffW(), [], subName(L('한도 전체', 'All limits'))),
-            ...limitParts.map(p =>
-              row(`show-${p.key}-row`, bandPartName(p.key), null, onOffControl(ui, `show-${p.key}`, bandShowOf(s)[p.key], on => save(setBandPart(s, p.key, on))), onOffW(), [], subName(bandPartName(p.key))),
-            ),
-          ]),
-      // 오늘 · 이번 달 사용량(0.5.0) — 따로 켜고 끈다(기본 끔). 바 · 간단 패널에 보일지 — 자세히 패널엔 늘. 0.6.0: ✓ 칩 → 스위치 줄
-      unit('spend-unit', [
-        row(
-          'spend-row',
-          L('모든 세션', 'All sessions'),
-          L(
-            '켜면 바 비용 줄과 간단 패널에도 보입니다. 자세히 패널엔 늘 보입니다. 이 PC 모든 세션의 금액(API 정가 환산 · 추정)이고, 세션 기록에 없는 컴팩트 요약 · 앱 자체 요청은 이지 컴팩트가 잰 값으로 더합니다(다른 기기 · 웹 사용은 빠짐). 날짜는 Claude 사용량 화면처럼 UTC 로 나눕니다(한국은 오전 9시에 바뀜).',
-            'When on, also shown on the bar’s cost row and the Simple pane. The Detailed pane always shows them. Cost of every session on this PC (API list prices, estimated); compact summaries and the app’s own requests, which aren’t in the transcripts, are added as easy-compact measured them (other devices and the web aren’t counted). Days are split in UTC, as on Claude’s usage page.',
-          ),
-          null,
-          0,
-        ),
-        row('spend-today-row', L('오늘', 'Today'), null, onOffControl(ui, 'spendToday', s.spendToday, on => save({ ...s, spendToday: on })), onOffW(), [], subName(L('오늘', 'Today'))),
-        row('spend-month-row', L('이번 달', 'This month'), null, onOffControl(ui, 'spendMonth', s.spendMonth, on => save({ ...s, spendMonth: on })), onOffW(), [], subName(L('이번 달', 'This month'))),
-      ]),
-      row(
-        'session-colors',
-        L('세션 금액 색', 'Session cost'),
-        L('바 · 패널의 세션 금액이 이 값을 넘으면 그 색.', 'The session cost on the bar and pane takes this color above each value.'),
-        colorNames.map((c, i) => {
-          const lo = i > 0 ? s.sessionColors[i - 1]! : 0
-          const hi = i < 2 ? s.sessionColors[i + 1]! : Number.POSITIVE_INFINITY
-          const vals = SESSION_COLOR_STEPS.filter(v => (v > lo && v < hi) || v === s.sessionColors[i])
-          return (
-            <Box key={`color-${i}`} columnGap={1} alignItems="center">
-              <Text color={c.hex}>{c.name}</Text>
-              {onTerminal() ? (
-                <Box key={`color-${i}-step`} columnGap={1} alignItems="center">
-                  <Button key={`color-${i}-down`} label="−" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, -1))} />
-                  <Text>{fmtUsd0(s.sessionColors[i]!)}</Text>
-                  <Button key={`color-${i}-up`} label="+" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, 1))} />
-                </Box>
-              ) : (
-                <Select
-                  key={`color-${i}-pick`}
-                  options={vals.map(v => ({ value: String(v), label: fmtUsd0(v) }))}
-                  value={String(s.sessionColors[i])}
-                  onSelect={v => {
-                    const c2 = [...s.sessionColors] as [number, number, number]
-                    c2[i] = Number(v)
-                    save({ ...s, sessionColors: c2 })
-                  }}
-                />
-              )}
-            </Box>
-          )
-        }),
-        colorsW,
-      ),
-      // 0.5 묶음 2(N15): 바 돈 칸 순서 — 고르면 미리보기 · 입력창 위 바가 바로 바뀐다(모든 화면 공통). S2: 나누지 않고 한 줄 그대로
-      row(
-        'money-order-row',
-        L('비용 표시 순서', 'Cost order'),
-        L('바 비용 줄의 세션 · 오늘 · 이번 달 순서', 'Order of session · today · this month on the cost row'),
-        choiceControl(ui, 'money-order', MONEY_ORDERS.map(o => ({ value: o.join(','), label: moneyLabel(o) })), moneyOf(s.bandOrder).join(','), v => save(withMoney(s, v.split(',')))),
-        choiceW(MONEY_ORDERS.map(moneyLabel)),
-      ),
-      // B1(0.6.1 피드백 "컨텍스트 범위 값 · % 값으로 보이게 하는 옵션"): 바 컨텍스트 · 컴팩트 구간 칸과 게이지 칩의 숫자 꼴
-      row(
-        'ctx-unit-row',
-        L('컨텍스트 숫자', 'Context numbers'),
-        L(
-          '바의 컨텍스트 · 컴팩트 구간과 게이지 칩 숫자 — 크기(281k) · %(최대 컨텍스트 대비 28%, 앱 컨텍스트 고리와 같은 셈) · 둘 다',
-          'Context and compact-range numbers on the bar and the gauge chip — size (281k), % of the max context (28%, like the app’s context ring) or both',
-        ),
-        segGroup(ui, 'ctx-unit-seg', units.map(x => one(`ctx-unit-${x.id}`, x.name, s.ctxUnit === x.id, () => save({ ...s, ctxUnit: x.id })))),
-        segW(units.map(x => x.name)),
-      ),
-      // 한도 줄 · 질문 줄이 없는 화면(간단 등)은 바가 한 줄 — 최소 · 최대가 같다(바의 [—] 도 빠진다)
-      row(
-        'band-mode-row',
-        L('바 크기', 'Bar size'),
-        s.screen === 'simple' || (!bandShowOf(s).lastTurn && !s.limitShow.fiveHour && !s.limitShow.sevenDay)
-          ? L('지금 화면은 바가 한 줄이라 전체 · 한 줄이 같습니다.', 'With this screen the bar is one row, so Full and One line look the same.')
-          : bandModeUse(s.band),
-        segGroup(ui, 'band-mode-seg', BAND_MODES.map(m => one(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m })))),
-        segW(BAND_MODES.map(m => bandModeName(m))),
-      ),
-      // S1(0.6.1 피드백 "모션 시스템 / 줄임 용어가 안 맞음"): 앱 설정 낱말을 옮겼던 [시스템 | 줄임] → "움직임" 스위치. 앱 설정의 모션 값은 mod 가
-      // 못 읽어 따로 — 켜도 OS 동작 줄이기면 멈춘다(그림 안 prefers-reduced-motion). 저장 값은 그대로(system = 켬, reduce = 끔)
-      row(
-        'motion-row',
-        L('움직임', 'Animations'),
-        L(
-          '끄면 게이지 깜빡임 · 진행 점 · 에이전트 캐릭터가 멈춘 모습입니다. 켜도 운영체제의 동작 줄이기가 켜져 있으면 움직이지 않습니다.',
-          'Off: the gauge pulse, progress dots and the agent character stay still. Even when on, your OS reduce-motion setting stops them.',
-        ),
-        onOffControl(ui, 'motion', s.motion !== 'reduce', on => save({ ...s, motion: on ? 'system' : 'reduce' })),
-        onOffW(),
-      ),
-    ],
-    hintOf('bar', `${bandModeName(s.band)} · ${L('움직임', 'Animations')} ${s.motion !== 'reduce' ? L('켬', 'on') : L('끔', 'off')}`),
-    foldOf('bar'),
+
+  // ── 탭 위: 화면 종류(+ 커스텀이면 처음 값 가져오기) → 탭 줄
+  const topRows = [
+    row(
+      'screen-row',
+      L('화면 종류', 'Screen type'),
+      screenUse(s.screen),
+      segGroup(ui, 'screen-seg', SCREEN_PRESETS.map(p => one(`screen-${p}`, screenName(p), s.screen === p, () => save(chooseScreen(s, p))))),
+      segW(SCREEN_PRESETS.map(p => screenName(p))),
+    ),
+    isCustomScreen
+      ? row(
+          'custom-reset-row',
+          L('처음 값 가져오기', 'Start from'),
+          L('커스텀 값을 그 화면의 값으로 되돌립니다', 'Reset Custom to that screen’s values'),
+          (['simple', 'detail'] as const).map(p => <Button key={`custom-from-${p}`} label={screenName(p)} variant="secondary" onPress={() => save(resetCustom(s, p))} />),
+          chipsW((['simple', 'detail'] as const).map(p => screenName(p))),
+        )
+      : null,
+  ]
+  // 탭 줄 — 현황 · 설정 탭과 같은 묶음 버튼(앱 탭 꼴). 한 번에 한 탭만 그린다
+  const tabRow = (
+    <Box key="set-tabs-row" marginTop={1}>
+      {segGroup(ui, 'set-tabs', SETTINGS_TABS.map(t => one(`set-tab-${t}`, settingsTabName(t), tab === t, () => act.setTab(t))))}
+    </Box>
   )
 
-  // ── 바 · 패널(창 상태 — 켜기/끄기 = 스위치, R3): 바의 창 버튼(— · ✕) · 입력창 아래 버튼과 같은 값이라 어느 화면에서든 바꾼다
-  const windowSection = appSection(
-    ui,
-    'set-window',
-    L('바 · 패널', 'Bar · pane'),
-    [
+  // ── 바 탭: 바의 줄 순서대로(전체 → 한도 → 비용 → 질문), 줄마다 그 줄 미리보기 바로 아래 그 줄을 바꾸는 칸(S11 — 맨 아래 칸을 바꿀 때도
+  // 미리보기가 곁에 있다)
+  const wholeBar = plainCard(ui, 'set-bar-all', L('바 전체', 'Whole bar'), [
+    previews?.bar ?? null,
+    // 한도 줄 · 질문 줄이 없는 화면(간단 등)은 바가 한 줄 — 최소 · 최대가 같다(바의 [—] 도 빠진다)
+    row(
+      'band-mode-row',
+      L('바 크기', 'Bar size'),
+      s.screen === 'simple' || (!bandShowOf(s).lastTurn && !s.limitShow.fiveHour && !s.limitShow.sevenDay)
+        ? L('지금 화면은 바가 한 줄이라 전체 · 한 줄이 같습니다.', 'With this screen the bar is one row, so Full and One line look the same.')
+        : bandModeUse(s.band),
+      segGroup(ui, 'band-mode-seg', BAND_MODES.map(m => one(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m })))),
+      segW(BAND_MODES.map(m => bandModeName(m))),
+    ),
+    // B8(0.8.1 사용자 "클로드 기본 컨텍스트 아이콘 말고 다른 아이콘 — 전부 제공해 주고 옵션으로, 기본은 가로 막대"): 게이지 꼴 — 바 · 패널 머리 ·
+    // 확인 카드가 같이 바뀐다. 터미널엔 게이지 그림이 없어 줄을 뺀다(CLI 에서 안 쓰는 옵션은 안 보이게)
+    isTerminal
+      ? null
+      : row(
+          'gauge-shape-row',
+          L('게이지 모양', 'Gauge shape'),
+          L(
+            '바 · 패널 머리 · 확인 카드의 컨텍스트 게이지 꼴 — 양 · 색(글자색 → 주황 → 빨강, 늦어지면 깜빡)은 같습니다. 고리는 입력창 오른쪽 앱 컨텍스트 고리와 같은 꼴입니다.',
+            'The context gauge on the bar, the pane header and the compact card — fill and colors (text → orange → red, pulsing when late) stay the same. The ring matches the app’s own context ring at the input’s right.',
+          ),
+          choiceControl(ui, 'gauge-shape', GAUGE_SHAPES.map(g => ({ value: g, label: gaugeShapeName(g) })), s.gaugeShape, v => save({ ...s, gaugeShape: v as GaugeShape })),
+          choiceW(GAUGE_SHAPES.map(gaugeShapeName)),
+        ),
+    // 창 상태(켜기/끄기 = 스위치, R3): 바의 창 버튼 ✕ · 입력창 아래 버튼과 같은 값
+    row(
+      'band-fold-row',
+      L('바 접어 두기', 'Keep the bar folded'),
+      L(`바 오른쪽 위 ✕ 와 같은 값 — 접으면 ${revealWhere()} 버튼으로 다시 폅니다.`, `Same as the ✕ at the bar’s top right — when folded, reopen it with the button ${revealWhere()}.`),
+      onOffControl(ui, 'bandFolded', s.bandFolded, on => save(setFolded(s, on))),
+      onOffW(),
+    ),
+    row('band-autoopen-row', L('컴팩트할 때 바 펴기', 'Open the bar when compacting'), bandAutoUse(s.bandAutoOpen), onOffControl(ui, 'bandAutoOpen', s.bandAutoOpen, on => save({ ...s, bandAutoOpen: on })), onOffW()),
+    // B10(0.9.0 사용자 "선택 버튼으로 물을 때 바가 내려가 내용이 안 보임"): 앱이 턴 끝 "다음 단계" 상자 동안 바를 뺀다(mod 로 못 막음) — 켜면
+    // 입력창 아래 바닥 줄에 바의 요지 한 줄($.ui.status, hooks/status-line.ts). 기본 끔
+    row('status-line-row', L('입력창 아래 한 줄', 'Line below the input'), statusLineUse(), onOffControl(ui, 'statusLine', s.statusLine, on => save({ ...s, statusLine: on })), onOffW()),
+  ])
+  // 요청이 끝났는데도 엔진이 한도를 안 준 세션(API 키 등 — 단정은 안 한다)엔 한도 줄 카드를 뺀다: 켜도 그릴 게 없다
+  const limitsCard =
+    hasLimits === false
+      ? null
+      : plainCard(
+          ui,
+          'set-bar-limits',
+          hoverTip(
+            ui,
+            'limits-row',
+            <Text bold>{L('한도 줄', 'Limits row')}</Text>,
+            L('구독 요금제의 5시간 · 7일 한도(계정 전체 — 다른 세션 몫도 들어 있음).', 'Your plan’s 5-hour and 7-day limits (whole account — other sessions count too).'),
+            { isOpen: open['desc-limits-row'] === true || descOpen, onToggle: () => act.toggleFold('desc-limits-row') },
+          ),
+          [
+            previews?.limits ?? null,
+            unit('limits-unit', [
+              row('show-limits-row', L('한도 전체', 'All limits'), null, onOffControl(ui, 'limits', limitsOn, on => save(setLimits(s, on))), onOffW(), [], subName(L('한도 전체', 'All limits'))),
+              ...limitParts.map(p =>
+                row(`show-${p.key}-row`, bandPartName(p.key), null, onOffControl(ui, `show-${p.key}`, bandShowOf(s)[p.key], on => save(setBandPart(s, p.key, on))), onOffW(), [], subName(bandPartName(p.key))),
+              ),
+            ]),
+          ],
+        )
+  const costCard = plainCard(ui, 'set-bar-cost', L('비용 줄', 'Cost row'), [
+    previews?.cost ?? null,
+    unit('band-g-cost-unit', [lockNote('cost-locked'), ...BAND_PARTS.filter(p => p.group === 'cost').map(p => partRow(p.key as keyof CostShow))]),
+    // 오늘 · 이번 달 사용량(0.5.0) — 따로 켜고 끈다(기본 끔). 바 · 간단 패널에 보일지 — 자세히 패널엔 늘. 비용 줄 칸이라 이 카드에(S10)
+    unit('spend-unit', [
       row(
-        'band-fold-row',
-        L('바 접어 두기', 'Keep the bar folded'),
-        L('바 오른쪽 위 ✕ 와 같은 값 — 접으면 입력창 아래 버튼으로 다시 폅니다.', 'Same as the ✕ at the bar’s top right — when folded, reopen it with the button below the input.'),
-        onOffControl(ui, 'bandFolded', s.bandFolded, on => save(setFolded(s, on))),
-        onOffW(),
+        'spend-row',
+        L('모든 세션', 'All sessions'),
+        L(
+          '켜면 바 비용 줄과 간단 패널에도 보입니다. 자세히 패널엔 늘 보입니다. 이 PC 모든 세션의 금액(API 정가 환산 · 추정)이고, 세션 기록에 없는 컴팩트 요약 · 앱 자체 요청은 이지 컴팩트가 잰 값으로 더합니다. 재기 전 컴팩트는 세션 기록의 컴팩트 크기로 어림해 합계 밖에 따로 보입니다("컴팩트 어림 +$X 별도" — 앱 자체 요청은 어림 못 함 · 다른 기기 · 웹 사용은 빠짐). 날짜는 Claude 사용량 화면처럼 UTC 로 나눕니다(한국은 오전 9시에 바뀜).',
+          'When on, also shown on the bar’s cost row and the Simple pane. The Detailed pane always shows them. Cost of every session on this PC (API list prices, estimated); compact summaries and the app’s own requests, which aren’t in the transcripts, are added as easy-compact measured them. Compacts from before it measured them are estimated from their size in the transcripts and shown apart from the total ("+$X est. compacts not included" — the app’s own requests can’t be estimated; other devices and the web aren’t counted). Days are split in UTC, as on Claude’s usage page.',
+        ),
+        null,
+        0,
       ),
-      row('band-autoopen-row', L('컴팩트할 때 바 펴기', 'Open the bar when compacting'), bandAutoUse(s.bandAutoOpen), onOffControl(ui, 'bandAutoOpen', s.bandAutoOpen, on => save({ ...s, bandAutoOpen: on })), onOffW()),
-      row('pane-auto-row', L('새 세션에서 패널 열기', 'Open the pane in new sessions'), paneAutoUse(s.paneAutoOpen), onOffControl(ui, 'paneAutoOpen', s.paneAutoOpen, on => act.setPaneOption('paneAutoOpen', on)), onOffW()),
-      // 같이 여닫기는 데스크톱 세션끼리 — 터미널 세션의 패널은 자기 것만이라 터미널에선 줄을 뺀다
-      isTerminal
-        ? null
-        : row('pane-sync-row', L('모든 세션 패널 같이 여닫기', 'Open and close the pane in all sessions'), paneSyncUse(s.paneShared), onOffControl(ui, 'paneShared', s.paneShared, on => act.setPaneOption('paneShared', on)), onOffW()),
+      row('spend-today-row', L('오늘', 'Today'), null, onOffControl(ui, 'spendToday', s.spendToday, on => save({ ...s, spendToday: on })), onOffW(), [], subName(L('오늘', 'Today'))),
+      row('spend-month-row', L('이번 달', 'This month'), null, onOffControl(ui, 'spendMonth', s.spendMonth, on => save({ ...s, spendMonth: on })), onOffW(), [], subName(L('이번 달', 'This month'))),
+    ]),
+    row(
+      'session-colors',
+      L('세션 금액 색', 'Session cost'),
+      L('바 · 패널의 세션 금액이 이 값을 넘으면 그 색.', 'The session cost on the bar and pane takes this color above each value.'),
+      colorNames.map((c, i) => {
+        const lo = i > 0 ? s.sessionColors[i - 1]! : 0
+        const hi = i < 2 ? s.sessionColors[i + 1]! : Number.POSITIVE_INFINITY
+        const vals = SESSION_COLOR_STEPS.filter(v => (v > lo && v < hi) || v === s.sessionColors[i])
+        return (
+          <Box key={`color-${i}`} columnGap={1} alignItems="center">
+            <Text color={c.hex}>{c.name}</Text>
+            {onTerminal() ? (
+              <Box key={`color-${i}-step`} columnGap={1} alignItems="center">
+                <Button key={`color-${i}-down`} label="−" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, -1))} />
+                <Text>{fmtUsd0(s.sessionColors[i]!)}</Text>
+                <Button key={`color-${i}-up`} label="+" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, 1))} />
+              </Box>
+            ) : (
+              <Select
+                key={`color-${i}-pick`}
+                options={vals.map(v => ({ value: String(v), label: fmtUsd0(v) }))}
+                value={String(s.sessionColors[i])}
+                onSelect={v => {
+                  const c2 = [...s.sessionColors] as [number, number, number]
+                  c2[i] = Number(v)
+                  save({ ...s, sessionColors: c2 })
+                }}
+              />
+            )}
+          </Box>
+        )
+      }),
+      colorsW,
+    ),
+    // 0.5 묶음 2(N15): 바 돈 칸 순서 — 고르면 미리보기 · 입력창 위 바가 바로 바뀐다(모든 화면 공통)
+    row(
+      'money-order-row',
+      L('비용 표시 순서', 'Cost order'),
+      L('바 비용 줄의 세션 · 오늘 · 이번 달 순서', 'Order of session · today · this month on the cost row'),
+      choiceControl(ui, 'money-order', MONEY_ORDERS.map(o => ({ value: o.join(','), label: moneyLabel(o) })), moneyOf(s.bandOrder).join(','), v => save(withMoney(s, v.split(',')))),
+      choiceW(MONEY_ORDERS.map(moneyLabel)),
+    ),
+    // B1(0.6.1 피드백 "컨텍스트 범위 값 · % 값으로 보이게 하는 옵션") · S9(0.8.1 — 현황 컴팩트 카드까지): 숫자 꼴. 비용 줄 칸(컨텍스트 · 컴팩트
+    // 구간)을 바꾸니 비용 줄 미리보기 곁에
+    row(
+      'ctx-unit-row',
+      L('컨텍스트 숫자', 'Context numbers'),
+      L(
+        '바의 컨텍스트 · 컴팩트 구간, 게이지 칩, 현황 컴팩트 카드(시점 · 구간 · 크기별 비용 — 둘 다면 표는 크기)의 숫자 — 크기(281k) · %(최대 컨텍스트 대비 28%, 앱 컨텍스트 고리와 같은 셈) · 둘 다',
+        'Context and compact-range numbers on the bar, the gauge chip and the Overview compact card (timing · range · cost by size — the table stays in sizes for both) — size (281k), % of the max context (28%, like the app’s context ring) or both',
+      ),
+      segGroup(ui, 'ctx-unit-seg', units.map(x => one(`ctx-unit-${x.id}`, x.name, s.ctxUnit === x.id, () => save({ ...s, ctxUnit: x.id })))),
+      segW(units.map(x => x.name)),
+    ),
+  ])
+  const turnCard = plainCard(ui, 'set-bar-turn', L('질문 줄', 'Question row'), [
+    previews?.turn ?? null,
+    unit('band-g-turn-unit', [lockNote('turn-locked'), ...BAND_PARTS.filter(p => p.group === 'turn').map(p => partRow(p.key as keyof CostShow))]),
+  ])
+  const barTab = [wholeBar, limitsCard, costCard, turnCard]
+
+  // ── 답변 칩 탭: 견본 칩 · 답변 칩 자세히(화면 종류가 정함) · 질문 강조(데스크톱 — 마우스 올림)
+  const chipTab = [
+    plainCard(ui, 'set-chip', L('답변 끝 칩', 'Answer chip'), [
+      previews?.chip ?? null,
+      // 0.6.0 실물: 답변 칩 자세히(예전 "정보량")는 답변 끝 칩의 [▸ 자세히] 만
+      unit('chip-unit', [
+        lockNote('chip-locked'),
+        row(
+          'info-row',
+          L('답변 칩 자세히', 'Answer chip details'),
+          L('답변 끝 질문 비용 칩에 [▸ 자세히] — 그 질문의 메인 · 에이전트 · 동작별 값', 'A [▸ Details] on the question-cost chip under each answer — its main, agent and per-step costs'),
+          onOffControl(ui, 'chipDetail', view.info === 'full', on => editV(v => ({ ...v, info: on ? 'full' : 'lean' })), !isCustomScreen),
+          onOffW(),
+          [],
+          subName(L('답변 칩 자세히', 'Answer chip details'), !isCustomScreen, 0),
+        ),
+      ]),
       // 질문 강조 — 마우스 올림은 데스크톱에만 있어 터미널에선 줄을 뺀다
       isTerminal
         ? null
@@ -610,21 +601,49 @@ export function drawSettings(
             onOffControl(ui, 'questionHover', s.questionHover, on => save({ ...s, questionHover: on })),
             onOffW(),
           ),
-    ],
-    undefined,
-    foldOf('window'),
-  )
+    ]),
+  ]
 
-  // 명령 안내 줄은 뺐다 — 화면에서 다 바꿀 수 있어 사족이었다. 명령은 /easy-compact 도움말에 있다.
-  // 순서(S4 · 0.6.1 피드백): 화면(종류 · 미리보기 · 그 화면이 정하는 칸) → 바 공통 → 바 · 패널 → 컴팩트 문구 → 캐시(언어는 맨 아래, drawSettingsView)
+  // ── 패널 탭: 이 패널을 언제 여닫나
+  const paneTab = [
+    plainCard(ui, 'set-pane', paneTitle(), [
+      row('pane-auto-row', L('새 세션에서 패널 열기', 'Open the pane in new sessions'), paneAutoUse(s.paneAutoOpen), onOffControl(ui, 'paneAutoOpen', s.paneAutoOpen, on => act.setPaneOption('paneAutoOpen', on)), onOffW()),
+      // 같이 여닫기는 데스크톱 세션끼리 — 터미널 세션의 패널은 자기 것만이라 터미널에선 줄을 뺀다
+      isTerminal
+        ? null
+        : row('pane-sync-row', L('모든 세션 패널 같이 여닫기', 'Open and close the pane in all sessions'), paneSyncUse(s.paneShared), onOffControl(ui, 'paneShared', s.paneShared, on => act.setPaneOption('paneShared', on)), onOffW()),
+    ]),
+  ]
+
+  // ── 컴팩트 탭: 컴팩트 문구(이지 컴팩트 저장 턴 · /compact 뒤 글) · 캐시
+  const compactTab = [tidy, isLean ? null : cacheSection]
+
+  // ── 일반 탭: 움직임(S1 — 게이지 · 점 · 캐릭터 · 현황 막대) · 언어(drawSettingsView)
+  const genTab = [
+    plainCard(ui, 'set-gen', L('일반', 'General'), [
+      // S1(0.6.1 피드백 "모션 시스템 / 줄임 용어가 안 맞음"): 앱 설정 낱말을 옮겼던 [시스템 | 줄임] → "움직임" 스위치. 앱 설정의 모션 값은 mod 가
+      // 못 읽어 따로 — 켜도 OS 동작 줄이기면 멈춘다(그림 안 prefers-reduced-motion). 저장 값은 그대로(system = 켬, reduce = 끔)
+      row(
+        'motion-row',
+        L('움직임', 'Animations'),
+        L(
+          '끄면 게이지 깜빡임 · 진행 점 · 에이전트 캐릭터 · 컴팩트 중 현황 막대가 멈춘 모습입니다. 켜도 운영체제의 동작 줄이기가 켜져 있으면 움직이지 않습니다.',
+          'Off: the gauge pulse, progress dots, the agent character and the Overview bars while compacting stay still. Even when on, your OS reduce-motion setting stops them.',
+        ),
+        onOffControl(ui, 'motion', s.motion !== 'reduce', on => save({ ...s, motion: on ? 'system' : 'reduce' })),
+        onOffW(),
+      ),
+      ...genExtra,
+    ]),
+  ]
+
+  // 명령 안내 줄은 뺐다 — 화면에서 다 바꿀 수 있어 사족이었다.
+  const body = tab === 'chip' ? chipTab : tab === 'pane' ? paneTab : tab === 'compact' ? compactTab : tab === 'gen' ? genTab : barTab
   return (
     <Box flexDirection="column">
-      {screenSection}
-      {barSection}
-      {windowSection}
-      {tidy}
-      {/* 정보량 최소(간단)면 캐시 칸을 뺀다 — 바꿀 것이 없고(노랑 기준은 기본값), 남은 시간은 바에 늘 있다 */}
-      {isLean ? null : cacheSection}
+      {topRows}
+      {tabRow}
+      {body}
     </Box>
   )
 }
@@ -876,7 +895,9 @@ export function drawCompactTiming(
 
   // ★ 최적 = 이 세션에서 비용이 가장 적은 크기(계산식 최적, optimal.ts)가 든 띠 — 구간 · 직접 입력 두 방식의 드롭다운이 같이 쓴다
   const starAt = opt?.at != null && inputs ? rangeBands().findIndex(([a, b]) => opt.at! >= a && opt.at! < b) : -1
-  const bandName = (a: number, b: number) => `${fmtTokens(a)} ~ ${fmtTokens(b)}`
+  // 0.8.1 S9: 구간 이름 · 지금 크기 글은 설정 숫자 꼴(크기 · % · 둘 다)을 따른다 — 표는 둘 다여도 크기만(칸이 넘친다)
+  const bandName = (a: number, b: number) => bandNumText(a, b, contextWindowNow(), s.ctxUnit)
+  const num = (n: number) => ctxNumText(n, contextWindowNow(), s.ctxUnit)
   // 드롭다운 이름은 구간만. 고른 구간의 판정은 바로 아래
   // 금액 줄 끝 색 글자가, 구간마다의 판정은 자세히의 크기별 비용 표가 말한다
   const bandLabels = rangeBands().map(([a, b]) => bandName(a, b))
@@ -993,8 +1014,8 @@ export function drawCompactTiming(
     const lastBandName = bandName(lastBand[0], lastBand[1])
     const lowBad = rangeBands().filter(([a], i) => i < starAt && isNotRecommended(penOf(a)))
     const badParts = [
-      lowBad.length > 0 ? `${fmtTokens(lowBad[0]![0])} ~ ${fmtTokens(lowBad[lowBad.length - 1]![1])}` : null,
-      highBad ? L(`${fmtTokens(highBad[0])} 이상`, `${fmtTokens(highBad[0])} and up`) : null,
+      lowBad.length > 0 ? bandName(lowBad[0]![0], lowBad[lowBad.length - 1]![1]) : null,
+      highBad ? L(`${num(highBad[0])} 이상`, `${num(highBad[0])} and up`) : null,
     ].filter((p): p is string => p !== null)
     const notRecommended =
       badParts.length > 0 && !isLean
@@ -1024,7 +1045,7 @@ export function drawCompactTiming(
     const isOnBand = (a: number, b: number) => d.rangeStart === a && d.rangeEnd === b
     type Col = { id: string; head: string; cells: string[] }
     const colOf = (id: string, head: string, cell: (a: number, b: number, i: number) => string): Col => ({ id, head, cells: rangeBands().map(([a, b], i) => cell(a, b, i)) })
-    const bandCol = colOf('band', L('크기 구간', 'Size range'), (a, b) => `${bandName(a, b)}${isTerminal && isOnBand(a, b) ? L(' (고름)', ' (chosen)') : ''}`)
+    const bandCol = colOf('band', L('크기 구간', 'Size range'), (a, b) => `${bandNumText(a, b, contextWindowNow(), s.ctxUnit === 'both' ? 'size' : s.ctxUnit)}${isTerminal && isOnBand(a, b) ? L(' (고름)', ' (chosen)') : ''}`)
     const verdictCol = colOf('verdict', L('판정', 'Verdict'), (a, _b, i) => (i === starAt ? L('★ 최적', '★ Best') : (penVerdict(penOf(a))?.word ?? '')))
     const extraCols = [
       colOf('read', L('요청 1회', 'One read'), (a, b) => usd2(usdAt(a, 'read'), usdAt(b, 'read'))),
@@ -1059,8 +1080,33 @@ export function drawCompactTiming(
         {el}
       </Box>
     )
-    const grid = (
-      <Box key="cmp-grid" flexDirection="column" marginTop={1}>
+    // O5(0.8.1 사용자 "현재 컨텍스트 구간도 따로 같이 — 설정된 목표랑 지금 컨텍스트양 같이", 시안 ③): 지금 컨텍스트가 든 줄은 바탕색 —
+    // 데스크톱 = 앱 강조 파랑(#6da7ec) 옅게(raw rgba — 맞는 테마 키가 없다), 터미널 = 테마 바탕 키(rgba 를 못 그린다). 적용 중 구간은
+    // 예전처럼 테두리 · (고름). 표가 100k 부터라 그보다 작으면 든 줄이 없다 — 표 위 한 줄로
+    const bands = rangeBands()
+    const hasNow = ctxNow !== null && ctxNow > 0
+    const nowAt = !hasNow ? -1 : bands.findIndex(([a, b], i) => ctxNow! >= a && (ctxNow! < b || (i === bands.length - 1 && ctxNow! <= b)))
+    const isBelowFirst = hasNow && nowAt < 0 && ctxNow! < bands[0]![0]
+    const nowBg = isTerminal ? 'userMessageBackground' : 'rgba(109,167,236,0.18)'
+    // 풀이 줄은 표 상자 밖(표 글에 "적용 중" 이 섞이면 예전 적용 중 열을 지킨 시험이 깨진다) · 키는 상자에(엔진 시험은 글의 키로 못 찾는다)
+    const nowNote =
+      nowAt >= 0 ? (
+        <Box key="cmp-now-note">
+          <Text dimColor wrap="wrap">
+            {isTerminal
+              ? L(`바탕 줄 = 지금 ${num(ctxNow!)} · (고름) = 적용 중 구간`, `Highlighted row = now ${num(ctxNow!)} · (chosen) = applied range`)
+              : L(`파란 바탕 = 지금 ${num(ctxNow!)} · 테두리 = 적용 중 구간`, `Blue row = now ${num(ctxNow!)} · border = applied range`)}
+          </Text>
+        </Box>
+      ) : isBelowFirst ? (
+        <Box key="cmp-now-note" marginTop={1}>
+          <Text dimColor wrap="wrap">
+            {L(`지금 ${num(ctxNow!)} — 첫 구간(${num(bands[0]![0])})보다 작음`, `Now ${num(ctxNow!)} — below the first range (${num(bands[0]![0])})`)}
+          </Text>
+        </Box>
+      ) : null
+    const gridBox = (
+      <Box key="cmp-grid" flexDirection="column" marginTop={isBelowFirst ? 0 : 1}>
         <Box key="cmp-grid-h">{shownCols.map(c => gcell(`h-${c.id}`, colW(c), <Text dimColor>{c.head}</Text>))}</Box>
         {rangeBands().map(([a, b], i) => {
           const cells = shownCols.map(c => {
@@ -1075,14 +1121,24 @@ export function drawCompactTiming(
           })
           // 고른 줄(데스크톱): 묶음 버튼 고른 칸과 같은 테두리 상자 — 테두리는 1px 라 열이 거의 안 밀린다. 줄 내용 폭에 붙인다(안 붙이면 열이
           // 적은 좁은 패널에서 테두리만 패널 끝까지 늘어났다)
+          const bg = i === nowAt ? { backgroundColor: nowBg } : {}
           return isOnBand(a, b) && !isTerminal ? (
-            <Box key={`cmp-grid-${i}`} alignSelf="flex-start" borderStyle="round" borderColor={SEG_ON_EDGE} paddingX={0} paddingY={0}>
+            <Box key={`cmp-grid-${i}`} alignSelf="flex-start" borderStyle="round" borderColor={SEG_ON_EDGE} paddingX={0} paddingY={0} {...bg}>
               {cells}
             </Box>
           ) : (
-            <Box key={`cmp-grid-${i}`}>{cells}</Box>
+            <Box key={`cmp-grid-${i}`} alignSelf="flex-start" {...bg}>
+              {cells}
+            </Box>
           )
         })}
+      </Box>
+    )
+    const grid = (
+      <Box key="cmp-grid-unit" flexDirection="column">
+        {isBelowFirst ? nowNote : null}
+        {gridBox}
+        {nowAt >= 0 ? nowNote : null}
       </Box>
     )
     const tableUnit = isLean ? null : (
@@ -1257,41 +1313,36 @@ export function drawSettingsView(
   cols: number | null = null,
   open: Record<string, boolean> = {},
   cache: CacheInfo | null = null,
-  preview: unknown = null,
+  previews: SettingsPreviews | null = null,
   hasLimits: boolean | null = null,
   compactDraft: string | null = null,
+  tab: SettingsTab = 'bar',
 ) {
-  const { Box, Select, Text } = ui
+  const { Box, Text } = ui
   const look = phaseLook(phase, kind)
   // 언어 줄: 이름은 늘 두 언어로 — 읽지 못하는 언어로 떴을 때도 찾을 수 있게. 자동은 지금 고른 언어를 같이 보인다
   // 아직 모르면 그냥 "자동" — "자동(?)" 은 고장처럼 보였다
   const autoName = autoLang === 'ko' ? '한국어' : autoLang === 'en' ? 'English' : null
   const autoLabel = autoName ? L(`자동(${autoName})`, `Auto (${autoName})`) : L('자동', 'Auto')
   const langPick = (key: string, label: string, choice: Settings['lang']) => pickButton(ui, key, label, s.lang === choice, () => act.setLang(choice))
-  // 설정 탭의 칸은 모두 같은 테두리 카드(사용량 탭과 같은 꼴) — 언어 줄만 맨몸으로 떠 있었다.
-  // 한 번 정하면 끝이라 맨 아래, 접힌 제목 줄엔 지금 언어
-  const langName = s.lang === 'ko' ? '한국어' : s.lang === 'en' ? 'English' : autoLabel
-  const langOpen = open.lang === true
-  // 앱 설정 꼴(0.5 묶음 2): 언어도 줄 하나 — 이름 …… 드롭다운. 칸 제목은 늘 두 언어(읽지 못하는 언어로 떴을 때도 찾게)
-  const langRow = appSection(ui, 'set-lang', '언어 · Language', [
-    settingRow(
+  // 앱 설정 꼴(0.5 묶음 2): 언어도 줄 하나 — 이름 …… 드롭다운. 이름은 늘 두 언어(읽지 못하는 언어로 떴을 때도 찾게). S10(0.8.1): 일반 탭
+  const langRow = settingRow(
+    ui,
+    'lang-row',
+    '언어 · Language',
+    null,
+    choiceControl(
       ui,
-      'lang-row',
-      L('언어', 'Language'),
-      null,
-      choiceControl(
-        ui,
-        'lang-pick',
-        [
-          { value: 'auto', label: autoLabel },
-          { value: 'ko', label: '한국어' },
-          { value: 'en', label: 'English' },
-        ],
-        s.lang,
-        v => act.setLang(v as Settings['lang']),
-      ),
+      'lang-pick',
+      [
+        { value: 'auto', label: autoLabel },
+        { value: 'ko', label: '한국어' },
+        { value: 'en', label: 'English' },
+      ],
+      s.lang,
+      v => act.setLang(v as Settings['lang']),
     ),
-  ], open['sec-lang'] === true ? undefined : langName, { isOpen: open['sec-lang'] === true, onToggle: () => act.toggleFold('sec-lang') })
+  )
   const dot = look ? pulseDot(ui, surface, look.hex, look.text) : null
   return (
     <Box key="s-settings" flexDirection="column">
@@ -1306,8 +1357,8 @@ export function drawSettingsView(
           ) : null}
           <Text color={look.color} wrap="wrap">
             {L(
-              `${phase === 'tidying' ? '지금 저장 중입니다 — 끝나면 컴팩트.' : `지금 ${typeof kind === 'string' && kind ? kind : '컴팩트'} 중입니다.`} 컴팩트 문구를 바꾸면 다음 [저장하고 컴팩트]부터 쓰입니다.`,
-              `${phase === 'tidying' ? 'Saving now — compacts when done.' : `${typeof kind === 'string' && kind ? kind : 'Compact'} in progress.`} A changed compact text is used from the next [Save & compact].`,
+              `${phase === 'tidying' ? '지금 저장 중입니다 — 끝나면 컴팩트.' : `지금 ${typeof kind === 'string' && kind ? kind : '컴팩트'} 중입니다.`} 컴팩트 문구를 바꾸면 다음 [이지 컴팩트]부터 쓰입니다.`,
+              `${phase === 'tidying' ? 'Saving now — compacts when done.' : `${typeof kind === 'string' && kind ? kind : 'Compact'} in progress.`} A changed compact text is used from the next [Easy Compact].`,
             )}
           </Text>
         </Box>
@@ -1317,8 +1368,7 @@ export function drawSettingsView(
         </Text>
       )}
       {/* 업데이트 칸은 뺐다 — 탭 줄 업데이트 버튼 · 서랍(U4, 0.6.1 피드백: 늘 보이는 칸이 불편 · 위쪽 버튼으로) */}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, preview, hasLimits, compactDraft)}
-      {langRow}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [langRow])}
     </Box>
   )
 }
@@ -1388,7 +1438,7 @@ const DRAWER_VERSIONS = 6
  * 확인 · 업데이트는 Claude Code 명령(claude plugin …)이 하고 그때만 마켓 저장소(GitHub)를 받는다 — 이 mod 는 통신하지 않는다(README 약속).
  * 상태 글 색: 진행 = 파랑 점, 최신 · 받음 = 초록, 실패 = 빨강
  */
-export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState, nowMs: number, surface: string) {
+export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState, nowMs: number, surface: string, diagPath: string | null = null) {
   const { Box, Button, Text } = ui
   const btn = (key: string, label: string, onPress: () => void, isMain = false) =>
     isMain ? <Button key={key} label={label} variant="primary" onPress={onPress} /> : <Button key={key} label={label} variant="secondary" onPress={onPress} />
@@ -1510,6 +1560,30 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
             </Box>
           ) : null,
         ],
+      )}
+      {/* 0.9.0 진단(공개 · 마켓 판엔 덤프 명령이 없다): 이 세션 상태를 파일 하나로 — 제보할 때 붙이는 것. 경로는 여기와 토스트에 */}
+      {settingRow(
+        ui,
+        'diag-row',
+        <Text key="diag-name" bold>
+          {L('진단', 'Diagnostics')}
+        </Text>,
+        <Box key="diag-desc" flexDirection="column">
+          <Text key="diag-use" dimColor wrap="wrap">
+            {L(
+              '문제가 생기면 [진단] 을 눌러 이 세션의 설정 · 패널 상태 · 사용량 · 질문 기록을 파일 하나로 남기고, GitHub 이슈에 증상 · 재현 순서와 같이 붙여 주세요. 파일은 이 컴퓨터에만 생깁니다 — 질문 글 · 금액이 들어 있으니 올리기 전에 한 번 보세요.',
+              'If something goes wrong, press [Diagnose] to save this session’s settings, pane state, usage and question history to one file, and attach it to a GitHub issue with what happened and how to reproduce it. The file stays on this computer — it contains your questions and costs, so look it over before you post it.',
+            )}
+          </Text>
+          {diagPath ? (
+            <Box key="diag-path">
+              <Text color="success" wrap="wrap">
+                {L(`만듦: ${diagPath}`, `Saved: ${diagPath}`)}
+              </Text>
+            </Box>
+          ) : null}
+        </Box>,
+        [btn('diag-btn', L('진단', 'Diagnose'), act.diagnose)],
       )}
       {listed.length > 0 ? (
         <Box key="upd-list" flexDirection="column">

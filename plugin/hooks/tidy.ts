@@ -13,7 +13,7 @@ import { compactText, tidyBody } from './settings'
  * 도는지 안 보였다. 저장하고 컴팩트는 이 단계에선 저장이 끝났으니 앞 단계 글("저장 중 → 끝나면 컴팩트")을 잇는다
  */
 export function kindDirect(): string {
-  return L('바로 컴팩트', 'Compact now')
+  return L('기본 컴팩트', 'Plain compact')
 }
 
 export function kindTidy(): string {
@@ -66,8 +66,8 @@ export function tidyPrompt(body: readonly string[]): string {
   // 앞(잃을 정보 판단 — 비용은 mod 가 버튼에서 이미 봄)과 뒤([컴팩트 진행] 표시)는 고정, 가운데만 설정의 문구(프리셋 또는 사용자 글)
   return [
     L(
-      `${tidyTag()} 사용자가 "저장하고 컴팩트" 를 눌렀습니다. 이 답이 끝나면 대화를 컴팩트합니다(세부 내용은 요약만 남습니다).`,
-      `${tidyTag()} The user pressed "Save & compact". When this answer ends, the conversation will be compacted (details survive only as a summary).`,
+      `${tidyTag()} 사용자가 "이지 컴팩트" 를 눌렀습니다. 이 답이 끝나면 대화를 컴팩트합니다(세부 내용은 요약만 남습니다).`,
+      `${tidyTag()} The user pressed "Easy Compact". When this answer ends, the conversation will be compacted (details survive only as a summary).`,
     ),
     L('0) 먼저 컴팩트하면 잃는 정보가 있는지만 보세요. 보류할 때:', '0) First check only whether compacting would lose information you need. Hold when:'),
     L(
@@ -95,13 +95,13 @@ export function tidyPrompt(body: readonly string[]): string {
 export function tidyScript(s: Settings): { text: string; isBody: boolean }[] {
   const body = tidyBody(s)
   return [
-    { text: L('[저장하고 컴팩트]', '[Save & compact]'), isBody: false },
+    { text: L('[이지 컴팩트]', '[Easy Compact]'), isBody: false },
     ...tidyPrompt(body)
       .split('\n')
       .map(text => ({ text, isBody: body.includes(text) })),
     { text: L(`→ 답이 ${markGo()}으로 끝나면: /compact ${compactKeep(s)}`, `→ If the answer ends with ${markGo()}: /compact ${compactKeep(s)}`), isBody: false },
     { text: '', isBody: false },
-    { text: L(`[바로 컴팩트] /compact ${directKeep(s)}`, `[Compact now] /compact ${directKeep(s)}`), isBody: false },
+    { text: L(`[기본 컴팩트] /compact ${directKeep(s)}`, `[Plain compact] /compact ${directKeep(s)}`), isBody: false },
   ]
 }
 
