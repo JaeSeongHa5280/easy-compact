@@ -832,7 +832,8 @@ export function fmtTokens(n: number): string {
 
 /** 금액은 어디서나 센트까지. 예전엔 $10 이상을 소수 한 자리로 줄여 $42.69 가 $42.7 로 보였다(/usage 와 대조하다 발견) */
 export function fmtUsd(usd: number): string {
-  return `$${usd.toFixed(2)}`
+  // 천 단위 쉼표(0.9.4 uxi 바 A — "$2636.86" 이 다른 금액과 꼴이 달라 읽기 어려웠다). 음수 꼴("$-1.50")은 예전 그대로
+  return `$${usd.toFixed(2).replace(/^(-?)(\d+)/, (_m, sign: string, int: string) => sign + int.replace(/\B(?=(\d{3})+(?!\d))/g, ','))}`
 }
 
 /** 리셋 시각까지: "2시간 13분", "3일 4시간", "12분" */

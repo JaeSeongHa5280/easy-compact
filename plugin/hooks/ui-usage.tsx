@@ -50,6 +50,9 @@ import {
   TILE,
   TILE_PX,
   agentText,
+  CH_PX,
+  compactMark,
+  compactMarkCells,
   foldButton,
   foldHead,
   section,
@@ -129,9 +132,8 @@ export function liveBlock(ui: Ui, now: LiveTurn, older: TurnSummary | undefined,
         {now.steps > 0 ? usdCell(ui, now.cost.usd, true, g.leadW) : <Box width={g.leadW} flexShrink={0} />}
         <Box flexDirection="column" flexShrink={1} minWidth={0}>
           {look ? (
-            <Text wrap="wrap" color={look.color}>
-              {look.text}
-            </Text>
+            // 0.9.4: 🗜 대신 지금 꼴 표시(agentText — 데스크톱)
+            agentText(ui, 'h-live-phase', look.text, false, { wrap: 'wrap', color: look.color })
           ) : (
             <Text wrap="wrap">
               <Text bold color={ACCENT}>
@@ -198,9 +200,7 @@ export function compactingBlock(ui: Ui, g: Grid, surface: string, kind: unknown)
         </Box>
         <Box width={g.leadW} flexShrink={0} />
         <Box flexDirection="column" flexShrink={1} minWidth={0}>
-          <Text wrap="wrap" color={look.color}>
-            {look.text}
-          </Text>
+          {agentText(ui, 'h-compacting-text', look.text, false, { wrap: 'wrap', color: look.color })}
         </Box>
       </Box>
     </Box>
@@ -545,22 +545,29 @@ export function drawFlow(
       ) : null}
     </Box>
   )
-  // 미룬 비용: 지난 컴팩트 뒤 커진 만큼 더 낸 읽기 비용 — 숫자 한 줄
+  // 미룬 비용: 지난 컴팩트 뒤 커진 만큼 더 낸 읽기 비용 — 숫자 한 줄. 0.9.4 카드 A: 이름 칸 "미룬 비용"(위
+  // "지금 하면" 과 같은 폭 — decideRow), 풀이("컴팩트했다면 안 냈을 읽기 비용")는 이름에 마우스 올림 — 터미널은 마우스가 없어 값 뒤 흐린 글
+  const extraWhy = L('컴팩트했다면 안 냈을 읽기 비용', 'reads you would not have paid had you compacted')
+  const isTermPane = surface === 'terminal'
   const extraNote =
-    (extra && extraTotal > 0) || lastC ? (
-      <Text key="f-extra-note" wrap="wrap">
-        <Text>{L('미룬 비용 ', 'Deferral cost ')}</Text>
-        <Text bold>{fmtUsd(extraTotal)}</Text>
-        {extra && extraTotal > 0 ? (
-          <Text dimColor>
-            {L(` — 컴팩트했다면 안 냈을 읽기 비용 · 요청마다 +${fmtUsd(extra.nowExtraUsd)}`, ` — reads you would not have paid had you compacted · +${fmtUsd(extra.nowExtraUsd)} per request`)}
-          </Text>
-        ) : (
-          <Text dimColor>{L(' — 방금 컴팩트해 아직 없습니다', ' — none yet, just compacted')}</Text>
-        )}
-        {prev && prevTotal > 0 ? <Text dimColor>{L(` · 지난 구간 ${fmtUsd(prevTotal)}`, ` · previous segment ${fmtUsd(prevTotal)}`)}</Text> : null}
-      </Text>
-    ) : null
+    (extra && extraTotal > 0) || lastC
+      ? decideRow(
+          ui,
+          'f-extra-note',
+          L('미룬 비용', 'Deferral cost'),
+          <Text wrap="wrap">
+            <Text bold>{fmtUsd(extraTotal)}</Text>
+            {extra && extraTotal > 0 ? (
+              <Text dimColor>{`${isTermPane ? ` — ${extraWhy}` : ''}${L(` · 요청마다 +${fmtUsd(extra.nowExtraUsd)}`, ` · +${fmtUsd(extra.nowExtraUsd)} per request`)}`}</Text>
+            ) : (
+              <Text dimColor>{L(' · 방금 컴팩트해 아직 없음', ' · none yet, just compacted')}</Text>
+            )}
+            {prev && prevTotal > 0 ? <Text dimColor>{L(` · 지난 구간 ${fmtUsd(prevTotal)}`, ` · previous segment ${fmtUsd(prevTotal)}`)}</Text> : null}
+          </Text>,
+          decideStacked(Math.floor(tilePx / CH_PX) - CARD_INSET),
+          isTermPane ? null : extraWhy,
+        )
+      : null
   const details = [
     head,
     noteLine,
@@ -847,6 +854,58 @@ export function growthOf(t: TurnSummary, older: TurnSummary | undefined): number
 }
 
 /**
+ * 0.9.4 카드 A(uxi — 사용자 "A결정", 정본 0.9.md "uxi 다듬기"): 컴팩트 판단 타일의 이름 칸 줄 "지금 하면" · "미룬 비용" — 두 줄이 같은
+ * 이름 칸 폭이라 값이 같은 세로줄에서 시작한다(예전엔 이름 · 값 · 풀이가 한 줄에 섞여 줄 끝이 들쭉날쭉). 좁으면 이름을 위에.
+ * tip = 이름에 마우스를 올리면 뜨는 풀이("?" 없이 — 카드의 "?" 를 줄였다), 데스크톱만
+ */
+const DECIDE_MIN_VALUE = 24
+function decideNameW(): number {
+  return nameColW([L('지금 하면', 'Compact now'), L('미룬 비용', 'Deferral cost')])
+}
+function decideStacked(cols: number | null): boolean {
+  return cols !== null && cols - decideNameW() - 1 < DECIDE_MIN_VALUE
+}
+function decideRow(ui: Ui, key: string, name: string, value: unknown, isStacked: boolean, tip: string | null = null) {
+  const { Box, Text } = ui
+  const scope = `ec-tip-${key}`.slice(0, 64)
+  const hasTip = tip !== null && onDesktop()
+  const nameEl = hasTip ? (
+    <Box key={`${key}-n`} hover={{ scope }}>
+      <Text dimColor>{name}</Text>
+    </Box>
+  ) : (
+    <Text key={`${key}-n`} dimColor>
+      {name}
+    </Text>
+  )
+  return (
+    <Box key={key} flexDirection="column">
+      {isStacked ? (
+        <Box key={`${key}-s`} flexDirection="column">
+          {nameEl}
+          {value}
+        </Box>
+      ) : (
+        <Box key={`${key}-r`} columnGap={1}>
+          <Box width={decideNameW()} flexShrink={0}>
+            {nameEl}
+          </Box>
+          <Box flexShrink={1} minWidth={0}>
+            {value}
+          </Box>
+        </Box>
+      )}
+      {/* 칩: helpTip 과 같은 꼴(불투명 바탕 · 테두리 — 패널 칩은 그 자리에 그린다) */}
+      {hasTip ? (
+        <Box key={`${key}-card`} position="absolute" top={1} left={0} right={0} display="none" hover={{ display: 'flex', scope }} backgroundColor="userMessageBackground" borderStyle="round" borderColor="promptBorder" paddingX={1}>
+          <Text wrap="wrap">{tip}</Text>
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
+
+/**
  * 컴팩트 카드의 판단 한 줄 — 지난 컴팩트 효과(이득)만 보이니 "괜찮네, 문제없네" 로 읽혔고, 지금 컴팩트하면 얼마인지가
  * 없었다. 지금 컴팩트하면 질문마다 아끼는 값 · 컴팩트 비용 · 본전(띠 확인창과 같은 계산). 캐시가 식었으면 그 견줌
  */
@@ -888,25 +947,25 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
           : pay.breakEvenCalls !== null
             ? L(`요청 ${pay.breakEvenCalls}회면 본전`, `breaks even after ${plural(pay.breakEvenCalls, 'request')}`)
             : L('본전 시점 모름', 'break-even unknown')
-      // 칸(아낌 · 비용 · 본전) 사이에서만 꺾고 줄 머리엔 " · " 를 안 붙인다(fitLine) — 예전엔 글 하나라 좁으면 "본전" 만 다음 줄로
-      // 떨어졌다(0.6.0 CLI 확인)
-      const head = L('지금 컴팩트하면 ', 'Compacting now ')
+      // 칸(아낌 · 컴팩트 한 번 · 본전) 사이에서만 꺾고 줄 머리엔 " · " 를 안 붙인다(fitLine) — 예전엔 글 하나라 좁으면 "본전" 만 다음
+      // 줄로 떨어졌다(0.6.0 CLI 확인). 0.9.4 카드 A: 이름 칸 "지금 하면"(decideRow — 아래 "미룬 비용" 과 같은 폭) · "비용" → "컴팩트 한 번"
+      // (아래 미룬 비용과 같은 낱말 · 같은 숫자로 헷갈렸다 — 설정 계산 값의 말과 같게)
       const save =
         pay.saveQuestionUsd !== null
           ? L(`질문마다 ~${fmtUsd(pay.saveQuestionUsd)} 아낌`, `saves ~${fmtUsd(pay.saveQuestionUsd)} per question`)
           : L(`요청마다 ~${fmtUsd(pay.saveCallUsd)} 아낌`, `saves ~${fmtUsd(pay.saveCallUsd)} per request`)
-      const costText = L(`비용 ~${fmtUsd(pay.costUsd)}`, `cost ~${fmtUsd(pay.costUsd)}`)
+      const costText = L(`컴팩트 한 번 ~${fmtUsd(pay.costUsd)}`, `one compact ~${fmtUsd(pay.costUsd)}`)
       const dot = (isFirst: boolean) => (isFirst ? null : <Text dimColor>{' · '}</Text>)
-      second = fitLine(
+      const isStacked = decideStacked(wrapW)
+      second = decideRow(ui, 'eff-row', L('지금 하면', 'Compact now'), fitLine(
         ui,
         [
           {
             key: 'eff-save',
-            text: `${head}${save}`,
+            text: save,
             el: (isFirst: boolean) => (
               <Text>
                 {dot(isFirst)}
-                <Text dimColor>{head}</Text>
                 <Text color="success" bold>
                   {save}
                 </Text>
@@ -935,8 +994,8 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
           },
         ],
         null,
-        wrapW,
-      ).el
+        wrapW === null ? null : isStacked ? wrapW : wrapW - decideNameW() - 1,
+      ).el, isStacked)
     }
   }
   // "지금 요청 1회 $X · 컴팩트하면 $Y" 줄은 뺐다 — 지금 카드의 "다음 요청" 과 같은 값이 두 번 보였고, 컴팩트 판단은
@@ -1034,19 +1093,32 @@ export function drawHistory(
         // 줄 전체를 테두리 버튼으로 하니 그건 아니었다. 접힌 글도 눌러 펼친다(아이콘과 같은 일).
         // 버튼 글은 데스크톱에서 줄을 안 바꾼다 — 길면 패널 틀을 넓혀 패널 전체 글이 오른쪽에서 잘렸다.
         // 그래서 접힌 글은 글 기둥 폭에 맞게 미리 자르고, 펼치면 그 자리에서 전체 글을 줄 바꿔 보인다(버튼 밖 Text)
-        const full = promptText(t)
+        // 0.9.4: 저장 턴("🗜 이지 컴팩트 — 저장 턴")은 데스크톱이면 🗜 대신 지금 꼴 표시(compactMark — 지금 컨텍스트와 무관한 고정 그림,
+        // 사용자 "옛날 이지컴팩트 기호 · 현황 반영하는 게이지가 되면 안 됨 질문별 비용에는"). 글 자리는 그 칸만큼 덜
+        const fullText = promptText(t)
+        const mark = fullText.startsWith('🗜 ') ? compactMark(ui, `hm-${i}`) : null
+        const full = mark ? fullText.slice('🗜 '.length) : fullText
+        const markCells = mark ? compactMarkCells(ui) : 0
         const icon = isLean ? null : (
           <Button key={`hx-${i}`} label={isOpen ? '▾' : '▸'} variant="secondary" onPress={() => act.toggle(id)} />
         )
         // 간략은 한 줄로 — 글자 폭 어림(textCells)보다 넓게 그려지는 글(영문 · 기호가 많은 알림 등)이 두 줄로 넘어가 줄이 안 맞았다
         //. 1할 덜 쓰고 넘치면 끝을 자른다
-        const head = isLean ? (
-          <Text wrap="truncate-end">{fitCells(full, Math.floor(textCells(g, textBox) * 0.9))}</Text>
+        const headText = isLean ? (
+          <Text wrap="truncate-end">{fitCells(full, Math.floor(textCells(g, textBox) * 0.9) - markCells)}</Text>
         ) : isOpen ? (
           <Text wrap="wrap">{full}</Text>
         ) : (
           // 제목은 그냥 글 — 열기 · 닫기는 왼쪽 ▸ / ▾ 버튼만. 접힌 글은 글 기둥 폭에 맞게 미리 자른다(패널 틀이 넓어지지 않게)
-          <Text>{fitCells(full, textCells(g, textBox))}</Text>
+          <Text>{fitCells(full, textCells(g, textBox) - markCells)}</Text>
+        )
+        const head = mark ? (
+          <Box key={`hmh-${i}`} flexDirection="row" alignItems="center" columnGap={0.5}>
+            {mark}
+            {headText}
+          </Box>
+        ) : (
+          headText
         )
         // 펼치면(자세히) 메인 · 에이전트 · 앱 자체 요청을 줄마다 요청 수 · 금액 · 읽기 · 쓰기 · 출력으로, 그 아래 동작별 값(비싼 PANE_STEPS 개)
         // 0.5 묶음 2(N18): 최근 PANE_STEPS 개를 최신 위로, 그 앞은 맨 아래 한 줄 — 비싼 20개는 시간 순과 섞여 어디가 빠졌는지 안 보였다
@@ -1608,22 +1680,24 @@ export function rateChangeText(model: string, n: (v: number) => string, since: R
   // 사용자 "금액은 설정 화면 맞춰야"). 0.9.3: 판으로 갈리면 날짜 대신 판 · 이 PC 가 그 판으로 바꾼 날(회사 PC 의뢰서 C)
   const steps: string[] = []
   let byEngine = false
-  hist.forEach((h, i) => {
+  // 이름을 h 로 두면 JSX 함수(h)를 가린다 — 0.9.2 · 0.9.3 은 이 콜백의 (h, i) 로 앤트로픽 디렉터리 자동 검사에 막혔다
+  // (MOD_CAPABILITY_USE_NOT_PLAIN, 2026-10-16). 재발 점검은 tools/check-jsx-names.mjs
+  hist.forEach((change, i) => {
     const next = hist[i + 1]?.base ?? now
     for (const [key, ko, en] of fields) {
-      const a = h.base[key] as number
+      const a = change.base[key] as number
       const b = next[key] as number
       if (a === b) continue
-      if (h.minEngine) {
+      if (change.minEngine) {
         byEngine = true
-        const day = since?.[h.minEngine]
+        const day = since?.[change.minEngine]
         const pc = day ? L(` · 이 PC 는 ${md(day)}`, ` · on this PC ${md(day)}`) : ''
-        const ann = h.announced ? L(` — 가격표 발표는 ${md(h.announced)}`, ` — the price list says ${md(h.announced)}`) : ''
-        steps.push(L(`${ko} ${n(a)} → ${n(b)}(Claude Code ${h.minEngine} 부터${pc}${ann})`, `${en} ${n(a)} → ${n(b)} (from Claude Code ${h.minEngine}${pc}${ann})`))
+        const ann = change.announced ? L(` — 가격표 발표는 ${md(change.announced)}`, ` — the price list says ${md(change.announced)}`) : ''
+        steps.push(L(`${ko} ${n(a)} → ${n(b)}(Claude Code ${change.minEngine} 부터${pc}${ann})`, `${en} ${n(a)} → ${n(b)} (from Claude Code ${change.minEngine}${pc}${ann})`))
         continue
       }
-      const why = h.announced && h.announced !== h.until ? L(` — 앱 설정(사용량) 화면에 맞춤, 가격표 발표는 ${md(h.announced)}`, ` — matched to Claude's usage page; the price list says ${md(h.announced)}`) : ''
-      steps.push(L(`${ko} ${n(a)} → ${n(b)}(${md(h.until)}부터${why})`, `${en} ${n(a)} → ${n(b)} (from ${md(h.until)}${why})`))
+      const why = change.announced && change.announced !== change.until ? L(` — 앱 설정(사용량) 화면에 맞춤, 가격표 발표는 ${md(change.announced)}`, ` — matched to Claude's usage page; the price list says ${md(change.announced)}`) : ''
+      steps.push(L(`${ko} ${n(a)} → ${n(b)}(${md(change.until)}부터${why})`, `${en} ${n(a)} → ${n(b)} (from ${md(change.until)}${why})`))
     }
   })
   if (steps.length === 0) return null

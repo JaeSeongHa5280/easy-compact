@@ -588,7 +588,8 @@ export function bandPartName(key: keyof BandShow): string {
     perRequest: ['요청당', 'Per request'],
     context: ['컨텍스트', 'Context'],
     range: ['컴팩트 구간', 'Compact range'],
-    cache: ['캐시 남은 분', 'Cache minutes'],
+    // "남은 분" → "남은 시간"(동료 피드백 2026-10-16 "보통 이런 건 남은 시간(time)이라고 표현함 — hour 말고 time") · 위 리셋 칸과 같은 말
+    cache: ['캐시 남은 시간', 'Cache time left'],
     lastTurn: ['지난 · 진행 중 질문', 'Last · running question'],
   }
   return L(...names[key])

@@ -10,7 +10,7 @@ import { L } from './i18n'
 import { bandShowOf, revealLabel, TIDY_IDS, tidySteps, tidyStyles } from './settings'
 import { cellsOf, ctxNumText, fitCells, paneTitle, rangeNumText, textCh, widthOf } from './text'
 import { directKeep } from './tidy'
-import { drawLimitsLine, fitEstimateLine, fitLastTurnLine, minShowOf, setCtxUnit } from './ui-band'
+import { afterCells, bandGrid, costGroups, drawLimitsLine, fitEstimateLine, fitLastTurnLine, fitLine, lastTurnCells, minShowOf, setCtxUnit } from './ui-band'
 import type { SpendShown } from './ui-band'
 import { ACCENT, CH_PX, choiceControl, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, nameColW, phaseLook, pulseDot } from './ui-common'
 import { gaugeWidth } from './gauge'
@@ -287,9 +287,20 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const onCost = !show.lastTurn && (!hasLimitsLine || u === null || fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', null, spendNow).el !== null)
   const lastSum = sums.length > 0 ? sums[sums.length - 1]! : null
   const availOf = (right: number) => (right > 0 ? W - right - 2 : W)
+  // 0.9.4 바 A(uxi — 사용자 "바는 추천대로", 정본 0.9.md "uxi 다듬기"): 최대 바 · 한도 줄 · 질문 줄 칸이 켜져 있으면 다시 묶는다 — 비용 줄
+  // (둘째) = 쌓인 돈(세션 · 오늘 · 이번 달), 질문 줄(셋째) = 지금 값(요청당 · 컨텍스트 · 구간 · 캐시) + 진행 중 질문. 예전엔 둘째 줄에
+  // 6칸이 몰리고 셋째 줄은 질문 하나라 줄 길이가 들쭉날쭉했다. 넓으면 아래 bandGrid 가 칸 맞춤, 좁으면 이 흐름(칸 사이에서만 꺾음 · 정한
+  // 차례로 뺌). 질문이 상태로 숨는 때(식은 캐시 · 컴팩트 직후)도 묶음은 그대로 — 셋째 줄 = 지금 값만
+  const isRegroup = mode === 'full' && hasLimitsLine && show.lastTurn && u !== null
   const layoutFor = (label: string) => {
     // 데스크톱 최소 바는 늘 짧은 [컴팩트](상태는 설명 칩)
     const cw = compactW(mode === 'min' && !isTerm ? shortLabel : label)
+    if (isRegroup && u) {
+      const g = costGroups(ui, u, nowMs, show, sNow.sessionColors, false, spendNow)
+      const q = showLastLine ? afterCells(ui, lastTurnCells(ui, lastSum, now) ?? []) : []
+      const last = fitLine(ui, [...g.now, ...q], availOf(cw))
+      return { cost: fitLine(ui, g.money, availOf(0)), last, isOver: last.over }
+    }
     // 비용 줄 오른쪽: 최소 바 = 이지 컴팩트 + 창 버튼, 한도 줄이 있으면 이지 컴팩트(질문 줄 없는 화면)뿐, 없으면 창 버튼(+ 이지 컴팩트)
     const costRight = mode === 'min' ? cw + 2 + controlsW : hasLimitsLine ? (onCost ? cw : 0) : onCost ? cw + 2 + controlsW : controlsW
     const cost = u ? fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', availOf(costRight), spendNow) : null
@@ -888,6 +899,22 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 질문 줄을 뺀 화면(간단 등)이면 이지 컴팩트는 비용 줄 오른쪽 — 왼쪽이 빈 셋째 줄에 버튼만 있었다. 한도 줄이 없으면 바가 한 줄. 질문 줄 글이 잠깐 비는 때(식은 캐시 · 컴팩트 직후)가 아니라 칸 설정으로 정한다 —
   // 버튼 자리가 그때그때 바뀌면 안 된다. 한도 줄만 있고 비용 줄 칸을 다 뺐으면 셋째 줄에 그대로
   const compactOnCost = onCost
+  // 0.9.4 바 A 칸 맞춤: 넓어서 세 줄이 다 들면 칸마다 같은 열 폭(bandGrid — 안 들면 null 이라 아래 흐름). 오른쪽 = 창 버튼(첫 줄) ·
+  // 이지 컴팩트(셋째 줄) 중 넓은 쪽
+  const grid =
+    isRegroup && limitsLine && !isNarrowTerminal && u
+      ? bandGrid(ui, e.surface, u, nowMs, show, sNow.sessionColors, spendNow, showLastLine ? lastSum : null, showLastLine ? now : null, availOf(Math.max(controlsW, compactW(barLabel))))
+      : null
+  if (grid) {
+    return (
+      <Box flexDirection="column">
+        {row('b-r1', grid.limits, controls, 'center')}
+        {grid.money ? row('b-r2', grid.money, null, 'center') : null}
+        {row('b-r3', grid.now, compactRow, 'center')}
+        {confirm}
+      </Box>
+    )
+  }
   const oneRight = (
     <Box key="b-one-right" columnGap={2} alignItems="center" flexShrink={0}>
       {compactRow}

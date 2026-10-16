@@ -4,6 +4,21 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.9.4] — 2026-10-17
+
+### Changed
+- **The bar lines up** — the Detailed bar's rows are regrouped: row 2 is the money so far (Session · Today · This month), row 3 the values right now (Per request · Context · Compact range · Cache) followed by this question and the Compact button. Before, row 2 crowded six cells and row 3 held only the question. When the bar is wide enough, every cell starts in the same column on all three rows (no " · " between cells); when it isn't, the rows wrap between cells as before.
+- **Quieter numbers on the bar** — plan-limit percentages stay gray until 70% (orange) and 90% (red) — they no longer stand out like an amount; *Context* keeps its name gray and colors only the number; amounts get thousands separators ($2,636.86).
+- **The steps gauge is a level meter** — lit steps take the color of their place (steps 1–2 white, 3 orange, 4 red) and the count follows the stage (Room left 1–2 · Time to compact 3 · Overdue 4); only the red step blinks when overdue; while compacting, the steps light up from the far end — emptying, not charging (it read like a battery charging). Steps and Vertical steps both; the other shapes are unchanged.
+- **Compact timing card** — *Compact now* and *Deferral cost* line up as name and value (the compact's own cost says *one compact*, not *cost*); the Detailed view drops the chosen-range line and the *Not advised* row (the table's bordered and red rows say the same — which ranges are not advised is in the table's **?**); *★ Suggested … · has the best size (…)* and **[Use this range]** sit on one line; the row of your current size gets a blue ● and a lighter tint.
+- **The Easy Compact mark in Cost per question** — the old 🗜 on the save turn, compact steps and the chip details is now your chosen gauge shape, drawn still in blue (it doesn't show your current context).
+
+### Fixed
+- **No more diagnostic lines in the conversation** — a compact the hook didn't see printed *easy-compact: compact the hook did not see…* into the chat; diagnostic lines go to the debug log only.
+- **The input box no longer flickers** when you close or reopen the bar, or when Claude Code shows a quick survey (1: Yes …) above the input (desktop).
+- **Bar part name** — *Cache minutes left* is now *Cache time left*.
+- **Anthropic directory check** — one callback used the name `h`, which the directory's automated check can't follow, so 0.9.2 and 0.9.3 weren't published there; renamed, with a check that keeps it from coming back.
+
 ## [0.9.3] — 2026-10-16
 
 ### Fixed

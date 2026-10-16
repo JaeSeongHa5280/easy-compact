@@ -18,6 +18,9 @@ export const GAUGE_HEX = { warn: '#d9722b', cut: '#e05555' } as const
 /** 채움 단계(고리 위 몫): 주황 시작 · 빨강 시작 */
 const STEP = { warn: 0.58, cut: 0.78 } as const
 
+/** 칸 막대의 칸마다 자리 단계(0.9.4 레벨 미터) — 켜지면 그 단계 색: 1 · 2칸 아직 · 3칸 컴팩트할 때 · 4칸 늦어짐 */
+const CELL_LEVEL: readonly Level[] = ['ok', 'ok', 'warn', 'cut']
+
 /** 꽉 참 = 빨강 시작 × 1.25 — 패널 "컴팩트 시점" 막대 끝(cells timingCells)과 같은 자리 */
 export const FULL_RATIO = 1.25
 
@@ -79,7 +82,8 @@ export type GaugeLook = {
   /**
    * 컴팩트 · 저장 중(0.9.1 B11 — 사용자 "게이지 모양별 컴팩트 중 · 완료 깜빡임, 없으면 현황 컴팩트 시점 · 컨텍스트처럼"): 진행 파랑(BUSY_HEX —
    * 옆 "컴팩트 중…" 글 · 진행 점과 같은 색 — 빨강 "권함" 깜빡임과 갈린다)에 꼴마다 움직임: 가로 · 세로 막대 = 숨쉬기(현황 막대와 같은
-   * .35 ↔ 1 · 1.4초), 고리 = 28% 호가 돈다(1.6초 한 바퀴 — 꽉 찬 고리는 돌아도 안 보인다), 칸 막대 = 네 칸이 차례로 밝아짐(1.4초 한 바퀴).
+   * .35 ↔ 1 · 1.4초), 고리 = 28% 호가 돈다(1.6초 한 바퀴 — 꽉 찬 고리는 돌아도 안 보인다), 칸 막대 = 네 칸이 끝 칸부터 차례로 밝아짐(1.4초
+   * 한 바퀴 — 0.9.4 비워지는 쪽).
    * 움직임이 꺼져 있으면 멈춘 파랑(지금 채움)
    */
   busy?: boolean
@@ -91,7 +95,7 @@ export type GaugeLook = {
 export const BUSY_HEX = '#4c9be8'
 
 /** 컴팩트 중 움직임 CSS(꼴마다) — 키프레임엔 고정 값만. 동작 줄이기면 멈춤 */
-const REDUCE = '@media (prefers-reduced-motion:reduce){.f,.g,.s,.c0,.c1,.c2,.c3{animation:none!important}}'
+const REDUCE = '@media (prefers-reduced-motion:reduce){.f,.g,.p,.s,.c0,.c1,.c2,.c3{animation:none!important}}'
 
 /** 게이지 SVG 글 — 순수 함수(시험 · README 그림이 같이 쓴다) */
 export function gaugeSvg(g: GaugeLook): string {
@@ -141,7 +145,9 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): 
   const H = g.px
   const th = Math.max(4, Math.round(H * 0.38))
   const n2 = (v: number) => v.toFixed(2)
-  const filled = (v: number) => (v <= 0 ? 0 : Math.min(4, Math.ceil(v * 4 - 1e-9)))
+  // 켜진 칸 수 = 단계(0.9.4 레벨 미터 — 사용자 "기존에 레벨미터 색상 적용"): 칸마다 자리 색이라 칸 수가 단계와 맞아야 한다 — 아직 = 1 · 2칸
+  // (주황 시작의 반까지 1칸), 컴팩트할 때 = 3칸, 늦어짐 = 4칸. 예전엔 채움 × 4 를 올림해 아직인데 3칸 · 컴팩트할 때인데 4칸인 때가 있었다
+  const filled = (v: number) => (v <= 0 ? 0 : v < STEP.warn ? (v < STEP.warn / 2 ? 1 : 2) : v < STEP.cut ? 3 : 4)
   const isCells = shape === 'cells' || shape === 'vcells'
   // 칸 막대 · 칸 막대 세로(0.9.2): 배터리 테두리 안에 네 칸(25%씩) — 가로는 왼쪽부터, 세로는 아래부터. 테두리는 둘 다. 세로 칸만 쌓으면 메뉴 아이콘 ≡ 처럼 보였다
   const gap = Math.max(1, Math.round(H * 0.08))
@@ -162,7 +168,8 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): 
     return `x="${n2(2.5 + i * (cw + gap))}" y="${n2((H - ch) / 2)}" width="${n2(cw)}" height="${ch}" rx="1"`
   }
   // 컴팩트 중(B11): 진행 파랑 — 막대는 지금 채움이 숨쉬고(현황 막대와 같은 .35 ↔ 1 · 1.4초), 칸 막대는 네 칸이 차례로 밝아진다(1.4초 한 바퀴,
-  // 음수 지연이라 처음부터 차례 — 양수면 기다리는 동안 다 밝았다). 움직임이 꺼져 있으면 지금 채움을 멈춘 파랑으로
+  // 음수 지연이라 처음부터 차례 — 양수면 기다리는 동안 다 밝았다). 차례는 끝 칸(세로 위 · 가로 오른쪽)부터 — 아래부터 차오르니 배터리
+  // 충전으로 읽혔다(0.9.4 사용자 "컴팩트 애니메이션만 반대" — 비워지는 쪽). 움직임이 꺼져 있으면 지금 채움을 멈춘 파랑으로
   if (g.busy === true) {
     let body = ''
     let css = ''
@@ -170,7 +177,7 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): 
       const n = motion ? 4 : filled(f)
       body = frame
       for (let i = 0; i < 4; i++) body += i < n ? `<rect class="c${i}" ${cellAt(i)} fill="${BUSY_HEX}"/>` : `<rect ${cellAt(i)} fill="currentColor" fill-opacity=".2"/>`
-      if (motion) css = `@keyframes gc{0%,100%{opacity:.3}18%{opacity:1}45%{opacity:.3}}${[0, -1.05, -0.7, -0.35].map((d, i) => `.c${i}{animation:gc 1.4s linear ${d}s infinite}`).join('')}`
+      if (motion) css = `@keyframes gc{0%,100%{opacity:.3}18%{opacity:1}45%{opacity:.3}}${[-0.35, -0.7, -1.05, 0].map((d, i) => `.c${i}{animation:gc 1.4s linear ${d}s infinite}`).join('')}`
     } else if (shape === 'bar') {
       const y = (H - th) / 2
       const len = W - 2
@@ -213,20 +220,27 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): 
       slide = `@keyframes gs{from{height:${n2(hf)}px;y:${n2(1 + len - hf)}px${fromFill}}}`
     }
   } else {
-    // 칸 막대: 단계가 칸으로(4칸 — 25%씩). 컴팩트로 줄면 비워지는 칸이 앞 색에서 바탕으로 옅어진다(.g)
+    // 칸 막대: 단계가 칸으로(4칸). 컴팩트로 줄면 비워지는 칸이 앞 색에서 바탕으로 옅어진다(.g).
+    // 0.9.4 레벨 미터: 켜진 칸은 자기 자리 색 — 1 · 2칸 = 글자색 .8, 3칸 = 주황,
+    // 4칸 = 빨강(패널 컴팩트 시점 막대의 주황 · 빨강 눈금과 같은 자리). 늦어짐 깜빡임(gp — 빨강 계열 색으로 번쩍임)은 빨강 칸만 —
+    // 다른 칸에 걸면 흰 · 주황 칸이 빨강으로 번쩍였다
     const n = filled(f)
     const nFrom = from !== null ? filled(from) : n
     shapes = frame
     for (let i = 0; i < 4; i++) {
       const at = cellAt(i)
-      shapes += i < n ? `<rect class="f" ${at} fill="${color}" fill-opacity="${opacity}"/>` : i < nFrom ? `<rect class="g" ${at} fill="currentColor" fill-opacity=".2"/>` : `<rect ${at} fill="currentColor" fill-opacity=".2"/>`
+      const lv = CELL_LEVEL[i]!
+      const fill = lv === 'ok' ? `fill="currentColor" fill-opacity="${opacity === '0' ? '0' : '.8'}"` : `fill="${GAUGE_HEX[lv]}" fill-opacity="${opacity === '0' ? '0' : '1'}"`
+      // 켜진 칸 = f(채움 — 시험 · QA 가 이 칸 색을 단계로 본다), 깜빡이는 칸(빨강)만 p 를 더 단다
+      shapes += i < n ? `<rect class="${lv === 'cut' ? 'f p' : 'f'}" ${at} ${fill}/>` : i < nFrom ? `<rect class="g" ${at} fill="currentColor" fill-opacity=".2"/>` : `<rect ${at} fill="currentColor" fill-opacity=".2"/>`
     }
     // 비는 칸: 앞 색(컴팩트 끝이면 진행 파랑 — B11)에서 바탕으로 옅어진다
     if (nFrom > n) slide = `@keyframes gs{from{fill:${fromHex ?? (g.level === 'ok' ? '#888888' : GAUGE_HEX[g.level])};fill-opacity:1}}`
   }
   const pulse = t === null ? '' : `@keyframes gp{50%{fill:${lerpHex('#ea7c7c', '#ffe2e2', t)}}}`
   const fAnim = [slide && !isCells ? `gs ${dur}s ease-out` : '', t !== null ? `gp ${(1.6 - 0.9 * t).toFixed(2)}s ease-in-out infinite` : ''].filter(Boolean).join(',')
-  const rules = [fAnim ? `.f{animation:${fAnim}}` : '', slide && isCells ? `.g{animation:gs ${dur}s ease-out}` : ''].join('')
+  // 칸 막대의 깜빡임은 빨강 칸(p)만 — 0.9.4 레벨 미터(흰 · 주황 칸이 빨강으로 번쩍이지 않게)
+  const rules = [fAnim ? `${isCells ? '.p' : '.f'}{animation:${fAnim}}` : '', slide && isCells ? `.g{animation:gs ${dur}s ease-out}` : ''].join('')
   const css = rules ? `<style>${slide}${pulse}${rules}@media (prefers-reduced-motion:reduce){.f,.g{animation:none!important}}</style>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${css}${shapes}</svg>`
 }

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.9.3-4c9be8" alt="Version 0.9.3">
+  <img src="https://img.shields.io/badge/version-0.9.4-4c9be8" alt="Version 0.9.4">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-092">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-094">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 ---
@@ -109,11 +109,23 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.9.3
+## What's new in 0.9.4
+
+- **The bar lines up** — on the Detailed screen, row 2 is the money so far (Session · Today · This month) and row 3 the values right now (Per request · Context · Compact range · Cache), then this question and **Compact**. On a wide bar the cells of all three rows start in the same columns; on a narrow one they wrap between cells as before.
+- **Quieter numbers** — plan-limit percentages stay gray until 70% (orange) and 90% (red), *Context* colors only its number, and amounts get thousands separators ($2,636.86).
+- **The steps gauge reads like a level meter** — each lit step has the color of its place (steps 1–2 white · 3 orange · 4 red), only the red step blinks when overdue, and while compacting the steps light up from the far end — emptying, not charging. Steps and Vertical steps; the other shapes are unchanged.
+- **A tidier compact timing card** — *Compact now* and *Deferral cost* line up as name and value; the Detailed view drops the chosen-range line and the *Not advised* row (the table says the same); *★ Suggested* and **[Use this range]** sit on one line; the row of your current size gets a blue ●.
+- **The Easy Compact mark in Cost per question** — the old 🗜 is now your gauge shape, drawn still in blue (desktop).
+- **Fixed** — diagnostic lines in the conversation after a compact the hook didn't see; the input box flickering when the bar closes or reopens and around Claude Code's quick survey (desktop); the bar part name *Cache time left*; and one parameter name that kept 0.9.2 and 0.9.3 out of the Anthropic directory.
+
+Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.9.3</b></summary>
 
 - **Each request uses the rates of the Claude Code version that sent it** — Claude's usage page prices a request by the rate table of the Claude Code version that sent it, not by date. The Sonnet 5.5 cache-read cut ($0.20 → $0.10) applies from requests sent by Claude Code 2.1.299, so 0.9.2's fixed date (October 15) was off on machines that updated at another time — on the machine we compared, this month was $928.96 vs the usage page's $944.34, now about $944. The rate line at the bottom of the pane says *from Claude Code 2.1.299 · on this PC Oct 16*.
 
-Full list: [CHANGELOG](CHANGELOG.md).
+</details>
 
 <details>
 <summary><b>What's new in 0.9.2</b></summary>
@@ -255,10 +267,10 @@ https://github.com/user-attachments/assets/fccb5b10-1437-41d5-bd04-761c8ff97eaa
 
 ### 1. Live cost, right above the input
 
-<img src="docs/img/band.png" width="900" alt="The Easy Compact bar: plan usage, per-request cost, context, compact range, cache, and this question's cost">
+<img src="docs/img/band.png" width="900" alt="The Easy Compact bar in three rows: plan usage; session, today and this month; per-request cost, context, compact range, cache and this question's cost, lined up in columns">
 
 **Context, next-request cost and this question's cost — updated after every request.**
-Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** as the **Screen type** at the top of Settings; to choose single parts, pick **Custom** and switch them in the row cards of the **Bar** tab (Limits row · Cost row · Question row) — each card's preview of its row follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both in the **Cost row** card. The gauge's look is **Gauge shape** in the **Whole bar** card (Bar · Ring · Vertical bar · Steps · Vertical steps). Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
+Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`, or `Cache 42m left` when the cells line up), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). On the **Detailed** screen the bar has three rows — plan usage, the money so far (Session · Today · This month), and the values right now (Per request · Context · Compact range · Cache) with this question's cost; on a wide bar the cells line up in columns. It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** as the **Screen type** at the top of Settings; to choose single parts, pick **Custom** and switch them in the row cards of the **Bar** tab (Limits row · Cost row · Question row) — each card's preview of its row follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both in the **Cost row** card. The gauge's look is **Gauge shape** in the **Whole bar** card (Bar · Ring · Vertical bar · Steps · Vertical steps). Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
 
 <img src="docs/img/screen.png" width="520" alt="Settings: the screen type (Simple · Detailed · Custom) above the tabs Bar · Answer chip · Pane · Compact · General; the Bar tab previews each row in its own card">
 
@@ -282,7 +294,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 <img src="docs/img/settings.png" width="640" alt="Overview → Compact: the compact range dropdown and the Cost by size table, colored by verdict, with the picked range outlined">
 
-**Pick a compact range in the Overview tab.** The Simple view has the range dropdown in the *This session* card, with one line under it: the verdict (★ Best · good · fair · not advised) and the cost of one read, one question and a cold cache. The Detailed view adds the suggested and not-advised ranges and the **Cost by size** table in the Compact card — one read and one question per size (10 requests assumed × the current model's rates); a wider pane adds the cold-cache cost and how far each size is from the cheapest (★) — a narrow one drops the least important columns first. Cell colors are the verdicts and the picked range is outlined. Picking applies to all sessions at once, and **Enter a size…** at the end of the dropdown sets a single size by number.
+**Pick a compact range in the Overview tab.** The Simple view has the range dropdown in the *This session* card, with one line under it: the verdict (★ Best · good · fair · not advised) and the cost of one read, one question and a cold cache. The Detailed view adds the suggested range (★, with **[Use this range]**) and the **Cost by size** table in the Compact card — one read and one question per size (10 requests assumed × the current model's rates); a wider pane adds the cold-cache cost and how far each size is from the cheapest (★) — a narrow one drops the least important columns first. Cell colors are the verdicts (the table's **?** says which ranges are not advised), the picked range is outlined and a blue ● marks the row of your current size. Picking applies to all sessions at once, and **Enter a size…** at the end of the dropdown sets a single size by number.
 
 | Gauge and button | Means |
 |---|---|
@@ -291,7 +303,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 | 🔴 Red gauge (pulsing) · *Compact overdue* | Past your range — the deeper, the faster it pulses |
 | 🔴 *Cache expired* · **Plain compact advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
 
-Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring), a vertical bar or vertical steps. Steps and Vertical steps sit in a battery frame. Colors, pulsing and the post-compact shrink are the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light in turn).
+Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring), a vertical bar or vertical steps. Steps and Vertical steps sit in a battery frame and read like a level meter: each step has the color of its place (1–2 white · 3 orange · 4 red), the stage sets how many are lit, and only the red step pulses. Colors, pulsing and the post-compact shrink mean the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light up from the far end).
 
 ### 4. Easy Compact — one click
 
@@ -319,7 +331,7 @@ flowchart LR
 
 <img src="docs/img/simple.png" width="900" alt="The Simple screen: a one-line bar and the Simple Easy Compact pane with This session and cost per question">
 
-Open it by clicking the bar's **gauge** (in a terminal, **[Pane ▸]**). The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested · not advised · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen type in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in the Settings **Pane** tab. In the Detailed view, **Cost by size** marks the row your context is in with a light blue background (the picked range is outlined).
+Open it by clicking the bar's **gauge** (in a terminal, **[Pane ▸]**). The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested range · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen type in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in the Settings **Pane** tab. In the Detailed view, **Cost by size** marks the row your context is in with a blue ● and a light tint (the picked range is outlined).
 
 ### 6. Terminal too
 

@@ -149,12 +149,16 @@ export function agentMark(ui: Ui, key: string, isRunning: boolean) {
 
 /**
  * 에이전트 글("🤖 에이전트 1개 …" — text.ts agentPart 등)을 그린다: 데스크톱은 🤖 자리에 도트 캐릭터(agentMark), 그 밖은 글 그대로. prefix =
- * 앞에 붙는 " · " 같은 글, textProps = 글 꼴(흐림 · 색 · 줄바꿈)
+ * 앞에 붙는 " · " 같은 글, textProps = 글 꼴(흐림 · 색 · 줄바꿈). 0.9.4: 컴팩트 글("🗜 컴팩트 …" · "🗜 저장 중 …")도 — 🗜 자리에 지금 꼴
+ * 표시(compactMark)
  */
 export function agentText(ui: Ui, key: string, text: string, isRunning: boolean, textProps: Record<string, unknown> = {}, prefix = '') {
   const { Box, Text } = ui
-  const ICON = '🤖 '
-  const mark = text.startsWith(ICON) ? agentMark(ui, `${key}-mark`, isRunning) : null
+  const AGENT = '🤖 '
+  const COMPACT = '🗜 '
+  const isAgent = text.startsWith(AGENT)
+  const ICON = isAgent ? AGENT : COMPACT
+  const mark = isAgent ? agentMark(ui, `${key}-mark`, isRunning) : text.startsWith(COMPACT) ? compactMark(ui, `${key}-mark`) : null
   if (!mark)
     return (
       <Text key={key} {...textProps}>
@@ -381,8 +385,8 @@ export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, 
         <Text dimColor>{j === details.length - 1 && !hasMore ? '└─' : '├─'}</Text>
         {usdCell(ui, d.usd, false, g.amountW)}
         <Box flexShrink={1} minWidth={0}>
-          {/* 에이전트 줄은 데스크톱이면 🤖 대신 도트 캐릭터(B4) — 그 에이전트가 도는 동안 걷는다 */}
-          {d.agent && label.startsWith('🤖 ') && onDesktop() ? (
+          {/* 에이전트 줄은 데스크톱이면 🤖 대신 도트 캐릭터(B4) — 그 에이전트가 도는 동안 걷는다. 컴팩트 줄은 🗜 대신 지금 꼴 표시(0.9.4) */}
+          {((d.agent && label.startsWith('🤖 ')) || (d.compact && label.startsWith('🗜 '))) && onDesktop() ? (
             agentText(ui, `${key}-${j}-agent`, label, d.done === false, { wrap: 'truncate-end' })
           ) : (
             <Text wrap="truncate-end">
@@ -633,6 +637,23 @@ export function decoIcon(ui: Ui, name: IconName, hex: string, alt: string, key?:
       {glyph}
     </ui.Text>
   ) : null
+}
+
+/**
+ * 이지 컴팩트 표시(0.9.4 — 사용자 "아직 옛날 이지컴팩트 기호가 있다 · 현재 설정된 막대나 기호에 맞춰야 · 지금 현황 반영하는 게이지가 되면
+ * 안 됨, 질문별 비용에는"): 옛 🗜 대신 지금 고른 게이지 꼴을 진행 파랑으로 멈춰 그린다(컴팩트 중 모습 — 지금 컨텍스트와 무관한 고정
+ * 그림). 데스크톱만 — 터미널은 글자 기호도 없이 글만(withIcon 과 같다)
+ */
+export function compactMark(ui: Ui, key: string, px = ICON_PX) {
+  const Svg = onDesktop() ? (ui as unknown as { Svg?: SvgElement }).Svg : undefined
+  if (!Svg) return null
+  const shape = gaugeShapeNow()
+  return <Svg key={key} source={gaugeSvg({ px, shape, frac: 1, level: 'ok', busy: true, motion: false })} alt={L('이지 컴팩트', 'Easy Compact')} width={gaugeWidth(shape, px)} height={px} />
+}
+
+/** 이지 컴팩트 표시가 차지하는 칸(글 자리를 그만큼 덜 쓴다) — 없으면 0 */
+export function compactMarkCells(ui: Ui): number {
+  return onDesktop() && (ui as unknown as { Svg?: SvgElement }).Svg ? Math.ceil(gaugeWidth(gaugeShapeNow(), ICON_PX) / CH_PX) + 1 : 0
 }
 
 /** 카드 접기: 제목 줄 맨 앞 ▾ / ▸ 버튼. 접으면 제목 줄(그 카드의 요약)만 남는다 */

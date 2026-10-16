@@ -1029,28 +1029,28 @@ export function drawCompactTiming(
       ),
       [allNote, rangeSelect(`${d.rangeStart}-${d.rangeEnd}`)],
       choiceW([...bandLabels, manualLabel]) + widthOf(L('모든 세션에 적용', 'All sessions'), isTerminal) + 1,
-      // 고른 구간 금액 · 판정 한 줄은 간단 보기에도
-      [rangeNow, errLine].filter(x => x !== null),
+      // 고른 구간 금액 · 판정 한 줄은 간단 보기에. 0.9.4 카드 A: 자세히는 뺀다 —
+      // 바로 아래 크기별 비용 표의 테두리 줄이 같은 값 · 같은 판정이라 두 번 보였다
+      [isLean ? rangeNow : null, errLine].filter(x => x !== null),
     )
     // 추천: 최적이 든 띠 — 고른 띠가 아니면 한 줄 + [이 구간 고르기](고른 띠면 위 금액 줄 끝 "★ 최적" 이 말한다)
     const starBand = starAt >= 0 ? rangeBands()[starAt]! : null
     const isStarOn = starBand !== null && d.rangeStart === starBand[0] && d.rangeEnd === starBand[1]
-    const pickStar = L('이 구간 고르기', 'Pick this range')
+    // 0.9.4 카드 A: 한 줄 "★ 추천 10 ~ 15% · 최적(12%)이 든 구간 [이 구간으로]" — 버튼은 글 바로 뒤(예전엔 줄 오른쪽 끝에 떨어져 어느 구간을
+    // 고르는지 멀었고, 풀이는 "?" 안에 숨었다 — 사용자 빨간 표시). 터미널도 같은 꼴(버튼 = [ 이 구간으로 ])
+    const pickStar = L('이 구간으로', 'Use this range')
     const recommend =
-      starBand && opt?.at != null && !isStarOn
-        ? row(
-            'cmp-recommend',
-            L(`★ 추천 ${bandName(starBand[0], starBand[1])}`, `★ Suggested ${bandName(starBand[0], starBand[1])}`),
-            L(`최적(${fmtTokens(opt.at)})이 든 구간`, `the range with the best size (${fmtTokens(opt.at)})`),
-            <Button key="cmp-recommend-pick" label={pickStar} variant="secondary" onPress={() => edit({ ...d, follow: true, rangeStart: starBand[0], rangeEnd: starBand[1] })} />,
-            buttonW(pickStar),
-            [],
-            <Text key="cmp-recommend-name" bold color={STAR_COLOR}>
+      starBand && opt?.at != null && !isStarOn ? (
+        <Box key="cmp-recommend" columnGap={1} alignItems="center" flexWrap="wrap" marginTop={1}>
+          <Box key="cmp-recommend-name">
+            <Text bold color={STAR_COLOR}>
               {L(`★ 추천 ${bandName(starBand[0], starBand[1])}`, `★ Suggested ${bandName(starBand[0], starBand[1])}`)}
-            </Text>,
-            true,
-          )
-        : null
+            </Text>
+          </Box>
+          <Text dimColor>{L(`· 최적(${num(opt.at)})이 든 구간`, `· has the best size (${num(opt.at)})`)}</Text>
+          <Button key="cmp-recommend-pick" label={pickStar} variant="secondary" onPress={() => edit({ ...d, follow: true, rangeStart: starBand[0], rangeEnd: starBand[1] })} />
+        </Box>
+      ) : null
     // 비추천(자세히): 최적 대비가 PEN_BAD_PCT 를 넘는 띠(이 세션 값) — 최적 위는 "N 이상", 최적 아래(너무 잦음)는 그 띠 이름으로.
     // 70만 ~ 100만은 자동 컴팩트(1M 창이면 약 96.7만)가 돌기 직전이라 고를 일이 거의 없다
     const highBad = rangeBands().find(([a], i) => i > starAt && isNotRecommended(penOf(a)))
@@ -1062,22 +1062,13 @@ export function drawCompactTiming(
       lowBad.length > 0 ? bandName(lowBad[0]![0], lowBad[lowBad.length - 1]![1]) : null,
       highBad ? L(`${num(highBad[0])} 이상`, `${num(highBad[0])} and up`) : null,
     ].filter((p): p is string => p !== null)
-    const notRecommended =
-      badParts.length > 0 && !isLean
-        ? row(
-            'cmp-not-recommended',
-            L('비추천', 'Not advised'),
-            L(
-              `${badParts.join(' · ')} — 최적보다 요청당 +${PEN_BAD_PCT}% 넘게${highBad ? ` · ${lastBandName} 은 자동 컴팩트(약 ${fmtTokens(autoCompactAt())}) 직전` : ''}`,
-              `${badParts.join(' · ')} — over +${PEN_BAD_PCT}% per request vs best${highBad ? ` · ${lastBandName} is right before auto-compact (~${fmtTokens(autoCompactAt())})` : ''}`,
-            ),
-            null,
-            0,
-            [],
-            <Text key="cmp-bad-name" bold color="error">
-              {L('비추천', 'Not advised')}
-            </Text>,
-            true,
+    // 0.9.4 카드 A: "비추천 [?]" 줄은 뺐다 — 이름만 보이고 내용은 "?" 안에 숨었고, 표의 빨강 "비추천" 줄이 같은 말.
+    // 어느 구간인지 · 자동 컴팩트 직전이라는 풀이는 표 제목 칩(데스크톱) · 표 아래 풀이(터미널)에
+    const badDesc =
+      badParts.length > 0
+        ? L(
+            `${badParts.join(' · ')} — 최적보다 요청당 +${PEN_BAD_PCT}% 넘게${highBad ? ` · ${lastBandName} 은 자동 컴팩트(약 ${fmtTokens(autoCompactAt())}) 직전` : ''}`,
+            `${badParts.join(' · ')} — over +${PEN_BAD_PCT}% per request vs best${highBad ? ` · ${lastBandName} is right before auto-compact (~${fmtTokens(autoCompactAt())})` : ''}`,
           )
         : null
     // 크기별 비용(자세히 · R6 펼침): 앱 표(Markdown — 사용자 2026-10-15 "앱 UI 기능을 쓰자"). 고르기는 위 드롭다운이라 표는 보기만, 고른 줄은
@@ -1132,7 +1123,10 @@ export function drawCompactTiming(
     const hasNow = ctxNow !== null && ctxNow > 0
     const nowAt = !hasNow ? -1 : bands.findIndex(([a, b], i) => ctxNow! >= a && (ctxNow! < b || (i === bands.length - 1 && ctxNow! <= b)))
     const isBelowFirst = hasNow && nowAt < 0 && ctxNow! < bands[0]![0]
-    const nowBg = isTerminal ? 'userMessageBackground' : 'rgba(109,167,236,0.18)'
+    // 0.9.4 카드 A: 데스크톱 바탕을 옅게(18% → 8%) + 크기 칸 앞 파란 ● — 18% 바탕 위 초록 · 주황 · 빨강 글이 3.4 ~ 3.9:1 로 글 대비
+    // 4.5:1 에 못 미쳤다(uxi accessibility-review 계산). 8% 면 4.6:1 이상 · 바탕만으론 덜 보이니 ● 가 지금 줄을 맡는다
+    const nowBg = isTerminal ? 'userMessageBackground' : 'rgba(109,167,236,0.08)'
+    const nowMarkW = nowAt >= 0 && !isTerminal ? 2 : 0
     // 풀이 줄은 표 상자 밖(표 글에 "적용 중" 이 섞이면 예전 적용 중 열을 지킨 시험이 깨진다) · 키는 상자에(엔진 시험은 글의 키로 못 찾는다).
     // 다음 버전: "지금" 과 "적용 중" 이 둘 다 지금처럼
     // 읽혀 어느 쪽이 지금 컨텍스트인지 헷갈렸다 — 바탕은 "지금 컨텍스트", 테두리는 위 드롭다운 이름 그대로 "고른 컴팩트 구간"
@@ -1142,7 +1136,12 @@ export function drawCompactTiming(
           <Text dimColor wrap="wrap">
             {isTerminal
               ? L(`바탕 줄 = 지금 컨텍스트 ${num(ctxNow!)} · (고름) = 고른 컴팩트 구간`, `Highlighted row = context now ${num(ctxNow!)} · (chosen) = the compact range you picked`)
-              : L(`파란 바탕 = 지금 컨텍스트 ${num(ctxNow!)} · 테두리 = 고른 컴팩트 구간`, `Blue row = context now ${num(ctxNow!)} · border = the compact range you picked`)}
+              : [
+                  <Text key="m" color={ACCENT}>
+                    ●
+                  </Text>,
+                  L(` = 지금 컨텍스트 ${num(ctxNow!)} · 테두리 = 고른 컴팩트 구간`, ` = context now ${num(ctxNow!)} · border = the compact range you picked`),
+                ]}
           </Text>
         </Box>
       ) : isBelowFirst ? (
@@ -1152,16 +1151,19 @@ export function drawCompactTiming(
           </Text>
         </Box>
       ) : null
+    // 크기 구간 칸은 지금 줄 ● 만큼 넓게(머리 · 줄 모두 — 열이 어긋나지 않게)
+    const cw = (c: Col) => colW(c) + (c.id === 'band' ? nowMarkW : 0)
     const gridBox = (
       <Box key="cmp-grid" flexDirection="column" marginTop={isBelowFirst ? 0 : 1}>
-        <Box key="cmp-grid-h">{shownCols.map(c => gcell(`h-${c.id}`, colW(c), <Text dimColor>{c.head}</Text>))}</Box>
+        <Box key="cmp-grid-h">{shownCols.map(c => gcell(`h-${c.id}`, cw(c), <Text dimColor>{c.head}</Text>))}</Box>
         {rangeBands().map(([a, b], i) => {
           const cells = shownCols.map(c => {
             const col = cellColor(c, i)
             return gcell(
               `${i}-${c.id}`,
-              colW(c),
+              cw(c),
               <Text {...(isOnBand(a, b) ? { bold: true } : {})} {...(col ? { color: col } : {})}>
+                {c.id === 'band' && i === nowAt && nowMarkW > 0 ? <Text color={ACCENT}>{'● '}</Text> : null}
                 {c.cells[i]!}
               </Text>,
             )
@@ -1207,6 +1209,7 @@ export function drawCompactTiming(
                 <Text wrap="wrap">
                   {L(`질문 1개 = 요청 ${Q_STEPS}회 가정 · 캐시 식으면 = ${ttlName(ttl)} 넘게 쉬어 다시 쓰기 · ${model} 요율`, `Question = ${Q_STEPS} requests assumed · Cold cache = rewritten after ${ttlName(ttl)} idle · ${model} rates`)}
                 </Text>
+                {badDesc ? <Text wrap="wrap">{`${L('비추천', 'Not advised')} = ${badDesc}`}</Text> : null}
               </Box>,
               toggleOf('cmp-table-tip'),
             )}
@@ -1245,6 +1248,7 @@ export function drawCompactTiming(
                     : L(`${ttlName(ttl)} 넘게 쉬어 전부 다시 쓰기`, `idle over ${ttlName(ttl)}, everything rewritten`),
                 )
               : null}
+            {badDesc ? term('cmp-bad', L('비추천', 'Not advised'), badDesc, 'error') : null}
             {starLine}
             {calcLine}
             {capLine}
@@ -1256,7 +1260,7 @@ export function drawCompactTiming(
           </Box>
       )
     }
-    rows = isLean ? [rangePick] : [rangePick, recommend, notRecommended, tableUnit]
+    rows = isLean ? [rangePick] : [rangePick, recommend, tableUnit]
   } else {
     // 직접 정한 크기의 대가: 최적보다 요청당 몇 % 더 드나 — % 에 최적 대비 색
     const pen = penOf(dt.ctxCut)

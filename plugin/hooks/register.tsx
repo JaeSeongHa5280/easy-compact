@@ -824,9 +824,14 @@ const PANE_MODE_KEY = 'paneModeChoice'
 
 const autoDismissed = atom({ plugin: 'easy-compact', key: 'autoDismissed' } as const, null)
 
+/**
+ * 진단 한 줄 — 엔진 디버그 로그에만(to: 'debug'). 기본(transcript)은 대화창에 시스템 안내 줄로 찍혀, 회사 PC 대화창에 "easy-compact:
+ * compact the hook did not see — engine context went empty after 309069" 가 그대로 보였다. 사람이 볼 일은
+ * 패널 글(못 잼 · 까닭 등)이 맡는다
+ */
 function log($: EngineInterface, text: string): void {
   try {
-    $.ui.log(`easy-compact: ${text}`)
+    $.ui.log(`easy-compact: ${text}`, { to: 'debug' })
   } catch {
     // 로그도 못 남기는 곳(테스트 등)에선 조용히 넘어간다
   }
@@ -3631,14 +3636,17 @@ export const register: Register = on => {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const inner = await next(e)
     // 0.9.0: 터미널은 이 줄에 키보드 초점이 안 가서(엔진 초점 고리는 바 · 패널만) 바 자리 한 줄(AbovePrompt)이 펴는 버튼을 맡는다
-    if (e.surface === 'terminal' || !(await isBandTucked($))) return inner
+    if (e.surface === 'terminal') return inner
+    const isTucked = await isBandTucked($)
     await ensureLang($)
     setSurface(e.surface)
     const { Box } = $.ui.resolve(e)
+    // 바가 펴져 있어도 같은 뿌리(ec-mode)로 감싼다 — 접혔을 때만 감싸면 바를 접고 펼 때마다 이 줄이 엔진 그대로 ↔ 우리 상자로 바뀌어
+    // 앱이 입력창 아랫줄을 새로 만들었다
     return (
       <Box key="ec-mode" columnGap={1} alignItems="center">
         {inner}
-        {await revealButton($, $.ui.resolve(e))}
+        {isTucked ? await revealButton($, $.ui.resolve(e)) : null}
       </Box>
     )
   })
@@ -3649,11 +3657,21 @@ export const register: Register = on => {
     // 접힌 바(✕ — 모든 세션, 컴팩트할 때 자동으로 펴기면 그때까지) — 띠 자리를 엔진에 돌려준다. 입력창 아래 버튼과 같은 판단
     const sNow = await currentSettings($)
     setBandOrder(sNow.bandOrder)
-    if (e.props.hasSurvey) return next(e)
-    if (await isBandTucked($)) {
+    // 엔진 설문(빈 입력창에서 숫자로 답하는 "1: Yes" 줄)이 띠 자리를 쓰는 동안도 비켜 준다
+    if (e.props.hasSurvey || (await isBandTucked($))) {
+      // 데스크톱은 접혀도 펴져도 · 설문이 떠도 같은 뿌리(ec-band) — 엔진 몫(next)을 그 안에, 펴짐 = 바. 뿌리가 엔진 그대로 ↔ 바로 바뀌면
+      // 앱이 입력창 위 자리를 통째로 새로 만들어 입력창이 깜빡였다. 터미널은 그대로
+      if (e.surface !== 'terminal') {
+        const { Box } = $.ui.resolve(e)
+        return (
+          <Box key="ec-band" flexDirection="column">
+            {await next(e)}
+          </Box>
+        )
+      }
+      if (e.props.hasSurvey) return next(e)
       // 0.9.0 터미널: 펴는 버튼을 바 자리에 한 줄로(ctrl+x tab 으로 닿는다) — 입력창 아래 모드 줄엔 키보드 초점이 안 가고, 마켓 판엔 단축
-      // 명령도 없어 접은 바를 되살릴 길이 없었다(실제 CLI 로 확인). 데스크톱은 그대로 자리를 엔진에 돌려준다(모드 줄 버튼은 눌린다)
-      if (e.surface !== 'terminal') return next(e)
+      // 명령도 없어 접은 바를 되살릴 길이 없었다(실제 CLI 로 확인). 데스크톱은 자리를 엔진에 돌려준다(모드 줄 버튼은 눌린다)
       const ui = $.ui.resolve(e)
       return (
         <ui.Box key="band-folded" justifyContent="flex-end">
@@ -3677,6 +3695,12 @@ export const register: Register = on => {
     const just = u?.isAfterCompact ? ((await read($, compactions)).at(-1) ?? null) : null
     const shrink = await shrinkNow($)
     const spendNow = await spendShownOf($, sNow)
-    return drawBar(ui, e, { sNow, u, view, isConfirming, nowMs, sums, now, inputs, phase, kind, just, shrink, spendNow }, barActs($))
+    const bar = drawBar(ui, e, { sNow, u, view, isConfirming, nowMs, sums, now, inputs, phase, kind, just, shrink, spendNow }, barActs($))
+    if (e.surface === 'terminal') return bar
+    return (
+      <ui.Box key="ec-band" flexDirection="column">
+        {bar}
+      </ui.Box>
+    )
   })
 }
