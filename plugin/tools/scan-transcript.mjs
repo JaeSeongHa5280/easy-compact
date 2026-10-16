@@ -3,8 +3,9 @@
 // $.process.run 으로 돌려 작은 출력(줄마다 요청 하나 · 컴팩트 하나 · 질문 하나)만 받는다.
 //
 // 출력(공백 구분, 한 줄에 하나):
-//   p <시각ms> <input> <output> <cache_read> <cache_creation> <model> <5분 쓰기> <1시간 쓰기>
-//                       (끝 둘 = usage.cache_creation 의 ephemeral_5m · 1h — 그 요청의 캐시 유지 시간)
+//   p <시각ms> <input> <output> <cache_read> <cache_creation> <model> <5분 쓰기> <1시간 쓰기> <엔진 판>
+//                       (5분 · 1시간 = usage.cache_creation 의 ephemeral_5m · 1h — 그 요청의 캐시 유지 시간,
+//                        엔진 판 = 기록 줄의 version, 모르면 "-" — 0.9.3: 요율이 판으로 갈린다)
 //   c <시각ms> <trigger> <preTokens>
 //   q <시각ms> <질문 글 앞부분>       (질문 시작 — promptId 가 처음 나온 사용자 줄, 글은 공백 하나로 200자까지 — N3)
 // 규칙은 hooks/flow.ts 의 recordsFromTranscript 와 같다: 메인 대화만(isSidechain 제외),
@@ -72,7 +73,8 @@ for await (const line of lines) {
   }
   const u = m.usage
   const cc = u.cache_creation ?? {}
-  const parts = ['p', at, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens), m.model ?? '?', num(cc.ephemeral_5m_input_tokens), num(cc.ephemeral_1h_input_tokens)]
+  const engine = typeof r.version === 'string' && /^\d+\.\d+\.\d+/.test(r.version) ? r.version : '-'
+  const parts = ['p', at, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens), m.model ?? '?', num(cc.ephemeral_5m_input_tokens), num(cc.ephemeral_1h_input_tokens), engine]
   seen.set(m.id, { at: out.length, parts })
   out.push(parts.join(' '))
 }

@@ -1,5 +1,5 @@
 import type { CostParts, StepDetail, Tokens, TurnSummary } from '../types'
-import { costOf, dayOf } from './cost'
+import { costOf, dayOf, engineOfLine } from './cost'
 import type { FlowRecord } from './flow'
 import { L } from './i18n'
 import { promptHead } from './text'
@@ -42,8 +42,8 @@ function addCost(a: CostParts, b: CostParts | null): CostParts {
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
-/** 하위 에이전트 한 갈래(기록 파일 하나): 첫 · 마지막 요청 시각 · 요청 수 · 모델별 토큰 */
-export type AgentRun = { id: string; firstAtMs: number; lastAtMs: number; steps: number; byModel: Record<string, Tokens> }
+/** 하위 에이전트 한 갈래(기록 파일 하나): 첫 · 마지막 요청 시각 · 요청 수 · 모델별 토큰 · 엔진 판(첫 요청 줄의 version — 0.9.3) */
+export type AgentRun = { id: string; firstAtMs: number; lastAtMs: number; steps: number; byModel: Record<string, Tokens>; engine?: string }
 
 /**
  * 하위 에이전트 기록 파일 본문 → 한 갈래. 같은 응답(message.id)은 첫 줄로 세고 뒤 줄은 출력만 최댓값으로(N1 과 같은 규칙).
@@ -55,9 +55,10 @@ export function agentRunFromText(id: string, text: string): AgentRun | null {
   let firstAtMs = 0
   let lastAtMs = 0
   let steps = 0
+  let engine: string | undefined
   for (const line of text.split('\n')) {
     if (!line.includes('"usage"')) continue
-    let r: { type?: unknown; timestamp?: unknown; message?: { id?: unknown; model?: unknown; usage?: Record<string, unknown> } }
+    let r: { type?: unknown; timestamp?: unknown; version?: unknown; message?: { id?: unknown; model?: unknown; usage?: Record<string, unknown> } }
     try {
       r = JSON.parse(line) as typeof r
     } catch {
@@ -101,9 +102,10 @@ export function agentRunFromText(id: string, text: string): AgentRun | null {
     const at = Date.parse(String(r.timestamp ?? '')) || 0
     if (at > 0 && (firstAtMs === 0 || at < firstAtMs)) firstAtMs = at
     if (at > lastAtMs) lastAtMs = at
+    if (engine === undefined) engine = engineOfLine(r.version)
     steps++
   }
-  return steps > 0 ? { id, firstAtMs, lastAtMs, steps, byModel } : null
+  return steps > 0 ? { id, firstAtMs, lastAtMs, steps, byModel, ...(engine ? { engine } : {}) } : null
 }
 
 /**
@@ -127,8 +129,8 @@ export function turnsFromRecords(records: readonly FlowRecord[], agents: readonl
       // 기록 앞부분이 질문 시작 없이 요청부터면(이어 붙인 기록) 이름 없는 질문 하나로
       const q = cur ?? (cur = open(r.atMs, ''))
       q.steps++
-      // 0.9.2: 그 요청 날의 요율(요율이 바뀐 모델의 지난 질문을 지금 요율로 다시 세면 낮게 나왔다)
-      q.cost = addCost(q.cost, costOf(r.tokens, r.model, undefined, dayOf(r.atMs)))
+      // 0.9.2: 그 요청 날의 요율(요율이 바뀐 모델의 지난 질문을 지금 요율로 다시 세면 낮게 나왔다), 0.9.3: 판을 알면 그 판의 요율
+      q.cost = addCost(q.cost, costOf(r.tokens, r.model, undefined, dayOf(r.atMs), r.engine ?? null))
       q.ctx = r.tokens.input_tokens + r.tokens.cache_read_input_tokens + r.tokens.cache_creation_input_tokens
       q.model = r.model
       q.endMs = Math.max(q.endMs, r.atMs)
@@ -141,7 +143,7 @@ export function turnsFromRecords(records: readonly FlowRecord[], agents: readonl
     let c = ZERO
     let model = ''
     for (const [m, t] of Object.entries(a.byModel)) {
-      c = addCost(c, costOf(t, m, 5, dayOf(a.firstAtMs)))
+      c = addCost(c, costOf(t, m, 5, dayOf(a.firstAtMs), a.engine ?? null))
       model = m
     }
     target.cost = addCost(target.cost, c)

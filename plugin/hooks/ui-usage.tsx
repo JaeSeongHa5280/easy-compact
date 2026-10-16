@@ -1586,9 +1586,10 @@ export function drawAllSpend(ui: Ui, line: AllSpendLine | null) {
 
 /**
  * 요율이 바뀐 것 한 줄(0.9.2 — 회사 PC 금액 차이 보고서 "설정 화면과 어긋나는 이유가 보이게"): 이 모델의 요율 이력(cost.ts history)에서
- * 바뀐 칸만 — "캐시 읽기 0.20 → 0.10(10월 7일부터 …)". 바뀐 적 없으면 null
+ * 바뀐 칸만 — "캐시 읽기 0.20 → 0.10(10월 7일부터 …)". 0.9.3: 판으로 갈리는 변경(minEngine)은 "Claude Code 2.1.299 부터 · 이 PC 는 10월 16일"
+ * (since = 이 PC 가 그 판으로 처음 요청한 날 — 이번 달 사용량을 잰 값, 없으면 판만). 바뀐 적 없으면 null
  */
-export function rateChangeText(model: string, n: (v: number) => string): string | null {
+export function rateChangeText(model: string, n: (v: number) => string, since: Record<string, string> | null = null): string | null {
   const hist = rateHistory(model)
   const now = ratesFor(model)
   if (hist.length === 0 || !now) return null
@@ -1604,24 +1605,42 @@ export function rateChangeText(model: string, n: (v: number) => string): string 
     ['write1h', '쓰기', 'write'],
   ]
   // 이른 것부터: 옛 요율 → 다음 요율(다음 이력 줄, 마지막은 지금 요율). 가격표 발표일과 다르게 앱 설정 화면에 맞춘 날이면 둘 다(0.9.2 —
-  // 사용자 "금액은 설정 화면 맞춰야")
+  // 사용자 "금액은 설정 화면 맞춰야"). 0.9.3: 판으로 갈리면 날짜 대신 판 · 이 PC 가 그 판으로 바꾼 날(회사 PC 의뢰서 C)
   const steps: string[] = []
+  let byEngine = false
   hist.forEach((h, i) => {
     const next = hist[i + 1]?.base ?? now
     for (const [key, ko, en] of fields) {
       const a = h.base[key] as number
       const b = next[key] as number
       if (a === b) continue
+      if (h.minEngine) {
+        byEngine = true
+        const day = since?.[h.minEngine]
+        const pc = day ? L(` · 이 PC 는 ${md(day)}`, ` · on this PC ${md(day)}`) : ''
+        const ann = h.announced ? L(` — 가격표 발표는 ${md(h.announced)}`, ` — the price list says ${md(h.announced)}`) : ''
+        steps.push(L(`${ko} ${n(a)} → ${n(b)}(Claude Code ${h.minEngine} 부터${pc}${ann})`, `${en} ${n(a)} → ${n(b)} (from Claude Code ${h.minEngine}${pc}${ann})`))
+        continue
+      }
       const why = h.announced && h.announced !== h.until ? L(` — 앱 설정(사용량) 화면에 맞춤, 가격표 발표는 ${md(h.announced)}`, ` — matched to Claude's usage page; the price list says ${md(h.announced)}`) : ''
       steps.push(L(`${ko} ${n(a)} → ${n(b)}(${md(h.until)}부터${why})`, `${en} ${n(a)} → ${n(b)} (from ${md(h.until)}${why})`))
     }
   })
   if (steps.length === 0) return null
+  if (byEngine) {
+    return L(
+      `요율이 바뀐 것: ${steps.join(' · ')}. 앱 설정(사용량) 화면처럼 요청마다 그 요청을 보낸 Claude Code 판의 요율로 셉니다.`,
+      `Rate change: ${steps.join(' · ')}. Like Claude's usage page, each request uses the rates of the Claude Code version that sent it.`,
+    )
+  }
   return L(`요율이 바뀐 것: ${steps.join(' · ')}. 그 전 기록은 그때 요율로 셉니다.`, `Rate change: ${steps.join(' · ')}. Earlier records use the rate of their day.`)
 }
 
-/** 맨 아래 흐린 참고 줄: 요율 · 노력도 · 색 기준. 판단엔 안 쓰고 숫자를 확인할 때만 본다 — 예전엔 비용 카드 한가운데 있었다 */
-export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null, nowMs: number) {
+/**
+ * 맨 아래 흐린 참고 줄: 요율 · 노력도 · 색 기준. 판단엔 안 쓰고 숫자를 확인할 때만 본다 — 예전엔 비용 카드 한가운데 있었다.
+ * since = 요율이 바뀐 판으로 이 PC 가 처음 요청한 날(0.9.3 — 요율 줄 "이 PC 는 10월 16일", 이번 달 사용량을 잰 값)
+ */
+export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null, nowMs: number, since: Record<string, string> | null = null) {
   const { Box, Text } = ui
   if (!u) return null
   const est = estimateFor(u, nowMs)
@@ -1643,7 +1662,7 @@ export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null,
         )}
       </Text>
       {(() => {
-        const change = rateChangeText(u.model, n)
+        const change = rateChangeText(u.model, n, since)
         return change ? (
           <Text key="ref-rate-change" dimColor wrap="wrap">
             {change}

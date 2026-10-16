@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.9.2-4c9be8" alt="Version 0.9.2">
+  <img src="https://img.shields.io/badge/version-0.9.3-4c9be8" alt="Version 0.9.3">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -109,16 +109,23 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.9.2
+## What's new in 0.9.3
 
-- **Amounts match Claude's usage page** — the Sonnet 5.5 cache-read cut ($0.20 → $0.10) now counts from October 15, when the usage page applies it (the price list says October 7) — this month came out about $919 vs the usage page's $920 on the machine we compared, instead of $140 lower. The rate line at the bottom of the pane says so.
+- **Each request uses the rates of the Claude Code version that sent it** — Claude's usage page prices a request by the rate table of the Claude Code version that sent it, not by date. The Sonnet 5.5 cache-read cut ($0.20 → $0.10) applies from requests sent by Claude Code 2.1.299, so 0.9.2's fixed date (October 15) was off on machines that updated at another time — on the machine we compared, this month was $928.96 vs the usage page's $944.34, now about $944. The rate line at the bottom of the pane says *from Claude Code 2.1.299 · on this PC Oct 16*.
+
+Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.9.2</b></summary>
+
+- **Amounts match Claude's usage page** — the Sonnet 5.5 cache-read cut ($0.20 → $0.10) now counts from October 15, when the usage page applies it (the price list says October 7) — this month came out about $919 vs the usage page's $920 on the machine we compared, instead of $140 lower. The rate line at the bottom of the pane says so (by Claude Code version since 0.9.3).
 - **Gauge shape "Vertical steps"**, and **a battery frame on both steps gauges** — four steps from the bottom (Settings **Bar** tab → **Gauge shape**); the steps gauge stays the default.
 - **Older records use the rate of their day** — cost per question rebuilt from the session record, the context flow, compact savings and the other-model comparison use the rate in effect on each request's day.
 - **Update check no longer gets stuck at "Checking…"** — pressing it several times runs one command; with no response it stops after 90 seconds with **[Try again]**; a leftover state clears when you press the version button again.
 - **Cost by size key** — *Blue row = context now · border = the compact range you picked*.
 - **Highlight is off at first** — turn it on in Settings **Answer chip** tab → **Highlight** (if you've saved settings before, your value stays).
 
-Full list: [CHANGELOG](CHANGELOG.md).
+</details>
 
 <details>
 <summary><b>What's new in 0.9.1</b></summary>

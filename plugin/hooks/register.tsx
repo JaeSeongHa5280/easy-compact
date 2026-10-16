@@ -47,6 +47,8 @@ import {
   projectSlug,
   spendUsd,
   extraUsd,
+  engineOfLine,
+  engineSince,
   compactOutputOf,
   retroUsd,
   modelKey,
@@ -554,11 +556,14 @@ async function refreshSpend($: EngineInterface, minGapMs = 30_000, isWanted = fa
     // 0.9.0: 어림은 오늘 · 이번 달 합계에 더하지 않고 따로 보이기만 — 회사 PC 대조 전(정본 M2 규칙 "차이 ≤ $5 → 따로": 아는 차이 $4.75 <
     // 그 PC 어림 $11.41 이라 더하면 설정 화면보다 높아질 수 있다). 대조 뒤 맞으면 다시 더한다
     const retroMonth = retroUsd(out.retro, first, today, mix, outTokens)
+    // 0.9.3: 요율이 바뀐 판으로 이 PC 가 처음 요청한 날(패널 요율 줄 "이 PC 는 10월 16일") — 이번 달 기록에 옛 판 · 새 판이 다 있을 때만
+    const since = engineSince(out.days)
     await update($, spend, () => ({
       atMs: nowMs,
       today: spendUsd(out.days!, today, today) + extraUsd(out.extra, today, today),
       month: spendUsd(out.days!, first, today) + extraUsd(out.extra, first, today),
       retroMonth: retroMonth.usd,
+      ...(Object.keys(since).length > 0 ? { engineSince: since } : {}),
     }))
     await update($, spendFailed, () => false)
     spendFailAt = 0
@@ -1333,13 +1338,21 @@ async function followPaneEvent($: EngineInterface): Promise<void> {
  */
 let oldEngine: string | null = null
 
+/**
+ * 지금 엔진 판(0.9.3 — 회사 PC 의뢰서: 앱 설정 화면은 요청을 보낸 판의 요율표로 센다). 이 세션 요청의 값을 그 판의 요율로 센다 — 못 읽으면
+ * null(지금 요율). 모듈 변수라 다시 불러오면 비지만 session.start 가 다시 채운다
+ */
+let engineNow: string | null = null
+
 async function checkEngine($: EngineInterface): Promise<void> {
   try {
     const v = await $.session.version()
     const at = v.base ?? v.version
     oldEngine = engineBelow(at) ? at : null
+    engineNow = engineOfLine(at) ?? null
   } catch {
     oldEngine = null
+    engineNow = null
   }
 }
 
@@ -1832,10 +1845,13 @@ async function recordStep(
   const flow = await readFlow($)
   // 다시 쓴 값 · 점의 유지 시간은 기록에서 잰 세션 유지 시간(엔진이 주는 요청 값엔 종류가 없다) — 못 쟀으면 점엔 안 적는다
   const ttl = await read($, ttlMeasured)
-  const rewrite = rewriteOf(tokens, model, lastCtxOf(flow), ttl ?? ttlOf(await read($, usage)))
+  const rewrite = rewriteOf(tokens, model, lastCtxOf(flow), ttl ?? ttlOf(await read($, usage)), null, engineNow)
   // 기록을 다 읽은 흐름일 때만 공통 앞부분을 잰다(못 읽었거나 읽는 중이면 다시 연 세션의 첫 요청이 세션 첫 요청처럼 보인다)
   const isWhole = (await read($, flowLoaded)) && (await read($, flowNote)) === null
-  await writeFlow($, withPoint(flow, { atMs: await $.clock.now(), ctx: contextTokens, usd: cost.usd, model, ...(ttl !== null ? { ttl } : {}) }, tokens, isWhole))
+  await writeFlow(
+    $,
+    withPoint(flow, { atMs: await $.clock.now(), ctx: contextTokens, usd: cost.usd, model, ...(ttl !== null ? { ttl } : {}), ...(engineNow ? { engine: engineNow } : {}) }, tokens, isWhole),
+  )
   await update($, live, prev => {
     const base: LiveTurn =
       prev && prev.turnId === turnId
@@ -2217,7 +2233,7 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
   // 컨텍스트 흐름에 컴팩트 한 번: 직전 크기와 실제 값(엔진이 준 토큰 × 요율). 직후 크기는 다음 요청이 채운다
   const flow = await readFlow($)
   const before0 = await read($, usage)
-  const parts = result.usage && before0 ? costOf(result.usage, before0.model) : null
+  const parts = result.usage && before0 ? costOf(result.usage, before0.model, undefined, null, engineNow) : null
   const measured = parts?.usd ?? null
   const before = result.tokensBefore ?? before0?.contextTokens ?? flow.points[flow.points.length - 1]?.ctx ?? 0
   // N2: 직후 크기는 엔진이 준 tokensAfter(요약 + 남긴 메시지) — 없을 때만 다음 요청이 채운다
@@ -2626,7 +2642,7 @@ async function storedSaveOrNull($: EngineInterface): Promise<SaveTurn | null> {
  * 최근 SAVE_KEEP 개를 남긴다
  */
 async function recordSaveTurn($: EngineInterface, turn: LiveTurn): Promise<void> {
-  const r = turn.model ? ratesFor(turn.model, 0) : null
+  const r = turn.model ? ratesFor(turn.model, 0, null, engineNow) : null
   if (!r || turn.steps <= 0) return
   const writeUsd = Math.max(0, turn.cost.write - (turn.rewriteUsd ?? 0))
   const one: SaveTurn = { steps: turn.steps, output: turn.outputTokens, write: Math.round((writeUsd / r.write1h) * 1e6) }
@@ -3009,7 +3025,7 @@ export const register: Register = on => {
     const result = yield* next(e)
     if (e.agentId !== undefined && result.usage) {
       try {
-        const cost = costOf(result.usage, result.usage.model, 5)
+        const cost = costOf(result.usage, result.usage.model, 5, null, engineNow)
         if (cost) await recordAgentStep($, e.agentId, cost, result.usage.model)
       } catch {
         // 기록 실패가 턴을 멈추면 안 된다
@@ -3018,7 +3034,7 @@ export const register: Register = on => {
     if (e.agentId === undefined && result.usage) {
       try {
         // 요율은 이 요청에 실제로 답한 모델 기준(API 가 보고한 model id), 쓰기는 이 세션 메인 대화의 유지 시간 요율
-        const cost = costOf(result.usage, result.usage.model, ttlOf(await read($, usage)))
+        const cost = costOf(result.usage, result.usage.model, ttlOf(await read($, usage)), null, engineNow)
         // 모델을 바꾼 뒤 첫 요청인가 — 아래에서 "모델 바뀜" 표시를 지우기 전에 잡아 둔다
         const switchedFrom = (await read($, usage))?.switchedFrom ?? null
         if (cost) await recordStep($, e.turnId, cost, result.usage, stepLabel(result.toolUses), result.usage.model, e.effort, switchedFrom)
@@ -3186,7 +3202,7 @@ export const register: Register = on => {
       const result = await next(e)
       // 컴팩트 미리 계산(엔진이 다음 컴팩트를 위해 미리 요약)도 대화 기록에 없는 요청 — 앱 자체 요청 줄로
       if (e.agentId === undefined && e.trigger === 'precompute' && !result.skip && result.usage) {
-        const pre = costOf(result.usage, (await read($, usage))?.model ?? (await $.session.model()))
+        const pre = costOf(result.usage, (await read($, usage))?.model ?? (await $.session.model()), undefined, null, engineNow)
         if (pre) {
           trackedUsd += pre.usd
           await addAppCost($, pre.usd, L('컴팩트 미리 계산', 'compact precompute'))
@@ -3508,6 +3524,8 @@ export const register: Register = on => {
       const allLine = await allSpendOf($, sPane, shownMode)
       if (allLine?.state === 'measuring') void refreshSpend($, 5_000, true).catch(() => {})
       const allEl = drawAllSpend(ui, allLine)
+      // 패널 맨 아래 요율 줄의 "이 PC 는 10월 16일"(0.9.3) — 이번 달을 잰 값에서
+      const rateSince = (await read($, spend))?.engineSince ?? null
       body =
         shownMode === 'simple' ? (
           <Box flexDirection="column">
@@ -3521,7 +3539,7 @@ export const register: Register = on => {
             {drawNow(ui, e.surface, u, nowMs, widthPx, perm, inputsNow, foldOf('now'), modelLine, colors)}
             {history}
             {drawCompactCard(ui, flowParts, effEl, foldOf('compact'), timingEl('detail'))}
-            {drawReference(ui, u, allSums.length > 0 ? allSums[allSums.length - 1]! : null, nowMs)}
+            {drawReference(ui, u, allSums.length > 0 ? allSums[allSums.length - 1]! : null, nowMs, rateSince)}
           </Box>
         )
     }

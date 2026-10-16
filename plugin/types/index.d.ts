@@ -105,7 +105,8 @@ export type Settings = {
 
 /** 오늘 · 이번 달 사용량(달러) — atMs 에 잰 값. tools/scan-spend.mjs 결과를 cost.ts spendUsd 로 센 것 */
 /** retroMonth = 이번 달 값 중 잰 값이 없는 컴팩트 어림(M2 — 장부 전 · 질문 기록 60개 밖, 대화 기록의 컴팩트 크기로) */
-export type SpendTotals = { atMs: number; today: number; month: number; retroMonth?: number }
+/** engineSince = 요율이 바뀐 판(minEngine) → 이 PC 가 그 판으로 처음 요청한 날(이번 달에 옛 판 · 새 판이 다 있을 때만, 0.9.3) */
+export type SpendTotals = { atMs: number; today: number; month: number; retroMonth?: number; engineSince?: Record<string, string> }
 
 /**
  * 설정 탭 easy-compact 칸(업데이트, 마켓 설치본만 — 2026-10-14 사용자 1~3안 · 자동 확인 없음). phase: idle(아직) · checking(마켓 받는 중) ·
@@ -404,6 +405,8 @@ export type CtxPoint = {
   ttl?: number
   /** 이 요청에 답한 모델 id — 모델 바꾼 시점을 그린다. 모델을 적기 전 판 저장 파일엔 없다 */
   model?: string
+  /** 이 요청을 보낸 Claude Code 판(0.9.3 — 요율이 판으로 갈리는 모델). 모르면 없다(날짜로 고른다) */
+  engine?: string
 }
 
 /** 컴팩트 한 번. index = 그 직전까지의 점 수(그래프에서 세로선 자리) */

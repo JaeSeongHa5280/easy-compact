@@ -4,6 +4,13 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.9.3] — 2026-10-16
+
+### Fixed
+- **Each request uses the rates of the Claude Code version that sent it** — 0.9.2 fixed the Sonnet 5.5 cache-read cut ($0.20 → $0.10) to October 15 (UTC), but Claude's usage page prices a request by the rate table of the Claude Code version that sent it, not by date (2.1.295 = $0.20, 2.1.299 = $0.10). Machines move to 2.1.299 at different times, so a fixed date is off on some of them — on the machine we compared (2.1.299 from October 16 00:29 UTC), this month was $928.96 vs the usage page's $944.34: one day of the cut. Now the rate comes from the Claude Code version recorded on each line of the session record — for today, this month, cost per question rebuilt from the record, the context flow, compact savings and the requests you make now (about $944 on that machine). Records without a version count from October 16.
+- **The rate line at the bottom of the pane** — *cache read 0.20 → 0.10 (from Claude Code 2.1.299 · on this PC Oct 16 — the price list says Oct 7)* and "each request uses the rates of the Claude Code version that sent it". The date for this PC shows only when this month has requests from both the old and the new version.
+- The first today / this month measurement reads this month's records once more (the cache now splits them by version).
+
 ## [0.9.2] — 2026-10-16
 
 ### Added

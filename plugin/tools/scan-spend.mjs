@@ -3,7 +3,8 @@
 // mod 의 $.fs.read 는 4 MiB 넘는 파일을 거부하고 기록은 수백 개라 $.process.run 으로 이 스크립트를 돌린다(scan-transcript.mjs 와 같은 길).
 //
 // 쓰는 법: node scan-spend.mjs <projects 폴더> <캐시 파일> <시작 시각 ms> [<mod 데이터 폴더>]
-// 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, extra: { "YYYY-MM-DD": 달러 },
+// 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>|<엔진 판>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, extra: { "YYYY-MM-DD": 달러 },
+//   모델 칸의 "|<엔진 판>" = 그 요청을 보낸 Claude Code 판(기록 줄의 version — 0.9.3: 앱 설정 화면은 판의 요율표로 센다). 판이 없는 줄은 "<model>" 만
 //   retro: { "YYYY-MM-DD": { "<model>": [개수, 컴팩트 전 크기 합] } }, calib: [[컴팩트 전 크기, 모델, 달러], …], files, scanned }
 //   extra = 대화 기록에 없는 요청(컴팩트 요청 · 앱 자체 요청) — mod 데이터 폴더를 주면 그 안 extra/ · turns/ 만 읽는다(아래 끝)
 //   retro = 기록의 컴팩트 경계(compact_boundary) 중 mod 가 잰 값이 없는 것(장부 전 · 질문 기록 60개 밖) — 값은 mod 가 잰 컴팩트(calib)로 어림(M2)
@@ -113,8 +114,10 @@ async function scanFile(f) {
     else w1 += rest
     const day = dayOf(at)
     const model = typeof m.model === 'string' ? m.model : '?'
+    // 0.9.3: 같은 날 · 같은 모델도 엔진 판마다 따로(요율이 판으로 갈린다)
+    const engine = typeof r.version === 'string' && /^\d+\.\d+\.\d+/.test(r.version) ? r.version : ''
     const tier = input + read + write > LONG_OVER ? 'L' : 'S'
-    const t = slot(slot(slot(days, day, {}), model, {}), tier, [0, 0, 0, 0, 0])
+    const t = slot(slot(slot(days, day, {}), engine ? `${model}|${engine}` : model, {}), tier, [0, 0, 0, 0, 0])
     t[0] += input
     t[1] += output
     t[2] += read
@@ -131,17 +134,19 @@ function slot(obj, key, empty) {
   return obj[key]
 }
 
-// v2(N1): 출력 셈 · UTC 날짜가 바뀌어 v1 캐시는 버린다. v3(M2): 파일마다 컴팩트 경계도 담아 v2 는 버린다(처음 한 번 다시 읽음)
-let cache = { v: 3, files: {} }
+// v2(N1): 출력 셈 · UTC 날짜가 바뀌어 v1 캐시는 버린다. v3(M2): 파일마다 컴팩트 경계도 담아 v2 는 버린다(처음 한 번 다시 읽음).
+// v4(0.9.3): 모델 칸을 엔진 판으로 나눠 v3 는 버린다
+const CACHE_V = 4
+let cache = { v: CACHE_V, files: {} }
 try {
   const old = JSON.parse(readFileSync(cacheFile, 'utf8'))
-  if (old && old.v === 3 && old.files) cache = old
+  if (old && old.v === CACHE_V && old.files) cache = old
 } catch {
   // 처음
 }
 const files = []
 walk(root, 0, files)
-const next = { v: 3, files: {} }
+const next = { v: CACHE_V, files: {} }
 let scanned = 0
 for (const f of files) {
   const hit = cache.files[f.path]

@@ -5,7 +5,7 @@
 // 그 구간은 그때 캐시 상태로 추정하고(compactEffects), mod 가 본 컴팩트는 엔진이 준 실제 토큰으로 잰다.
 
 import type { CompactEvent, CtxPoint } from '../types'
-import { barAnimCss, CACHE_TTL_MIN, costOf, dayOf, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
+import { barAnimCss, CACHE_TTL_MIN, costOf, dayOf, engineOfLine, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
 import type { Tokens } from './cost'
 import { L } from './i18n'
 
@@ -22,9 +22,9 @@ export const MAX_POINTS = 5000
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
-/** 기록에서 뽑은 한 건: 요청 하나(p) · 컴팩트 하나(c) · 질문 시작 하나(q) */
+/** 기록에서 뽑은 한 건: 요청 하나(p — engine = 그 요청을 보낸 Claude Code 판, 기록 줄의 version · 0.9.3) · 컴팩트 하나(c) · 질문 시작 하나(q) */
 export type FlowRecord =
-  | { kind: 'p'; atMs: number; tokens: Tokens; model: string }
+  | { kind: 'p'; atMs: number; tokens: Tokens; model: string; engine?: string }
   | { kind: 'c'; atMs: number; trigger: string; pre: number }
   | { kind: 'q'; atMs: number; text?: string }
 
@@ -96,7 +96,8 @@ export function recordsFromTranscript(text: string): FlowRecord[] {
     }
     const tokens = tokensOfUsage(m.usage)
     seen.set(m.id, tokens)
-    out.push({ kind: 'p', atMs, model: m.model ?? '?', tokens })
+    const engine = engineOfLine(r.version)
+    out.push({ kind: 'p', atMs, model: m.model ?? '?', tokens, ...(engine ? { engine } : {}) })
   }
   return out
 }
@@ -139,17 +140,19 @@ export function lastMainTtl(text: string): number | null {
   return null
 }
 
-/** tools/scan-transcript.mjs 의 출력(줄마다 "p …" · "c …" · "q …") → 건들. p 줄 끝 둘(5분 · 1시간 쓰기)은 없을 수 있다 */
+/** tools/scan-transcript.mjs 의 출력(줄마다 "p …" · "c …" · "q …") → 건들. p 줄 끝 둘(5분 · 1시간 쓰기) · 셋째(엔진 판, "-" = 모름)는 없을 수 있다 */
 export function recordsFromLines(text: string): FlowRecord[] {
   const out: FlowRecord[] = []
   for (const line of text.split('\n')) {
     const f = line.trim().split(/\s+/)
     if (f[0] === 'p' && f.length >= 7) {
-      const [, at, input, output, read, write, model, w5, w1] = f
+      const [, at, input, output, read, write, model, w5, w1, ver] = f
+      const engine = engineOfLine(ver)
       out.push({
         kind: 'p',
         atMs: Number(at) || 0,
         model: model!,
+        ...(engine ? { engine } : {}),
         tokens: {
           input_tokens: Number(input) || 0,
           output_tokens: Number(output) || 0,
@@ -267,8 +270,15 @@ export function flowFromRecords(records: readonly FlowRecord[]): Flow {
     const ttl = ttlOfTokens(t) ?? ttlAt(flow.points[flow.points.length - 1])
     addPoint(
       flow,
-      // 0.9.2: 그 요청 날의 요율(기록에서 다시 만든 흐름 — 요율이 바뀐 모델은 바뀐 날 전후로 갈린다)
-      { atMs: r.atMs, ctx, usd: costOf(t, r.model, ttl, dayOf(r.atMs))?.usd ?? 0, ...(r.model && r.model !== '?' ? { model: r.model } : {}), ...(ttlOfTokens(t) !== null ? { ttl: ttlOfTokens(t)! } : {}) },
+      // 0.9.2: 그 요청 날의 요율(기록에서 다시 만든 흐름 — 요율이 바뀐 모델은 바뀐 날 전후로 갈린다), 0.9.3: 판을 알면 그 판의 요율
+      {
+        atMs: r.atMs,
+        ctx,
+        usd: costOf(t, r.model, ttl, dayOf(r.atMs), r.engine ?? null)?.usd ?? 0,
+        ...(r.model && r.model !== '?' ? { model: r.model } : {}),
+        ...(ttlOfTokens(t) !== null ? { ttl: ttlOfTokens(t)! } : {}),
+        ...(r.engine ? { engine: r.engine } : {}),
+      },
       t.input_tokens + t.cache_creation_input_tokens,
     )
   }
@@ -282,22 +292,28 @@ export function scanTranscript(text: string): Flow {
 /**
  * 세션별 저장 파일: 다시 불러올 때마다 큰 기록을 다시 읽지 않게. v2 = 점마다 모델(모델 바꾼 시점을 그린다) —
  * 모델 id 는 표(m)에 한 번만 적고 점엔 그 번호(-1 = 모름). 점마다 id 를 쓰면 파일이 몇 배다. v3 = 질문 시작 시각(q),
- * v4 = 모델별 공통 앞부분(s), v5 = 점마다 캐시 유지 시간(다섯째 칸, 모르면 없음)
+ * v4 = 모델별 공통 앞부분(s), v5 = 점마다 캐시 유지 시간(다섯째 칸, 모르면 없음). 0.9.3: 점마다 엔진 판(여섯째 칸 = 판 표 e 의 번호 —
+ * 그때 다섯째 칸은 유지 시간을 모르면 0). 판 번호를 v 는 그대로 두고 덧붙여 옛 판 mod 도 읽는다(여섯째 칸 · e 는 안 본다)
  */
 export function serializeFlow(flow: Flow): string {
-  const models: string[] = []
-  const idOf = (model: string | undefined) => {
-    if (!model) return -1
-    const at = models.indexOf(model)
+  const tableOf = (list: string[]) => (name: string | undefined) => {
+    if (!name) return -1
+    const at = list.indexOf(name)
     if (at >= 0) return at
-    models.push(model)
-    return models.length - 1
+    list.push(name)
+    return list.length - 1
   }
+  const models: string[] = []
+  const engines: string[] = []
+  const idOf = tableOf(models)
+  const engineIdOf = tableOf(engines)
   const p = flow.points.map(pt => {
     const row = [pt.atMs, pt.ctx, Math.round(pt.usd * 1e6) / 1e6, idOf(pt.model)]
-    return pt.ttl === 5 || pt.ttl === 60 ? [...row, pt.ttl] : row
+    const ttl = pt.ttl === 5 || pt.ttl === 60 ? pt.ttl : 0
+    const ei = engineIdOf(pt.engine)
+    return ei >= 0 ? [...row, ttl, ei] : ttl ? [...row, ttl] : row
   })
-  return JSON.stringify({ v: 5, m: models, p, c: flow.compactions, ...(flow.questions ? { q: flow.questions } : {}), ...(flow.shared ? { s: flow.shared } : {}) })
+  return JSON.stringify({ v: 5, m: models, ...(engines.length > 0 ? { e: engines } : {}), p, c: flow.compactions, ...(flow.questions ? { q: flow.questions } : {}), ...(flow.shared ? { s: flow.shared } : {}) })
 }
 
 /**
@@ -307,14 +323,17 @@ export function serializeFlow(flow: Flow): string {
  */
 export function parseFlowFile(text: string): Flow | null {
   try {
-    const raw = JSON.parse(text) as { v?: number; m?: unknown; p?: unknown; c?: unknown; q?: unknown; s?: unknown }
+    const raw = JSON.parse(text) as { v?: number; m?: unknown; e?: unknown; p?: unknown; c?: unknown; q?: unknown; s?: unknown }
     if ((raw.v !== 1 && raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5) || !Array.isArray(raw.p) || !Array.isArray(raw.c)) return null
-    const models = Array.isArray(raw.m) ? (raw.m as unknown[]).map(x => (typeof x === 'string' ? x : '')) : []
+    const names = (list: unknown) => (Array.isArray(list) ? (list as unknown[]).map(x => (typeof x === 'string' ? x : '')) : [])
+    const models = names(raw.m)
+    const engines = names(raw.e)
     const points = (raw.p as unknown[])
       .filter((x): x is number[] => Array.isArray(x) && x.length >= 3)
-      .map(([atMs, ctx, usd, mi, ttl]) => {
+      .map(([atMs, ctx, usd, mi, ttl, ei]) => {
         const model = typeof mi === 'number' && mi >= 0 ? models[mi] : undefined
-        return { atMs: num(atMs), ctx: num(ctx), usd: num(usd), ...(model ? { model } : {}), ...(ttl === 5 || ttl === 60 ? { ttl } : {}) }
+        const engine = typeof ei === 'number' && ei >= 0 ? engines[ei] : undefined
+        return { atMs: num(atMs), ctx: num(ctx), usd: num(usd), ...(model ? { model } : {}), ...(ttl === 5 || ttl === 60 ? { ttl } : {}), ...(engine ? { engine } : {}) }
       })
     const compactions = (raw.c as Partial<CompactEvent>[])
       .filter(c => c && typeof c.index === 'number' && typeof c.before === 'number')
@@ -489,8 +508,9 @@ export function compactEffects(
 ): CompactEffect[] {
   return flow.compactions.map((event, i) => {
     const atModel = flow.points[event.index - 1]?.model ?? flow.points[event.index]?.model ?? model
-    // 0.9.2: 그 컴팩트 날의 요율 · 아낀 값은 요청마다 그 요청 날의 요율
-    const r = ratesFor(atModel, event.before, dayOf(event.atMs))
+    // 0.9.2: 그 컴팩트 날의 요율 · 아낀 값은 요청마다 그 요청 날의 요율. 0.9.3: 판을 알면 판(컴팩트는 앞뒤 요청의 판)
+    const atEngine = flow.points[event.index - 1]?.engine ?? flow.points[event.index]?.engine ?? null
+    const r = ratesFor(atModel, event.before, dayOf(event.atMs), atEngine)
     const after = event.after ?? event.before
     const removed = Math.max(0, event.before - after)
     const nextIndex = Math.min(flow.compactions[i + 1]?.index ?? flow.points.length, flow.points.length)
@@ -508,7 +528,7 @@ export function compactEffects(
     const summaryTtl = flow.points[event.index]?.ttl ?? ttlAt(flow.points[event.index - 1])
     const costUsd = request + (Math.min(est.summaryOf(event), after) * writeRate(r, summaryTtl)) / 1e6
     // 아낀 값: 줄인 양을 그 뒤 요청마다 다시 읽지 않은 값 — 요청마다 그 요청 모델의 읽기 요율
-    const readOf = (p: CtxPoint | undefined) => (ratesFor(p?.model ?? atModel, p?.ctx ?? after, dayOf(p?.atMs)) ?? r).read
+    const readOf = (p: CtxPoint | undefined) => (ratesFor(p?.model ?? atModel, p?.ctx ?? after, dayOf(p?.atMs), p?.engine ?? null) ?? r).read
     let savedUsd = 0
     for (let j = event.index; j < event.index + requestsAfter; j++) savedUsd += (removed * readOf(flow.points[j])) / 1e6
     // 본전까지 남은 요청은 마지막 요청의 모델 기준
@@ -711,8 +731,8 @@ export function segmentExtra(
   const base = last?.after ?? fallbackAfter
   const scales = tokenScales(flow.points, from)
   const extraOf = (p: CtxPoint, k: number) => {
-    // 0.9.2: 미룬 값은 요청마다 그 요청 날의 요율
-    const r = ratesFor(p.model ?? model, p.ctx, dayOf(p.atMs))
+    // 0.9.2: 미룬 값은 요청마다 그 요청 날의 요율(0.9.3: 판을 알면 판)
+    const r = ratesFor(p.model ?? model, p.ctx, dayOf(p.atMs), p.engine ?? null)
     return r ? (Math.max(0, p.ctx - base * scales[k]!) * r.read) / 1e6 : 0
   }
   let sum = 0

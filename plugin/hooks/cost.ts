@@ -30,13 +30,20 @@ const rates = (label: string, input: number, output: number, read: number): Rate
  * 값), history = 값이 바뀐 모델의 옛 요율 — until(UTC "YYYY-MM-DD", 그날부터 다음 요율) 이른 것부터. 그날의 요율 = until 이 그날보다 늦은
  * 첫 줄, 없으면 base. 다음 인하 · 인상은 지금 base 를 history 끝에 옮기고 base 를 바꾸면 된다. UTC 날짜 단위라 시행일 중 몇 시부터인지는
  * 모른다 — "그날부터" 로 센다(오차는 그날 하루치 일부)
+ *
+ * 0.9.3(회사 PC 의뢰서 "시행일이 하루 어긋남" 2026-10-16): 앱 설정(사용량) 화면은 날짜가 아니라 요청을 보낸 엔진(Claude Code 판)의 요율표로
+ * 센다 — Sonnet 5.5 요청을 기록의 version 으로 가르니 설정 값 = 2.1.295 몫 $0.20 + 2.1.299 몫 $0.10($0.45 차). 엔진 업데이트 시각이
+ * PC 마다 달라 고정 날짜는 PC 마다 어긋난다. 그래서 minEngine(그 판부터 새 요율)이 있으면 판으로 고르고, 판을 모르는 요청(옛 기록 · 판을
+ * 못 읽은 때)만 until 날짜로 고른다
  */
+export type RateChange = { until: string; minEngine?: string; base: Rates; announced?: string }
+
 type PriceRow = {
   match: RegExp
   base: Rates
   long?: { over: number; rates: Rates }
-  /** announced = 가격표가 발표한 시행일이 until 과 다를 때(앱 설정 화면에 맞춰 늦춘 경우) — 패널 요율 줄이 둘 다 보인다 */
-  history?: readonly { until: string; base: Rates; announced?: string }[]
+  /** announced = 가격표가 발표한 시행일이 until 과 다를 때 — 패널 요율 줄이 둘 다 보인다. minEngine = 이 판부터 새 요율(0.9.3) */
+  history?: readonly RateChange[]
 }
 
 const PRICE_TABLE: PriceRow[] = [
@@ -50,8 +57,11 @@ const PRICE_TABLE: PriceRow[] = [
   // 요율 변경 기록 — Sonnet 5.5 캐시 읽기 $0.20 → $0.10(입력의 0.1배 → 0.05배, 입력 2 · 출력 10 · 쓰기 그대로). 근거: Anthropic 가격표
   // (platform.claude.com/docs/en/about-claude/pricing — 2026-10-07 부터) · 엔진 2.1.299 등급 tier_2_10_cache_read_0_10(check-rates — 2.1.295
   // 는 tier_2_10 = 읽기 0.2). 0.9.1 은 가격표대로 10-07 부터 셌다. 0.9.2: 금액은 앱 설정(사용량) 화면에 맞춘다 — 회사 PC 대조(2026-10-16, 보고서 둘)에서 설정 화면은 인하를 10-15(UTC) 무렵부터만 반영했다: 10-15 부터로 세면 이번 달
-  // $919.1 vs 설정 $920.37(10-07 부터면 $776.86, 10-14 부터면 $899.5). 설정 화면이 지난 구간을 더 다시 세면 이 날짜를 옮긴다
-  { match: /sonnet-5-5/, base: rates('Sonnet 5.5', 2, 10, 0.1), history: [{ until: '2026-10-15', base: rates('Sonnet 5.5', 2, 10, 0.2), announced: '2026-10-07' }] },
+  // $919.1 vs 설정 $920.37(10-07 부터면 $776.86, 10-14 부터면 $899.5). 0.9.3(같은 PC 의뢰서, 기록 10-16T04:26 까지): 설정 $944.34 vs 0.9.2
+  // $928.96 — 설정 화면은 요청을 보낸 엔진의 요율표로 센다(2.1.295 = tier_2_10 읽기 $0.20 · 2.1.299 = tier_2_10_cache_read_0_10 $0.10, 그 PC 는
+  // 10-16T00:29 UTC 에 2.1.299). 그래서 minEngine 2.1.299, 판을 모르는 요청은 10-16 부터(그 PC 의 날짜 — 판 기준과 같은 선, $944.18).
+  // npm 엔 2.1.296(10-09)도 있으나 앱 · 두 PC 는 2.1.295 → 2.1.299 라 그 판의 요율은 모른다(실행 파일을 못 봄)
+  { match: /sonnet-5-5/, base: rates('Sonnet 5.5', 2, 10, 0.1), history: [{ until: '2026-10-16', minEngine: '2.1.299', base: rates('Sonnet 5.5', 2, 10, 0.2), announced: '2026-10-07' }] },
   { match: /sonnet-5/, base: rates('Sonnet 5.x', 2, 10, 0.2) },
   { match: /sonnet-4/, base: rates('Sonnet 4.x', 3, 15, 0.3) },
   // Haiku 5.5 는 프롬프트가 10만 토큰을 넘으면 요율이 5배다
@@ -122,20 +132,77 @@ export function priceWarnings(model: string | null | undefined, window: number |
   return out
 }
 
+/** 기록 줄의 version(그 줄을 쓴 Claude Code 판, 예 "2.1.299") — 판 꼴이 아니면 undefined. tools/scan-transcript.mjs · scan-spend.mjs 와 같은 규칙 */
+export function engineOfLine(v: unknown): string | undefined {
+  return typeof v === 'string' && /^\d+\.\d+\.\d+/.test(v) ? v : undefined
+}
+
+/** 엔진 판 "2.1.299" · "2.1.300-dev" → [2, 1, 299]. 못 읽으면 null */
+function engineParts(v: string): number[] | null {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v.trim())
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
+}
+
+/** 엔진 판 v 가 min 이상인가(0.9.3 — 요율을 판으로 고른다). 어느 쪽이든 못 읽으면 null(날짜로 고른다) */
+export function engineAtLeast(v: string, min: string): boolean | null {
+  const a = engineParts(v)
+  const b = engineParts(min)
+  if (!a || !b) return null
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! > b[i]!
+  return true
+}
+
 /**
- * 모델 id 에 맞는 요율. 모르는 모델이면 null — 달러를 내지 않고 토큰만 보인다. day(UTC "YYYY-MM-DD") 를 주면 그날 시행 중이던 요율
- * (history), 안 주면 지금 요율 — 지난 기록을 다시 셀 때(질문별 비용 다시 만들기 · 흐름 · 컴팩트 효과 · 한 달 합)는 요청 날짜를 준다
+ * 모델 id 에 맞는 요율. 모르는 모델이면 null — 달러를 내지 않고 토큰만 보인다. 요율이 바뀐 모델(history)은 engine(그 요청을 보낸 Claude
+ * Code 판)을 주면 판으로(0.9.3 — 앱 설정 화면과 같은 기준), 판을 모르면 day(UTC "YYYY-MM-DD")로 그날 시행 중이던 요율, 둘 다 없으면 지금
+ * 요율. 지난 기록을 다시 셀 때(질문별 비용 다시 만들기 · 흐름 · 컴팩트 효과 · 한 달 합)는 기록의 판 · 날짜를, 지금 요청은 지금 엔진 판을 준다
  */
-export function ratesFor(model: string, promptTokens = 0, day: string | null = null): Rates | null {
+export function ratesFor(model: string, promptTokens = 0, day: string | null = null, engine: string | null = null): Rates | null {
   const row = PRICE_TABLE.find(r => r.match.test(model))
   if (!row) return null
-  const old = day === null ? undefined : row.history?.find(h => day < h.until)
+  const isOld = (h: RateChange) => {
+    const isNew = engine && h.minEngine ? engineAtLeast(engine, h.minEngine) : null
+    return isNew !== null ? !isNew : day !== null && day < h.until
+  }
+  const old = row.history?.find(isOld)
   return row.long && promptTokens > row.long.over ? row.long.rates : (old?.base ?? row.base)
 }
 
-/** 값이 바뀐 요율(패널 요율 줄 — 앱 설정 화면 금액과 어긋나는 까닭이 보이게): 이 모델의 옛 요율과 바뀐 날, 이른 것부터. 없으면 빈 목록 */
-export function rateHistory(model: string): readonly { until: string; base: Rates; announced?: string }[] {
+/** 값이 바뀐 요율(패널 요율 줄 — 앱 설정 화면 금액과 어긋나는 까닭이 보이게): 이 모델의 옛 요율과 바뀐 날 · 판, 이른 것부터. 없으면 빈 목록 */
+export function rateHistory(model: string): readonly RateChange[] {
   return PRICE_TABLE.find(r => r.match.test(model))?.history ?? []
+}
+
+/** scan-spend 의 모델 칸 "<model>|<엔진 판>"(0.9.3) → [모델, 판]. 판이 없는 칸(0.9.2 캐시 · 판 없는 기록)은 [그대로, null] */
+export function splitEngineKey(key: string): [string, string | null] {
+  const bar = key.lastIndexOf('|')
+  return bar > 0 ? [key.slice(0, bar), key.slice(bar + 1) || null] : [key, null]
+}
+
+/**
+ * 이 PC 가 요율이 바뀐 판(minEngine)으로 처음 요청한 날(패널 요율 줄 "이 PC 는 10월 16일" — 0.9.3): scan-spend 날짜별 칸에서 옛 판 요청이 그날이나
+ * 그 전에 있고 새 판 요청이 처음 나온 날. 이번 달에 옛 판이 없으면(전 달에 이미 올림) 안 넣는다 — 그 달 1일로 잘못 보이지 않게
+ */
+export function engineSince(days: SpendDays): Record<string, string> {
+  const mins = new Set<string>()
+  for (const row of PRICE_TABLE) for (const h of row.history ?? []) if (h.minEngine) mins.add(h.minEngine)
+  const out: Record<string, string> = {}
+  const sorted = Object.keys(days).sort()
+  for (const min of mins) {
+    let sawOld = false
+    for (const day of sorted) {
+      const flags = Object.keys(days[day] ?? {}).map(k => {
+        const engine = splitEngineKey(k)[1]
+        return engine ? engineAtLeast(engine, min) : null
+      })
+      if (flags.includes(false)) sawOld = true
+      if (flags.includes(true)) {
+        if (sawOld) out[min] = day
+        break
+      }
+    }
+  }
+  return out
 }
 
 /** 날짜 쓰는 요청 · 기록의 UTC 날짜 — 시각을 모르면 null(지금 요율) */
@@ -144,8 +211,8 @@ export function dayOf(atMs: number | null | undefined): string | null {
 }
 
 /**
- * 오늘 · 이번 달 사용량 재료(tools/scan-spend.mjs 출력): 날짜("YYYY-MM-DD", 이 PC 지역 시각) → 모델 → 크기 묶음(S = 프롬프트 10만
- * 이하, L = 넘음) → [입력, 출력, 캐시 읽기, 5분 쓰기, 1시간 쓰기] 토큰
+ * 오늘 · 이번 달 사용량 재료(tools/scan-spend.mjs 출력): 날짜("YYYY-MM-DD", UTC) → 모델(0.9.3 부터 "<model>|<엔진 판>" — 판을 아는 기록) →
+ * 크기 묶음(S = 프롬프트 10만 이하, L = 넘음) → [입력, 출력, 캐시 읽기, 5분 쓰기, 1시간 쓰기] 토큰
  */
 export type SpendDays = Record<string, Record<string, Partial<Record<'S' | 'L', number[]>>>>
 
@@ -154,10 +221,11 @@ export function spendUsd(days: SpendDays, from: string, to: string): number {
   let usd = 0
   for (const [day, byModel] of Object.entries(days)) {
     if (day < from || day > to) continue
-    for (const [model, tiers] of Object.entries(byModel)) {
+    for (const [key, tiers] of Object.entries(byModel)) {
+      const [model, engine] = splitEngineKey(key)
       for (const [tier, t] of Object.entries(tiers)) {
-        // 그날 요율(0.9.1 — 값이 바뀐 모델은 바뀐 날 전후로 갈린다)
-        const r = ratesFor(model, tier === 'L' ? Number.MAX_SAFE_INTEGER : 0, day)
+        // 그 요청을 보낸 엔진 판의 요율(0.9.3), 판을 모르면 그날 요율(0.9.1 — 값이 바뀐 모델은 바뀐 날 전후로 갈린다)
+        const r = ratesFor(model, tier === 'L' ? Number.MAX_SAFE_INTEGER : 0, day, engine)
         if (!r || !t) continue
         usd += ((t[0] ?? 0) * r.input + (t[1] ?? 0) * r.output + (t[2] ?? 0) * r.read + (t[3] ?? 0) * r.write5m + (t[4] ?? 0) * r.write1h) / 1e6
       }
@@ -332,11 +400,11 @@ export function thresholds(): Thresholds {
 /**
  * 요청 하나의 실제 값 = API 가 보고한 토큰 × 그 모델의 요율. 쓰기는 기록에 종류별 몫(5분 · 1시간)이 있으면 그대로, 없으면
  * writeTtl(분) — 메인 대화는 세션의 유지 시간(Usage.cacheTtlMin), 하위 에이전트는 5분(이 PC 기록 570개: 사이드체인 전부
- * ephemeral_5m). 엔진이 요청마다 주는 값엔 종류가 없다. 모르는 모델이면 null.
+ * ephemeral_5m). 엔진이 요청마다 주는 값엔 종류가 없다. 모르는 모델이면 null. day · engine = ratesFor(요율이 바뀐 모델 — 판 먼저, 없으면 날짜)
  */
-export function costOf(t: Tokens, model: string, writeTtl: number = CACHE_TTL_MIN, day: string | null = null): CostParts | null {
+export function costOf(t: Tokens, model: string, writeTtl: number = CACHE_TTL_MIN, day: string | null = null, engine: string | null = null): CostParts | null {
   const prompt = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
-  const r = ratesFor(model, prompt, day)
+  const r = ratesFor(model, prompt, day, engine)
   if (!r) return null
   const read = (t.cache_read_input_tokens * r.read) / 1e6
   const m5 = t.cache_creation_5m ?? 0
@@ -356,9 +424,9 @@ export const REWRITE_NOTE_USD = 0.25
  * 모델을 바꾼 뒤 첫 요청. prevCtx = 앞 메인 요청의 컨텍스트(flow.ts lastCtxOf), null 이면(세션 첫 요청 · 컴팩트 직후) 0.
  * 새 내용(파일 · 도구 결과)을 쓴 몫은 평소 캐시 쓰기라 넣지 않는다 — 쓰기 값 전체로 세면 새 세션 첫 질문도 "다시 씀" 이 된다
  */
-export function rewriteOf(t: Tokens, model: string, prevCtx: number | null, ttl: number = CACHE_TTL_MIN, day: string | null = null): number {
+export function rewriteOf(t: Tokens, model: string, prevCtx: number | null, ttl: number = CACHE_TTL_MIN, day: string | null = null, engine: string | null = null): number {
   if (prevCtx === null) return 0
-  const r = ratesFor(model, t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens, day)
+  const r = ratesFor(model, t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens, day, engine)
   if (!r) return 0
   const missed = Math.max(0, prevCtx - t.cache_read_input_tokens)
   return (Math.min(t.cache_creation_input_tokens, missed) * writeRate(r, ttlOfTokens(t) ?? ttl)) / 1e6
