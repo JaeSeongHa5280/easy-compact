@@ -52,10 +52,11 @@ function lerpHex(a: string, b: string, t: number): string {
  * 고리는 0.6.0 에 앱 컨텍스트 고리를 일부러 따른 꼴이라 입력창 오른쪽 앱 고리와 나란히 보여 헷갈렸다(동료 — 같은 고리가 싫다). 양 · 색 ·
  * 깜빡임 · 컴팩트 끝 줄어듦은 꼴과 무관하게 같다. 바 · 패널 머리 · 확인 카드 제목이 이 한 함수라 같이 바뀐다
  */
-export type GaugeShape = 'bar' | 'ring' | 'vbar' | 'cells'
-export const GAUGE_SHAPES: readonly GaugeShape[] = ['bar', 'ring', 'vbar', 'cells']
+export type GaugeShape = 'bar' | 'ring' | 'vbar' | 'cells' | 'vcells'
+/** 0.9.2: 칸 막대 세로(vcells)를 칸 막대 옆에 */
+export const GAUGE_SHAPES: readonly GaugeShape[] = ['bar', 'ring', 'vbar', 'cells', 'vcells']
 
-/** 그림 폭(px) — 가로 막대 · 칸 막대는 높이의 1.625배(16px → 26px), 고리 · 세로 막대는 정사각 */
+/** 그림 폭(px) — 가로 막대 · 칸 막대는 높이의 1.625배(16px → 26px), 고리 · 세로 막대 · 칸 막대 세로는 정사각 */
 export function gaugeWidth(shape: GaugeShape, px: number): number {
   return shape === 'bar' || shape === 'cells' ? Math.round(px * 1.625) : px
 }
@@ -132,7 +133,7 @@ export function gaugeSvg(g: GaugeLook): string {
  * 굵기 = 높이의 38%(16px → 6px — 고리 2px 은 막대엔 너무 가늘다). 움직임은 고리와 같은 이름 · 같은 때: gs = 앞 채움에서 지금으로(컴팩트
  * 끝 줄어듦 — 앞 단계 색에서 시작), gp = 권할 때 깜빡임(빨강 구간 위치로 세기). 키프레임엔 고정 hex 만(color-mix 는 렌더러를 죽인다)
  */
-function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
+function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): string {
   const clamp = (v: number) => Math.max(0, Math.min(1, v))
   const f = clamp(g.frac)
   const motion = g.motion !== false
@@ -141,20 +142,33 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
   const th = Math.max(4, Math.round(H * 0.38))
   const n2 = (v: number) => v.toFixed(2)
   const filled = (v: number) => (v <= 0 ? 0 : Math.min(4, Math.ceil(v * 4 - 1e-9)))
-  // 칸 막대 자리(4칸 — 25%씩)
+  const isCells = shape === 'cells' || shape === 'vcells'
+  // 칸 막대 · 칸 막대 세로(0.9.2): 배터리 테두리 안에 네 칸(25%씩) — 가로는 왼쪽부터, 세로는 아래부터. 테두리는 둘 다. 세로 칸만 쌓으면 메뉴 아이콘 ≡ 처럼 보였다
+  const gap = Math.max(1, Math.round(H * 0.08))
+  const frame = !isCells
+    ? ''
+    : shape === 'vcells'
+      ? `<rect x="${n2((W - Math.round(W * 0.62)) / 2)}" y="0.5" width="${Math.round(W * 0.62)}" height="${H - 1}" rx="2" fill="none" stroke="currentColor" stroke-opacity=".45"/>`
+      : `<rect x="0.5" y="${n2((H - Math.round(H * 0.75)) / 2)}" width="${W - 1}" height="${Math.round(H * 0.75)}" rx="2" fill="none" stroke="currentColor" stroke-opacity=".45"/>`
   const cellAt = (i: number) => {
-    const gap = Math.max(1, Math.round(H * 0.08))
+    if (shape === 'vcells') {
+      const fw = Math.round(W * 0.62)
+      const cw = fw - 4
+      const ch = (H - 4 - gap * 3) / 4
+      return `x="${n2((W - fw) / 2 + 2)}" y="${n2(H - 2 - (i + 1) * ch - i * gap)}" width="${cw}" height="${n2(ch)}" rx="1"`
+    }
     const ch = Math.max(5, Math.round(H * 0.5))
-    const cw = (W - 2 - gap * 3) / 4
-    return `x="${n2(1 + i * (cw + gap))}" y="${n2((H - ch) / 2)}" width="${n2(cw)}" height="${ch}" rx="1.5"`
+    const cw = (W - 5 - gap * 3) / 4
+    return `x="${n2(2.5 + i * (cw + gap))}" y="${n2((H - ch) / 2)}" width="${n2(cw)}" height="${ch}" rx="1"`
   }
   // 컴팩트 중(B11): 진행 파랑 — 막대는 지금 채움이 숨쉬고(현황 막대와 같은 .35 ↔ 1 · 1.4초), 칸 막대는 네 칸이 차례로 밝아진다(1.4초 한 바퀴,
   // 음수 지연이라 처음부터 차례 — 양수면 기다리는 동안 다 밝았다). 움직임이 꺼져 있으면 지금 채움을 멈춘 파랑으로
   if (g.busy === true) {
     let body = ''
     let css = ''
-    if (shape === 'cells') {
+    if (isCells) {
       const n = motion ? 4 : filled(f)
+      body = frame
       for (let i = 0; i < 4; i++) body += i < n ? `<rect class="c${i}" ${cellAt(i)} fill="${BUSY_HEX}"/>` : `<rect ${cellAt(i)} fill="currentColor" fill-opacity=".2"/>`
       if (motion) css = `@keyframes gc{0%,100%{opacity:.3}18%{opacity:1}45%{opacity:.3}}${[0, -1.05, -0.7, -0.35].map((d, i) => `.c${i}{animation:gc 1.4s linear ${d}s infinite}`).join('')}`
     } else if (shape === 'bar') {
@@ -169,7 +183,7 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
       body = `<rect x="${n2(x)}" y="1" width="${th}" height="${len}" rx="${th / 2}" fill="currentColor" fill-opacity=".2"/>`
       body += `<rect class="f" x="${n2(x)}" y="${n2(1 + len - h)}" width="${th}" height="${n2(h)}" rx="${th / 2}" fill="${BUSY_HEX}"/>`
     }
-    if (motion && shape !== 'cells') css = '@keyframes gb{50%{opacity:.35}}.f{animation:gb 1.4s ease-in-out infinite}'
+    if (motion && !isCells) css = '@keyframes gb{50%{opacity:.35}}.f{animation:gb 1.4s ease-in-out infinite}'
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${css ? `<style>${css}${REDUCE}</style>` : ''}${body}</svg>`
   }
   const from = g.from !== undefined && motion && Math.abs(g.from - f) > 0.005 ? clamp(g.from) : null
@@ -202,6 +216,7 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
     // 칸 막대: 단계가 칸으로(4칸 — 25%씩). 컴팩트로 줄면 비워지는 칸이 앞 색에서 바탕으로 옅어진다(.g)
     const n = filled(f)
     const nFrom = from !== null ? filled(from) : n
+    shapes = frame
     for (let i = 0; i < 4; i++) {
       const at = cellAt(i)
       shapes += i < n ? `<rect class="f" ${at} fill="${color}" fill-opacity="${opacity}"/>` : i < nFrom ? `<rect class="g" ${at} fill="currentColor" fill-opacity=".2"/>` : `<rect ${at} fill="currentColor" fill-opacity=".2"/>`
@@ -210,8 +225,8 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
     if (nFrom > n) slide = `@keyframes gs{from{fill:${fromHex ?? (g.level === 'ok' ? '#888888' : GAUGE_HEX[g.level])};fill-opacity:1}}`
   }
   const pulse = t === null ? '' : `@keyframes gp{50%{fill:${lerpHex('#ea7c7c', '#ffe2e2', t)}}}`
-  const fAnim = [slide && shape !== 'cells' ? `gs ${dur}s ease-out` : '', t !== null ? `gp ${(1.6 - 0.9 * t).toFixed(2)}s ease-in-out infinite` : ''].filter(Boolean).join(',')
-  const rules = [fAnim ? `.f{animation:${fAnim}}` : '', slide && shape === 'cells' ? `.g{animation:gs ${dur}s ease-out}` : ''].join('')
+  const fAnim = [slide && !isCells ? `gs ${dur}s ease-out` : '', t !== null ? `gp ${(1.6 - 0.9 * t).toFixed(2)}s ease-in-out infinite` : ''].filter(Boolean).join(',')
+  const rules = [fAnim ? `.f{animation:${fAnim}}` : '', slide && isCells ? `.g{animation:gs ${dur}s ease-out}` : ''].join('')
   const css = rules ? `<style>${slide}${pulse}${rules}@media (prefers-reduced-motion:reduce){.f,.g{animation:none!important}}</style>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${css}${shapes}</svg>`
 }

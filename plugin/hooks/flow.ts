@@ -5,7 +5,7 @@
 // 그 구간은 그때 캐시 상태로 추정하고(compactEffects), mod 가 본 컴팩트는 엔진이 준 실제 토큰으로 잰다.
 
 import type { CompactEvent, CtxPoint } from '../types'
-import { barAnimCss, CACHE_TTL_MIN, costOf, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
+import { barAnimCss, CACHE_TTL_MIN, costOf, dayOf, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
 import type { Tokens } from './cost'
 import { L } from './i18n'
 
@@ -267,7 +267,8 @@ export function flowFromRecords(records: readonly FlowRecord[]): Flow {
     const ttl = ttlOfTokens(t) ?? ttlAt(flow.points[flow.points.length - 1])
     addPoint(
       flow,
-      { atMs: r.atMs, ctx, usd: costOf(t, r.model, ttl)?.usd ?? 0, ...(r.model && r.model !== '?' ? { model: r.model } : {}), ...(ttlOfTokens(t) !== null ? { ttl: ttlOfTokens(t)! } : {}) },
+      // 0.9.2: 그 요청 날의 요율(기록에서 다시 만든 흐름 — 요율이 바뀐 모델은 바뀐 날 전후로 갈린다)
+      { atMs: r.atMs, ctx, usd: costOf(t, r.model, ttl, dayOf(r.atMs))?.usd ?? 0, ...(r.model && r.model !== '?' ? { model: r.model } : {}), ...(ttlOfTokens(t) !== null ? { ttl: ttlOfTokens(t)! } : {}) },
       t.input_tokens + t.cache_creation_input_tokens,
     )
   }
@@ -488,7 +489,8 @@ export function compactEffects(
 ): CompactEffect[] {
   return flow.compactions.map((event, i) => {
     const atModel = flow.points[event.index - 1]?.model ?? flow.points[event.index]?.model ?? model
-    const r = ratesFor(atModel, event.before)
+    // 0.9.2: 그 컴팩트 날의 요율 · 아낀 값은 요청마다 그 요청 날의 요율
+    const r = ratesFor(atModel, event.before, dayOf(event.atMs))
     const after = event.after ?? event.before
     const removed = Math.max(0, event.before - after)
     const nextIndex = Math.min(flow.compactions[i + 1]?.index ?? flow.points.length, flow.points.length)
@@ -506,7 +508,7 @@ export function compactEffects(
     const summaryTtl = flow.points[event.index]?.ttl ?? ttlAt(flow.points[event.index - 1])
     const costUsd = request + (Math.min(est.summaryOf(event), after) * writeRate(r, summaryTtl)) / 1e6
     // 아낀 값: 줄인 양을 그 뒤 요청마다 다시 읽지 않은 값 — 요청마다 그 요청 모델의 읽기 요율
-    const readOf = (p: CtxPoint | undefined) => (ratesFor(p?.model ?? atModel, p?.ctx ?? after) ?? r).read
+    const readOf = (p: CtxPoint | undefined) => (ratesFor(p?.model ?? atModel, p?.ctx ?? after, dayOf(p?.atMs)) ?? r).read
     let savedUsd = 0
     for (let j = event.index; j < event.index + requestsAfter; j++) savedUsd += (removed * readOf(flow.points[j])) / 1e6
     // 본전까지 남은 요청은 마지막 요청의 모델 기준
@@ -709,7 +711,8 @@ export function segmentExtra(
   const base = last?.after ?? fallbackAfter
   const scales = tokenScales(flow.points, from)
   const extraOf = (p: CtxPoint, k: number) => {
-    const r = ratesFor(p.model ?? model, p.ctx)
+    // 0.9.2: 미룬 값은 요청마다 그 요청 날의 요율
+    const r = ratesFor(p.model ?? model, p.ctx, dayOf(p.atMs))
     return r ? (Math.max(0, p.ctx - base * scales[k]!) * r.read) / 1e6 : 0
   }
   let sum = 0

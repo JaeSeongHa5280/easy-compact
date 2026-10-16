@@ -19,7 +19,15 @@ import type { DiagView } from './diag'
 
 /** 게이지 꼴 이름(B8) */
 function gaugeShapeName(g: GaugeShape): string {
-  return g === 'bar' ? L('가로 막대', 'Bar') : g === 'ring' ? L('고리', 'Ring') : g === 'vbar' ? L('세로 막대', 'Vertical bar') : L('칸 막대', 'Steps')
+  return g === 'bar'
+    ? L('가로 막대', 'Bar')
+    : g === 'ring'
+      ? L('고리', 'Ring')
+      : g === 'vbar'
+        ? L('세로 막대', 'Vertical bar')
+        : g === 'vcells'
+          ? L('칸 막대 세로', 'Vertical steps')
+          : L('칸 막대', 'Steps')
 }
 import type { Ui } from './ui-common'
 
@@ -1125,14 +1133,16 @@ export function drawCompactTiming(
     const nowAt = !hasNow ? -1 : bands.findIndex(([a, b], i) => ctxNow! >= a && (ctxNow! < b || (i === bands.length - 1 && ctxNow! <= b)))
     const isBelowFirst = hasNow && nowAt < 0 && ctxNow! < bands[0]![0]
     const nowBg = isTerminal ? 'userMessageBackground' : 'rgba(109,167,236,0.18)'
-    // 풀이 줄은 표 상자 밖(표 글에 "적용 중" 이 섞이면 예전 적용 중 열을 지킨 시험이 깨진다) · 키는 상자에(엔진 시험은 글의 키로 못 찾는다)
+    // 풀이 줄은 표 상자 밖(표 글에 "적용 중" 이 섞이면 예전 적용 중 열을 지킨 시험이 깨진다) · 키는 상자에(엔진 시험은 글의 키로 못 찾는다).
+    // 다음 버전: "지금" 과 "적용 중" 이 둘 다 지금처럼
+    // 읽혀 어느 쪽이 지금 컨텍스트인지 헷갈렸다 — 바탕은 "지금 컨텍스트", 테두리는 위 드롭다운 이름 그대로 "고른 컴팩트 구간"
     const nowNote =
       nowAt >= 0 ? (
         <Box key="cmp-now-note">
           <Text dimColor wrap="wrap">
             {isTerminal
-              ? L(`바탕 줄 = 지금 ${num(ctxNow!)} · (고름) = 적용 중 구간`, `Highlighted row = now ${num(ctxNow!)} · (chosen) = applied range`)
-              : L(`파란 바탕 = 지금 ${num(ctxNow!)} · 테두리 = 적용 중 구간`, `Blue row = now ${num(ctxNow!)} · border = applied range`)}
+              ? L(`바탕 줄 = 지금 컨텍스트 ${num(ctxNow!)} · (고름) = 고른 컴팩트 구간`, `Highlighted row = context now ${num(ctxNow!)} · (chosen) = the compact range you picked`)
+              : L(`파란 바탕 = 지금 컨텍스트 ${num(ctxNow!)} · 테두리 = 고른 컴팩트 구간`, `Blue row = context now ${num(ctxNow!)} · border = the compact range you picked`)}
           </Text>
         </Box>
       ) : isBelowFirst ? (
@@ -1642,9 +1652,11 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
         <Text key="upd-state" color="error" wrap="wrap">
           {!upd.error
             ? L('claude 명령을 못 찾았습니다 — README 의 업데이트 받기를 보세요', 'claude command not found — see Updating in the README')
-            : upd.failedOn === 'apply'
-              ? L('업데이트 못 함 — git · 네트워크를 확인하세요', 'Update failed — check git and your network')
-              : L('확인 못 함 — git · 네트워크를 확인하세요', 'Check failed — check git and your network')}
+            : upd.isTimeout
+              ? L('응답이 없어 멈췄습니다 — 다시 시도하세요(git · 네트워크도 확인)', 'No response, so it stopped — try again (check git and your network too)')
+              : upd.failedOn === 'apply'
+                ? L('업데이트 못 함 — git · 네트워크를 확인하세요', 'Update failed — check git and your network')
+                : L('확인 못 함 — git · 네트워크를 확인하세요', 'Check failed — check git and your network')}
         </Text>,
       ]
       buttons = [

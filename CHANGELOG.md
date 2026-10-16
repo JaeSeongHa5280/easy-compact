@@ -4,6 +4,22 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.9.2] — 2026-10-16
+
+### Added
+- **Gauge shape "Vertical steps"** — the steps gauge stood up (four steps from the bottom), in the Settings **Bar** tab → **Gauge shape**. The default stays Steps (horizontal).
+- **Rate changes in the rate line at the bottom of the pane** — e.g. *cache read 0.20 → 0.10 (from Oct 15 — matched to Claude's usage page; the price list says Oct 7)*: what changed, from when, and why.
+
+### Changed
+- **Amounts match Claude's usage page** — 0.9.1 counted the Sonnet 5.5 cache-read cut ($0.20 → $0.10) from October 7, as the price list says, but the usage page applies it only from about October 15 (UTC), so this month came out over $140 lower than the usage page. Now $0.20 through October 14 and $0.10 from the 15th — about $919 vs the usage page's $920 on the machine we compared.
+- **Older records use the rate of their day** — cost per question rebuilt from the session record, the context flow, compact savings, the deferred cost and "the same questions on another model" all used today's rate, so older records of a model whose rate changed (Sonnet 5.5) came out too low. Now each request uses the rate of its day (a rate history — the next rate change is one more row).
+- **A battery frame on the steps gauges** — Steps and Vertical steps both show four steps inside a frame (one look for both — the vertical steps alone looked like a menu icon ≡). Colors, the compacting motion and the post-compact shrink stay the same.
+- **The key under Cost by size** — *Blue row = now · border = applied range* read as two "current" things, so it wasn't clear which one was your context. Now *Blue row = context now · border = the compact range you picked*.
+- **Highlight is off at first** — the question highlight (hover the chip under an answer, or its row in the pane, and that answer turns gray) is now off by default. Turn it on in Settings **Answer chip** tab → **Highlight**. If you've saved settings before, your value stays.
+
+### Fixed
+- **Update check stuck at "Checking…"** — pressing it several times quickly ran several marketplace updates at once and they blocked each other; with no response it tried the next claude executable, staying on "Checking…" for minutes; and if the plugin reloaded meanwhile, only the "Checking… · Updating…" text was left and the buttons never came back. Now one command at a time; if it doesn't finish in 90 seconds (150 for the update) you get *No response, so it stopped* with **[Try again]**, and a leftover state clears when you press the version button again.
+
 ## [0.9.1] — 2026-10-16
 
 ### Added

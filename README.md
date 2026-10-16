@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.9.1-4c9be8" alt="Version 0.9.1">
+  <img src="https://img.shields.io/badge/version-0.9.2-4c9be8" alt="Version 0.9.2">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-091">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-092">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 ---
@@ -109,7 +109,19 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.9.1
+## What's new in 0.9.2
+
+- **Amounts match Claude's usage page** — the Sonnet 5.5 cache-read cut ($0.20 → $0.10) now counts from October 15, when the usage page applies it (the price list says October 7) — this month came out about $919 vs the usage page's $920 on the machine we compared, instead of $140 lower. The rate line at the bottom of the pane says so.
+- **Gauge shape "Vertical steps"**, and **a battery frame on both steps gauges** — four steps from the bottom (Settings **Bar** tab → **Gauge shape**); the steps gauge stays the default.
+- **Older records use the rate of their day** — cost per question rebuilt from the session record, the context flow, compact savings and the other-model comparison use the rate in effect on each request's day.
+- **Update check no longer gets stuck at "Checking…"** — pressing it several times runs one command; with no response it stops after 90 seconds with **[Try again]**; a leftover state clears when you press the version button again.
+- **Cost by size key** — *Blue row = context now · border = the compact range you picked*.
+- **Highlight is off at first** — turn it on in Settings **Answer chip** tab → **Highlight** (if you've saved settings before, your value stays).
+
+Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.9.1</b></summary>
 
 - **Show diagnostics before you share** — **Report a problem** in the pane's version drawer and in the Settings **General** tab: **[Show diagnostics]** first shows what's inside and the first lines. Your questions, answer endings, step names and custom texts are left out from the start; then **[Copy]**, **[Save as file]** or **[Open an issue ↗]** — exactly what you saw. See [Something wrong?](#something-wrong--report-it).
 - **Settings previews look like previews** — a light well with a blue **Preview** chip instead of a border; the whole-bar preview sits above a mock input. The preview shows the gauge in your shape, with a four-step sample under **Gauge shape**. Bar size one line · keep folded · line below the input show in the preview too.
@@ -119,7 +131,7 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 - **No more pre-compact size after a compact** — a compact Claude Code didn't announce (one from the bar button, for one) went unrecorded: the bar kept the old size and the pane said *0 compacts* until the next request. Now it is recorded within 1.5 seconds.
 - **Sonnet 5.5 cache reads** — the October 7 price cut ($0.20 → $0.10) is counted by date.
 
-Full list: [CHANGELOG](CHANGELOG.md).
+</details>
 
 <details>
 <summary><b>What's new in 0.9.0</b></summary>
@@ -203,7 +215,7 @@ A 33-second tour is on the [v0.5.0 release page](https://github.com/JaeSeongHa52
 - **Three screens — Simple · Detailed · Custom.** **Simple** is for newcomers and anyone for whom tokens and caching are unfamiliar: a one-line bar (session cost · context · cache · Easy Compact) and only the essentials in the pane and Settings. **Detailed** is for people who know how AI costs work: plan limits, per request, compact range, the question row, graphs and the full cost table. **Custom** lets you pick the bar's parts and the **Detail level** (Minimal · Everything). New installs and updates start on Simple.
 - **A preview in Settings → Screen** — see how the bar and the question-cost chip after each answer will look as you choose.
 - **The question cost after each answer is a blue chip** — `🧾 This question $0.61 · 6 requests · 🤖 1 agent $0.24 included`. On the Detailed screen, **▸ Details** opens it in place: main · 🤖 agents · 🗜 compact · ⚙ app's own requests, and the priciest main steps.
-- **Question highlight** — hover the question-cost chip or its row in the Usage pane and the answer it priced turns gray with them (desktop, can be turned off).
+- **Question highlight** — hover the question-cost chip or its row in the Usage pane and the answer it priced turns gray with them (desktop, off at first — turn it on in Settings).
 - **For all screens: the limits row and session-cost colors** — under Screen → Details, changeable on any screen. If a session has finished a request and still has no plan limits, the limits row option is left out.
 - **Cache shows as `cache expires in 42m`** — easier to read than `42/60m`.
 - **No compacting at a loss** — when the cache is cold and continuing is cheaper, or there is little to save, the Easy Compact card shows *Keep working* and no compact buttons. easy-compact makes the money call with numbers; the session asked to save only checks whether it would lose information (it used to go ahead with a losing compact because "everything is saved to memory").
@@ -239,7 +251,7 @@ https://github.com/user-attachments/assets/fccb5b10-1437-41d5-bd04-761c8ff97eaa
 <img src="docs/img/band.png" width="900" alt="The Easy Compact bar: plan usage, per-request cost, context, compact range, cache, and this question's cost">
 
 **Context, next-request cost and this question's cost — updated after every request.**
-Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** as the **Screen type** at the top of Settings; to choose single parts, pick **Custom** and switch them in the row cards of the **Bar** tab (Limits row · Cost row · Question row) — each card's preview of its row follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both in the **Cost row** card. The gauge's look is **Gauge shape** in the **Whole bar** card (Bar · Ring · Vertical bar · Steps). Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
+Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). It starts on the **Simple** screen: one line with the session cost, context, cache and Compact. Turn on today · this month in Settings to add every session on this PC — the pane's **Overview** tab always shows them at the top in the Detailed view. For everything, pick **Detailed** as the **Screen type** at the top of Settings; to choose single parts, pick **Custom** and switch them in the row cards of the **Bar** tab (Limits row · Cost row · Question row) — each card's preview of its row follows as you choose. The order of the money cells (Session · Today · This month) is **Cost order**, and whether the context shows as size, % or both is **Context numbers** — both in the **Cost row** card. The gauge's look is **Gauge shape** in the **Whole bar** card (Bar · Ring · Vertical bar · Steps · Vertical steps). Still too much? Shrink the bar to one line or fold it until it's time to compact — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
 
 <img src="docs/img/screen.png" width="520" alt="Settings: the screen type (Simple · Detailed · Custom) above the tabs Bar · Answer chip · Pane · Compact · General; the Bar tab previews each row in its own card">
 
@@ -257,7 +269,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 <img src="docs/img/question-cost.png" width="900" alt="The blue question-cost chip under an answer, opened into main requests, agents and steps; hovering it highlights the answer and its row in the Easy Compact pane">
 
-**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and the answer, the chip and the row turn gray together (desktop; Settings **Answer chip** tab → **Highlight**).
+**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and the answer, the chip and the row turn gray together (desktop, with Settings **Answer chip** tab → **Highlight** on — off at first).
 
 ### 3. Know when to compact
 
@@ -272,7 +284,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 | 🔴 Red gauge (pulsing) · *Compact overdue* | Past your range — the deeper, the faster it pulses |
 | 🔴 *Cache expired* · **Plain compact advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
 
-Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring) or a vertical bar. Colors, pulsing and the post-compact shrink are the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light in turn).
+Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring), a vertical bar or vertical steps. Steps and Vertical steps sit in a battery frame. Colors, pulsing and the post-compact shrink are the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light in turn).
 
 ### 4. Easy Compact — one click
 

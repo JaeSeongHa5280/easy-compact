@@ -1,5 +1,5 @@
 import type { CostParts, StepDetail, Tokens, TurnSummary } from '../types'
-import { costOf } from './cost'
+import { costOf, dayOf } from './cost'
 import type { FlowRecord } from './flow'
 import { L } from './i18n'
 import { promptHead } from './text'
@@ -127,7 +127,8 @@ export function turnsFromRecords(records: readonly FlowRecord[], agents: readonl
       // 기록 앞부분이 질문 시작 없이 요청부터면(이어 붙인 기록) 이름 없는 질문 하나로
       const q = cur ?? (cur = open(r.atMs, ''))
       q.steps++
-      q.cost = addCost(q.cost, costOf(r.tokens, r.model))
+      // 0.9.2: 그 요청 날의 요율(요율이 바뀐 모델의 지난 질문을 지금 요율로 다시 세면 낮게 나왔다)
+      q.cost = addCost(q.cost, costOf(r.tokens, r.model, undefined, dayOf(r.atMs)))
       q.ctx = r.tokens.input_tokens + r.tokens.cache_read_input_tokens + r.tokens.cache_creation_input_tokens
       q.model = r.model
       q.endMs = Math.max(q.endMs, r.atMs)
@@ -140,7 +141,7 @@ export function turnsFromRecords(records: readonly FlowRecord[], agents: readonl
     let c = ZERO
     let model = ''
     for (const [m, t] of Object.entries(a.byModel)) {
-      c = addCost(c, costOf(t, m, 5))
+      c = addCost(c, costOf(t, m, 5, dayOf(a.firstAtMs)))
       model = m
     }
     target.cost = addCost(target.cost, c)

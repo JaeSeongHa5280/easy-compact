@@ -73,7 +73,7 @@ export type Settings = {
   /** 한도 줄 칸(5시간 · 7일 · 리셋까지 남은 시간) — 화면 프리셋과 따로. 0.4.0 은 보기 값 안에 있었다(normalizeSettings 가 옮김) */
   limitShow: LimitShow
   /**
-   * 질문 강조(기본 켬): 답변 끝 질문 비용 칩이나 사용량 패널의 그 질문 줄에 마우스를 올리면 칩 · 패널 줄 · 그 답변이 함께
+   * 질문 강조(기본 끔 — 0.9.2, 그 전엔 켬): 답변 끝 질문 비용 칩이나 사용량 패널의 그 질문 줄에 마우스를 올리면 칩 · 패널 줄 · 그 답변이 함께
    * 회색(엔진 hover scope · reveal). 답변 글에 올려선 반응 없음. 데스크톱만 — 터미널 설정 탭엔 줄이 없다
    */
   questionHover: boolean
@@ -122,6 +122,8 @@ export type UpdateState = {
   /** 실패한 명령의 마지막 출력 줄(펼쳐 보기) · 어느 단계였나(확인 = 마켓 받기, 업데이트) */
   error?: string
   failedOn?: 'check' | 'apply'
+  /** 명령이 시간 안에 안 끝나 멈춤(응답 없음) — 실패 글이 "응답이 없어 멈췄습니다" */
+  isTimeout?: boolean
   /** 업데이트 뒤 첫 실행(3안): 이 판으로 업데이트됨 — [닫기] 하면 null */
   updatedTo?: string | null
   /** 받아 둔 마켓 사본 CHANGELOG 에서 뽑은 판별 바뀐 것 — [바뀐 것 ▸] */

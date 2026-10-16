@@ -267,6 +267,10 @@ function changeRange(own: string | null, market: string | null, seen: unknown, u
  * 다시 켜지 않아도 새 판 모듈이 떴다) "받음" 에 머물지 않고 최신으로
  */
 async function refreshUpdateInfo($: EngineInterface): Promise<void> {
+  // 끝을 못 알린 업데이트 일은 버리고(시간 넘음), 일하는 모듈이 없는데 남은 확인 중 · 업데이트 중은 낡은 표시로 본다 — 다시 불러온 뒤에도
+  // 그 글에 고정돼 버튼이 안 돌아왔다. 버전 버튼으로 서랍을 열 때 · 켤 때 · 패널을 열 때 여기를 지난다
+  await dropStaleUpdateJob($)
+  const isJobLive = updateJob !== null
   const inst = await installNow($)
   const own = await ownVersion($)
   // 0.9.1 U5: 폴더로 불러온 개발본도 버튼은
@@ -292,15 +296,18 @@ async function refreshUpdateInfo($: EngineInterface): Promise<void> {
   const r = changeRange(own, m.market, seen, updatedTo)
   const got = await readChanges($, inst, r.from, r.to)
   const isAhead = versionGt(m.market, own)
-  await update($, updateInfo, prev => ({
-    ...prev,
-    own,
-    ...m,
-    updatedTo,
-    ...got,
-    // N8: 켤 때 최신이었어도 그 뒤 사본이 새로워졌으면 새 판으로(패널을 열 때도 이 함수를 부른다). U3: 새 판 · 받음인데 지금 판이 따라왔으면 최신
-    phase: (prev.phase === 'done' || prev.phase === 'newer') && !isAhead ? 'latest' : (prev.phase === 'idle' || prev.phase === 'latest') && isAhead ? 'newer' : prev.phase,
-  }))
+  await update($, updateInfo, prev => {
+    const was = !isJobLive && (prev.phase === 'checking' || prev.phase === 'updating') ? 'idle' : prev.phase
+    return {
+      ...prev,
+      own,
+      ...m,
+      updatedTo,
+      ...got,
+      // N8: 켤 때 최신이었어도 그 뒤 사본이 새로워졌으면 새 판으로(패널을 열 때도 이 함수를 부른다). U3: 새 판 · 받음인데 지금 판이 따라왔으면 최신
+      phase: (was === 'done' || was === 'newer') && !isAhead ? 'latest' : (was === 'idle' || was === 'latest') && isAhead ? 'newer' : was,
+    }
+  })
   $.ui.invalidate('ui.render')
 }
 
@@ -379,10 +386,20 @@ async function claudeCandidates($: EngineInterface): Promise<string[]> {
 /**
  * claude 명령을 띄울 수 있는 첫 후보로 — 못 띄우면 null. 출력은 마지막 글 줄(성공 · 실패 까닭). 돌리는 명령은 둘뿐이라 글자 그대로
  * 적는다(디렉터리 검사가 명령 전체를 읽게 — 0.6.1 보류 "명령을 다 못 읽음"): 마켓 받아 오기 · 플러그인 업데이트. 마켓 이름은 공개
- * 마켓(marketplace.json name) easy-compact — 실행 파일 자리(bin)만 PC 마다 다르다
+ * 마켓(marketplace.json name) easy-compact — 실행 파일 자리(bin)만 PC 마다 다르다.
+ * totalMs = 후보 모두 합친 시간. 띄운 뒤 시간이 다 돼 끊긴 것(응답 없음)은 다음 후보로 또 돌리지 않는다 — 예전엔 못 띄운 것과 같이 보고
+ * 후보마다 시간을 다 써 몇 분 동안 "확인 중"
  */
-async function runClaude($: EngineInterface, cmd: 'marketplace-update' | 'plugin-update', timeoutMs: number): Promise<{ exitCode: number; last: string } | null> {
+async function runClaude(
+  $: EngineInterface,
+  cmd: 'marketplace-update' | 'plugin-update',
+  totalMs: number,
+): Promise<{ exitCode: number; last: string; isTimeout?: boolean } | null> {
+  const start = await $.clock.now()
   for (const bin of await claudeCandidates($)) {
+    const t0 = await $.clock.now()
+    const timeoutMs = totalMs - (t0 - start)
+    if (timeoutMs < 1000) return { exitCode: -1, last: '', isTimeout: true }
     try {
       const r =
         cmd === 'marketplace-update'
@@ -391,56 +408,99 @@ async function runClaude($: EngineInterface, cmd: 'marketplace-update' | 'plugin
       const lines = `${r.stdout}\n${r.stderr}`.split(/\r?\n/).map(x => x.trim()).filter(Boolean)
       return { exitCode: r.exitCode, last: lines[lines.length - 1] ?? '' }
     } catch {
-      // 못 띄움(없는 경로) — 다음 후보
+      // 시간이 다 돼 끊김(띄우긴 했다) — 멈춘다. 그 밖(없는 경로 · 못 띄움)은 다음 후보
+      if ((await $.clock.now()) - t0 >= timeoutMs - 1000) return { exitCode: -1, last: '', isTimeout: true }
     }
   }
   return null
 }
 
+/**
+ * 다음 버전(0.9.1 뒤, 사용자 2026-10-16 "업데이트 확인 중 연타하거나 확인하고 바로 하면 응답 없을 때 그 상태로 고정"): 지금 도는 업데이트
+ * 일 — 이 모듈에 하나만. 누르자마자(첫 await 전에) 자리를 잡는다: 예전엔 설치본 읽기(await) 뒤에 "도는 중" 을 봐서 빨리 여러 번 누르면
+ * 마켓 받기 명령이 여럿 같이 돌았다(같은 마켓 사본을 바꿔 서로 막힘). 화면의 확인 중 · 업데이트 중(updateInfo.phase)은 다시 불러와도
+ * 남는 값이라, 일하던 모듈이 없어지면(다시 불러오기) 그대로 고정됐다 — 이 값이 없으면 그 표시는 낡은 것으로 본다(refreshUpdateInfo)
+ */
+let updateJob: { kind: 'check' | 'apply'; at: number } | null = null
+
+/** 마켓 받기 · 플러그인 업데이트에 줄 시간(후보 모두 합쳐) — 넘기면 "응답이 없어 멈췄습니다" */
+const CHECK_TOTAL_MS = 90_000
+const APPLY_TOTAL_MS = 150_000
+/** 끝을 못 알린 일을 버리는 때: 줄 시간 + 이만큼(엔진이 명령을 안 끊었거나 결과를 못 받음) */
+const UPDATE_GRACE_MS = 30_000
+
+/** 끝을 못 알린 업데이트 일은 버린다 — 시간이 넘었으면 다시 누를 수 있게 */
+async function dropStaleUpdateJob($: EngineInterface): Promise<void> {
+  // at 0 = 막 잡아 시각을 아직 못 적음(누른 직후) — 낡은 일이 아니다
+  if (updateJob === null || updateJob.at === 0) return
+  const limit = (updateJob.kind === 'check' ? CHECK_TOTAL_MS : APPLY_TOTAL_MS) + UPDATE_GRACE_MS
+  if ((await $.clock.now()) - updateJob.at > limit) updateJob = null
+}
+
 /** [업데이트 확인]: 누를 때만 Claude Code 가 마켓을 받아 온다 — 그 뒤 받은 사본 판과 견준다. 도는 중에 또 누른 것은 무시. U2(0.6.1 피드백):
  * 받은 뒤(done)에도 다시 확인할 수 있다 */
 async function checkUpdate($: EngineInterface): Promise<void> {
-  const inst = await installNow($)
-  const cur = await read($, updateInfo)
-  if (!inst || inst.marketplace === 'synced' || cur.phase === 'checking' || cur.phase === 'updating') return
-  await update($, updateInfo, prev => ({ ...prev, phase: 'checking', error: undefined, failedOn: undefined }))
-  $.ui.invalidate('ui.render')
-  const r = await runClaude($, 'marketplace-update', 120_000)
-  const own = await ownVersion($)
-  const m = await readMarket($, inst)
-  const range = changeRange(own, m.market, await $.store.get(SEEN_VERSION_KEY).catch(() => undefined), cur.updatedTo)
-  const got = await readChanges($, inst, range.from, range.to)
-  const isFailed = !r || r.exitCode !== 0
-  await update($, updateInfo, prev => ({
-    ...prev,
-    own,
-    ...m,
-    ...got,
-    phase: isFailed ? 'failed' : versionGt(m.market, own) ? 'newer' : 'latest',
-    // 못 띄웠으면(claude 없음) 원문 없이 — 화면이 "claude 명령을 못 찾았습니다" 로 가린다
-    error: isFailed && r ? r.last || `exit ${r.exitCode}` : undefined,
-    failedOn: isFailed ? 'check' : undefined,
-  }))
-  $.ui.invalidate('ui.render')
+  if (updateJob !== null) return
+  const job = { kind: 'check' as const, at: 0 }
+  updateJob = job
+  try {
+    job.at = await $.clock.now()
+    const inst = await installNow($)
+    if (!inst || inst.marketplace === 'synced') return
+    const cur = await read($, updateInfo)
+    await update($, updateInfo, prev => ({ ...prev, phase: 'checking', error: undefined, failedOn: undefined, isTimeout: undefined }))
+    $.ui.invalidate('ui.render')
+    const r = await runClaude($, 'marketplace-update', CHECK_TOTAL_MS)
+    // 시간이 넘어 버린 일(그 사이 다시 누른 일이 있다)은 결과를 안 적는다
+    if (updateJob !== job) return
+    const own = await ownVersion($)
+    const m = await readMarket($, inst)
+    const range = changeRange(own, m.market, await $.store.get(SEEN_VERSION_KEY).catch(() => undefined), cur.updatedTo)
+    const got = await readChanges($, inst, range.from, range.to)
+    const isFailed = !r || r.exitCode !== 0
+    await update($, updateInfo, prev => ({
+      ...prev,
+      own,
+      ...m,
+      ...got,
+      phase: isFailed ? 'failed' : versionGt(m.market, own) ? 'newer' : 'latest',
+      // 못 띄웠으면(claude 없음) 원문 없이 — 화면이 "claude 명령을 못 찾았습니다" 로 가린다
+      error: isFailed && r ? (r.isTimeout ? L(`${CHECK_TOTAL_MS / 1000}초 안에 끝나지 않음`, `did not finish in ${CHECK_TOTAL_MS / 1000}s`) : r.last || `exit ${r.exitCode}`) : undefined,
+      failedOn: isFailed ? 'check' : undefined,
+      isTimeout: isFailed && r?.isTimeout === true ? true : undefined,
+    }))
+    $.ui.invalidate('ui.render')
+  } finally {
+    if (updateJob === job) updateJob = null
+  }
 }
 
 /** [업데이트]: 받아 둔 사본 판으로 — 엔진이 새 판 폴더를 읽어 들이면 적용(U3 — 그 뒤 켤 때 · 패널을 열 때 지금 판이 따라오면 최신) */
 async function applyUpdate($: EngineInterface): Promise<void> {
-  const inst = await installNow($)
-  const cur = await read($, updateInfo)
-  if (!inst || inst.marketplace === 'synced' || cur.phase === 'checking' || cur.phase === 'updating') return
-  await update($, updateInfo, prev => ({ ...prev, phase: 'updating', error: undefined, failedOn: undefined }))
-  $.ui.invalidate('ui.render')
-  const r = await runClaude($, 'plugin-update', 180_000)
-  const isFailed = !r || r.exitCode !== 0
-  await update($, updateInfo, prev => ({
-    ...prev,
-    phase: isFailed ? 'failed' : 'done',
-    // 못 띄웠으면(claude 없음) 원문 없이 — 화면이 "claude 명령을 못 찾았습니다" 로 가린다
-    error: isFailed && r ? r.last || `exit ${r.exitCode}` : undefined,
-    failedOn: isFailed ? 'apply' : undefined,
-  }))
-  $.ui.invalidate('ui.render')
+  if (updateJob !== null) return
+  const job = { kind: 'apply' as const, at: 0 }
+  updateJob = job
+  try {
+    job.at = await $.clock.now()
+    const inst = await installNow($)
+    if (!inst || inst.marketplace === 'synced') return
+    await update($, updateInfo, prev => ({ ...prev, phase: 'updating', error: undefined, failedOn: undefined, isTimeout: undefined }))
+    $.ui.invalidate('ui.render')
+    const r = await runClaude($, 'plugin-update', APPLY_TOTAL_MS)
+    if (updateJob !== job) return
+    const isFailed = !r || r.exitCode !== 0
+    await update($, updateInfo, prev => ({
+      ...prev,
+      phase: isFailed ? 'failed' : 'done',
+      // 못 띄웠으면(claude 없음) 원문 없이 — 화면이 "claude 명령을 못 찾았습니다" 로 가린다
+      error: isFailed && r ? (r.isTimeout ? L(`${APPLY_TOTAL_MS / 1000}초 안에 끝나지 않음`, `did not finish in ${APPLY_TOTAL_MS / 1000}s`) : r.last || `exit ${r.exitCode}`) : undefined,
+      failedOn: isFailed ? 'apply' : undefined,
+      isTimeout: isFailed && r?.isTimeout === true ? true : undefined,
+    }))
+    $.ui.invalidate('ui.render')
+  } finally {
+    if (updateJob === job) updateJob = null
+  }
 }
 
 // ── 오늘 · 이번 달 사용량(설정 "모든 화면 공통" 에서 켰을 때만, 입력창 위에 일일 · 이번 달 전체 사용량을 옵션으로) ──

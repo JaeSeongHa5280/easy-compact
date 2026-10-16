@@ -228,8 +228,9 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionColors: SESSION_COLORS_DEFAULT,
   // 한도 줄은 처음부터 켬 — 구독 사용자에게 5시간 · 7일 한도는 늘 볼 값(API 키 세션은 엔진이 한도를 안 줘 줄이 없다)
   limitShow: ALL_LIMITS,
-  // 질문 강조(칩에 마우스를 올리면 그 답변에 테두리)는 처음부터 켬
-  questionHover: true,
+  // 질문 강조(칩에 마우스를 올리면 그 답변이 회색)는 처음엔 끔(0.9.2 — 사용자 2026-10-16 "기본옵션 꺼둔 걸로"). 0.9.1 까지는 켬
+  // (2026-10-13) — 설정을 한 번이라도 저장한 사람은 저장값(켬) 그대로, 바꾼 적 없는 사람 · 새 설치는 끔
+  questionHover: false,
   paneAutoOpen: false,
   // 같이 열고 닫기는 처음부터 켬
   paneShared: true,
@@ -765,7 +766,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const ctxUnit = rawUnit === 'pct' || rawUnit === 'both' ? rawUnit : 'size'
   // B8(0.8.1): 게이지 꼴 — 모르는 값 · 없음이면 기본(0.9.1 부터 칸 막대 — 고른 적 없는 사람도 새 기본으로)
   const rawShape = (r as { gaugeShape?: unknown }).gaugeShape
-  const gaugeShape = rawShape === 'ring' || rawShape === 'vbar' || rawShape === 'bar' || rawShape === 'cells' ? rawShape : DEFAULT_SETTINGS.gaugeShape
+  const gaugeShape = rawShape === 'ring' || rawShape === 'vbar' || rawShape === 'bar' || rawShape === 'cells' || rawShape === 'vcells' ? rawShape : DEFAULT_SETTINGS.gaugeShape
   const statusLine = (r as { statusLine?: unknown }).statusLine === true
   const custom = normalizeView((r as { custom?: unknown }).custom)
   // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)

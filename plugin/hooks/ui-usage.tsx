@@ -1,5 +1,6 @@
 import type { CompactInputs, LiveTurn, Optimal, QuestionDetail, TurnSummary, Usage } from '../types'
-import { average, PERM_HEX, compactPayoff, coldFor, estimateFor, fmtTokens, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, LITTLE_SHRINK, modelKey, modelName, ratesFor, thresholds, cacheWarnFor, sessionColorOf, ttlName, priceWarnings } from './cost'
+import { average, PERM_HEX, compactPayoff, coldFor, estimateFor, fmtTokens, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, LITTLE_SHRINK, modelKey, modelName, ratesFor, rateHistory, thresholds, cacheWarnFor, sessionColorOf, ttlName, priceWarnings } from './cost'
+import type { Rates } from './cost'
 import { OUTPUT_GUESS, SUMMARY_GUESS } from './optimal'
 import { contextWindowNow, SESSION_COLORS_DEFAULT } from './settings'
 import {
@@ -1583,6 +1584,42 @@ export function drawAllSpend(ui: Ui, line: AllSpendLine | null) {
   )
 }
 
+/**
+ * 요율이 바뀐 것 한 줄(0.9.2 — 회사 PC 금액 차이 보고서 "설정 화면과 어긋나는 이유가 보이게"): 이 모델의 요율 이력(cost.ts history)에서
+ * 바뀐 칸만 — "캐시 읽기 0.20 → 0.10(10월 7일부터 …)". 바뀐 적 없으면 null
+ */
+export function rateChangeText(model: string, n: (v: number) => string): string | null {
+  const hist = rateHistory(model)
+  const now = ratesFor(model)
+  if (hist.length === 0 || !now) return null
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const md = (day: string) => {
+    const [, m = 1, d = 1] = day.split('-').map(Number)
+    return L(`${m}월 ${d}일`, `${months[m - 1] ?? m} ${d}`)
+  }
+  const fields: [keyof Rates, string, string][] = [
+    ['input', '입력', 'input'],
+    ['output', '출력', 'output'],
+    ['read', '캐시 읽기', 'cache read'],
+    ['write1h', '쓰기', 'write'],
+  ]
+  // 이른 것부터: 옛 요율 → 다음 요율(다음 이력 줄, 마지막은 지금 요율). 가격표 발표일과 다르게 앱 설정 화면에 맞춘 날이면 둘 다(0.9.2 —
+  // 사용자 "금액은 설정 화면 맞춰야")
+  const steps: string[] = []
+  hist.forEach((h, i) => {
+    const next = hist[i + 1]?.base ?? now
+    for (const [key, ko, en] of fields) {
+      const a = h.base[key] as number
+      const b = next[key] as number
+      if (a === b) continue
+      const why = h.announced && h.announced !== h.until ? L(` — 앱 설정(사용량) 화면에 맞춤, 가격표 발표는 ${md(h.announced)}`, ` — matched to Claude's usage page; the price list says ${md(h.announced)}`) : ''
+      steps.push(L(`${ko} ${n(a)} → ${n(b)}(${md(h.until)}부터${why})`, `${en} ${n(a)} → ${n(b)} (from ${md(h.until)}${why})`))
+    }
+  })
+  if (steps.length === 0) return null
+  return L(`요율이 바뀐 것: ${steps.join(' · ')}. 그 전 기록은 그때 요율로 셉니다.`, `Rate change: ${steps.join(' · ')}. Earlier records use the rate of their day.`)
+}
+
 /** 맨 아래 흐린 참고 줄: 요율 · 노력도 · 색 기준. 판단엔 안 쓰고 숫자를 확인할 때만 본다 — 예전엔 비용 카드 한가운데 있었다 */
 export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null, nowMs: number) {
   const { Box, Text } = ui
@@ -1605,6 +1642,14 @@ export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null,
           `All amounts are API list prices (tokens × official rates). ${r.label} rates $/MTok · input ${n(r.input)} · output ${n(r.output)} · cache read ${n(r.read)} · write ${n(r.write1h)} (1h)`,
         )}
       </Text>
+      {(() => {
+        const change = rateChangeText(u.model, n)
+        return change ? (
+          <Text key="ref-rate-change" dimColor wrap="wrap">
+            {change}
+          </Text>
+        ) : null
+      })()}
       {/* 노력도는 요청당 값(컨텍스트 읽기)과 무관하고 출력 · 생각 토큰을 바꾼다 — 쉬는 동안엔 못 읽어 지난 질문 값 */}
       {last?.effort ? (
         <Text dimColor wrap="wrap">{L(`노력도 ${last.effort}(지난 질문): 출력과 생각 토큰이 달라져 질문 값에 영향을 줍니다.`, `Effort ${last.effort} (last question): it changes output and thinking tokens, which affects question cost.`)}</Text>
