@@ -25,7 +25,10 @@ const rates = (label: string, input: number, output: number, read: number): Rate
 })
 
 /** 위에서부터 처음 맞는 줄. 버전이 긴 것을 먼저 둔다(opus-5-5 가 opus-5 보다 위) */
-const PRICE_TABLE: { match: RegExp; base: Rates; long?: { over: number; rates: Rates } }[] = [
+/**
+ * before = 값이 바뀐 모델의 옛 요율 — 그날(UTC "YYYY-MM-DD") 전 기록에 쓴다(한 달 합 · 날짜를 아는 셈). base 가 지금 요율(엔진 등급과 견주는 값)
+ */
+const PRICE_TABLE: { match: RegExp; base: Rates; long?: { over: number; rates: Rates }; before?: { until: string; base: Rates } }[] = [
   { match: /(fable|mythos)-5-1/, base: rates('Fable 5.1', 10, 50, 0.25) },
   { match: /(fable|mythos)-5/, base: rates('Fable 5', 10, 50, 1) },
   { match: /opus-5-5/, base: rates('Opus 5.5', 4, 20, 0.2) },
@@ -33,6 +36,9 @@ const PRICE_TABLE: { match: RegExp; base: Rates; long?: { over: number; rates: R
   { match: /opus-4-[5-8]/, base: rates('Opus 4.x', 5, 25, 0.5) },
   // 옛 모델 — 엔진 요율 등급(tier_15_75 · tier_3_15 · haiku_35)에 맞춰 넣었다(M2, tools/check-rates.mjs 가 엔진 등급과 견준다)
   { match: /opus-4/, base: rates('Opus 4 · 4.1', 15, 75, 1.5) },
+  // 0.9.1: Sonnet 5.5 캐시 읽기 절반 인하 — 2026-10-07 부터 $0.10(Anthropic 발표 · 엔진 2.1.299 등급 tier_2_10_cache_read_0_10, check-rates).
+  // 그 전 기록은 출시가 $0.20(Sonnet 5 와 같음 — 엔진 2.1.295 tier_2_10). 한 달 합이 날짜별로 센다(회사 PC M2 대조, 사용자 2026-10-16)
+  { match: /sonnet-5-5/, base: rates('Sonnet 5.5', 2, 10, 0.1), before: { until: '2026-10-07', base: rates('Sonnet 5.5', 2, 10, 0.2) } },
   { match: /sonnet-5/, base: rates('Sonnet 5.x', 2, 10, 0.2) },
   { match: /sonnet-4/, base: rates('Sonnet 4.x', 3, 15, 0.3) },
   // Haiku 5.5 는 프롬프트가 10만 토큰을 넘으면 요율이 5배다
@@ -103,11 +109,15 @@ export function priceWarnings(model: string | null | undefined, window: number |
   return out
 }
 
-/** 모델 id 에 맞는 요율. 모르는 모델이면 null — 달러를 내지 않고 토큰만 보인다 */
-export function ratesFor(model: string, promptTokens = 0): Rates | null {
+/**
+ * 모델 id 에 맞는 요율. 모르는 모델이면 null — 달러를 내지 않고 토큰만 보인다. day(UTC "YYYY-MM-DD") 를 주면 값이 바뀐 모델은 그날의
+ * 요율(before), 안 주면 지금 요율
+ */
+export function ratesFor(model: string, promptTokens = 0, day: string | null = null): Rates | null {
   const row = PRICE_TABLE.find(r => r.match.test(model))
   if (!row) return null
-  return row.long && promptTokens > row.long.over ? row.long.rates : row.base
+  const base = row.before && day !== null && day < row.before.until ? row.before.base : row.base
+  return row.long && promptTokens > row.long.over ? row.long.rates : base
 }
 
 /**
@@ -123,7 +133,8 @@ export function spendUsd(days: SpendDays, from: string, to: string): number {
     if (day < from || day > to) continue
     for (const [model, tiers] of Object.entries(byModel)) {
       for (const [tier, t] of Object.entries(tiers)) {
-        const r = ratesFor(model, tier === 'L' ? Number.MAX_SAFE_INTEGER : 0)
+        // 그날 요율(0.9.1 — 값이 바뀐 모델은 바뀐 날 전후로 갈린다)
+        const r = ratesFor(model, tier === 'L' ? Number.MAX_SAFE_INTEGER : 0, day)
         if (!r || !t) continue
         usd += ((t[0] ?? 0) * r.input + (t[1] ?? 0) * r.output + (t[2] ?? 0) * r.read + (t[3] ?? 0) * r.write5m + (t[4] ?? 0) * r.write1h) / 1e6
       }
@@ -197,7 +208,7 @@ export function retroUsd(retro: RetroCompacts | undefined, from: string, to: str
       const count = v?.[0] ?? 0
       const sum = v?.[1] ?? 0
       if (!(count > 0)) continue
-      const r = ratesFor(model, sum / count)
+      const r = ratesFor(model, sum / count, day)
       if (!r) continue
       usd += (sum * compactInputRate(r, mix) + count * out * r.output) / 1e6
       n += count

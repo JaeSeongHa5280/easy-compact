@@ -275,7 +275,27 @@ export function historyRow(
       </Text>,
     )
   }
-  const meta = parts.flatMap((p, j) => (j === 0 ? [p] : [<Text key={`s${j}`} dimColor>{' · '}</Text>, p]))
+  // 0.9.1(패널 크기 한도 — 글자 수를 조인다): 흐린 조각(구분 " · " · 모델 · 노력도 · 다시 만듦)이 이어지면 흐린 글 하나로 합친다. 보이는
+  // 글은 같고 조각 수만 준다 — 질문 줄 20개면 약 2천 자(개발본에도 버전 버튼이 늘 보이며 한도 7.5만을 넘었다)
+  const meta: unknown[] = []
+  let dim = ''
+  const flush = (j: number) => {
+    if (dim) meta.push(<Text key={`d${j}`} dimColor>{dim}</Text>)
+    dim = ''
+  }
+  parts.forEach((p, j) => {
+    if (j > 0) dim += ' · '
+    // 엔진 요소는 글을 children 에 둔다({ type, props, children }) — 글 하나뿐인 흐린 Text 만 합친다
+    const el = p as { props?: { dimColor?: unknown; color?: unknown; children?: unknown }; children?: unknown }
+    const kids = Array.isArray(el?.children) ? el.children : Array.isArray(el?.props?.children) ? el.props.children : [el?.props?.children]
+    const only = kids.length === 1 && typeof kids[0] === 'string' ? kids[0] : null
+    if (el?.props?.dimColor === true && el.props.color === undefined && only !== null) dim += only
+    else {
+      flush(j)
+      meta.push(p)
+    }
+  })
+  flush(parts.length)
   return (
     // 질문 강조: 답변 끝 칩 · 그 답변 위 덮개와 한 hover 묶음 — 이 줄에 올리면 줄 · 칩 · 답변이 함께 회색.
     // 펼치지는 않는다(열기 · 닫기는 왼쪽 ▸). 시각을 모르는 옛 기록은 빼고

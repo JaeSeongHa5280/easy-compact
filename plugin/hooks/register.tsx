@@ -76,10 +76,10 @@ import type { Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, agentPart, agentSum, modelCompareText, promptHead, stepLabel, paneTitle } from './text'
 import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, tidyVerdict } from './tidy'
-import { agentText, BRAND_HEX, CH_PX, gaugeEl, setGaugeShape, setMotion, hoverTip, segButton, segGroup, row, gridOf, pickButton, CARD_INSET, questionScope, SVG_MAX_PX } from './ui-common'
+import { agentText, BRAND_HEX, CH_PX, gaugeEl, setGaugeShape, setMotion, hoverTip, segButton, segGroup, row, gridOf, pickButton, CARD_INSET, questionScope, SVG_MAX_PX, previewChip, previewFrame } from './ui-common'
 import type { Ui, Fold } from './ui-common'
 import { drawBandPreview, setBandOrder, setCtxUnit } from './ui-band'
-import type { SpendShown } from './ui-band'
+import type { BandPreviewExtra, SpendShown } from './ui-band'
 import {
   liveBlock,
   compactingBlock,
@@ -101,6 +101,8 @@ import { answerDetail, answerLine, sampleTurn, sampleUsage } from './ui-answer'
 import { drawBar } from './ui-bar'
 import type { BarActions } from './ui-bar'
 import { statusLineText } from './status-line'
+import { diagHead, redactDump } from './diag'
+import type { DiagCounts, DiagView } from './diag'
 import { isKorean, L, lang, plural, setLang } from './i18n'
 import { setSurface } from './glyph'
 import type { Lang } from './i18n'
@@ -222,16 +224,19 @@ const SEEN_VERSION_KEY = 'seenVersion'
  */
 async function readChanges(
   $: EngineInterface,
-  inst: { configDir: string; marketplace: string },
+  inst: { configDir: string; marketplace: string } | null,
   from: string | null,
   to: string | null,
 ): Promise<{ versions: string[]; changes: Record<string, ChangeGroup[]> }> {
-  // 디렉터리 설치본은 마켓 사본이 없다 — 이 판 플러그인 폴더의 CHANGELOG(공개본이 plugin/ 에도 담는다, 0.6.0)
-  const dir = inst.marketplace === 'synced' ? $.plugin.root.replace(/\\/g, '/') : await marketDir($, inst)
-  for (const name of lang() === 'ko' ? ['CHANGELOG.ko.md', 'CHANGELOG.md'] : ['CHANGELOG.md']) {
+  // 디렉터리 설치본은 마켓 사본이 없다 — 이 판 플러그인 폴더의 CHANGELOG(공개본이 plugin/ 에도 담는다, 0.6.0). 0.9.1: 폴더로 불러온
+  // 개발본(inst = null)도 이 폴더 — 공개본 사본이면 뿌리에, 이 저장소 개발본이면 docs/public 에 있다
+  const root = $.plugin.root.replace(/\\/g, '/')
+  const dirs = !inst ? [root, `${root}/docs/public`] : inst.marketplace === 'synced' ? [root] : [await marketDir($, inst)]
+  const names = lang() === 'ko' ? ['CHANGELOG.ko.md', 'CHANGELOG.md'] : ['CHANGELOG.md']
+  for (const path of dirs.flatMap(dir => names.map(name => `${dir}/${name}`))) {
     let md: string
     try {
-      md = await $.fs.read(`${dir}/${name}`)
+      md = await $.fs.read(path)
     } catch {
       continue // 다음 파일
     }
@@ -263,8 +268,15 @@ function changeRange(own: string | null, market: string | null, seen: unknown, u
  */
 async function refreshUpdateInfo($: EngineInterface): Promise<void> {
   const inst = await installNow($)
-  if (!inst) return
   const own = await ownVersion($)
+  // 0.9.1 U5: 폴더로 불러온 개발본도 버튼은
+  // 늘 — 판 · 이 판 바뀐 것 · 문제 제보만(업데이트 명령은 마켓 설치본 것이라 없다)
+  if (!inst) {
+    const got = await readChanges($, null, null, own)
+    await update($, updateInfo, prev => ({ ...prev, own, updatedTo: null, ...got, phase: 'dev' }))
+    $.ui.invalidate('ui.render')
+    return
+  }
   const seen = await $.store.get(SEEN_VERSION_KEY).catch(() => undefined)
   const updatedTo = own && seen !== own ? own : null
   // 앤트로픽 디렉터리 설치본: 마켓 사본 · claude plugin 명령이 안 맞는다(Claude Code 가 켤 때 계정 동기화로 새 판을 받음 — 공식 문서
@@ -312,8 +324,12 @@ async function closeUpdateDrawer($: EngineInterface): Promise<void> {
     await $.store.set(SEEN_VERSION_KEY, upd.updatedTo).catch(() => {})
     void refreshUpdateInfo($).catch(() => {})
   }
-  // 오류 원문 펼침도 처음대로
+  // 오류 원문 펼침도 처음대로 · 서랍 안 진단 카드도 닫는다
   await update($, updateInfo, prev => ({ ...prev, open: {} }))
+  if ((await read($, diagCard)).where === 'drawer') {
+    await update($, diagCard, prev => ({ ...prev, open: false, copiedLines: null, savedPath: null }))
+    diagSnap = null
+  }
   $.ui.invalidate('ui.render')
 }
 
@@ -685,8 +701,12 @@ const settingsOpen = atom({ plugin: 'easy-compact', key: 'settingsOpen' } as con
 /** 설정 안 탭(S10, 0.8.1) — 패널을 닫았다 열면 처음(바)으로, 설정 펼침과 같이 */
 const settingsTab = atom({ plugin: 'easy-compact', key: 'settingsTab' } as const, 'bar' as SettingsTab)
 
-/** 0.9.0: 판 서랍 [진단] 으로 마지막에 만든 진단 파일(이 세션) */
-const diagFile = atom({ plugin: 'easy-compact', key: 'diagFile' } as const, null as string | null)
+/** 0.9.1 U6: 진단 내용 카드(이 세션) — 처음엔 닫힘 · 질문 · 동작 글 빼기 켬 */
+const DIAG_CLOSED = { open: false, where: 'drawer' as 'drawer' | 'gen', redact: true, copiedLines: null as number | null, savedPath: null as string | null }
+const diagCard = atom({ plugin: 'easy-compact', key: 'diagCard' } as const, DIAG_CLOSED)
+
+/** 카드에 보인 덤프 사본 — 연 때 · 빼기를 바꿀 때 한 번 만든다(그리기마다 만들면 무겁고, 본 것과 복사한 것이 달라질 수 있다) */
+let diagSnap: { text: string; head: string; lines: number; turns: number; counts: DiagCounts; samples: string[] } | null = null
 
 /**
  * 사용량 패널을 열 때 카드 펼침: 이 세션 카드는 펼침, 질문별 비용은 접힘(질문이 쌓이면 길다 — 진행 중 값은 접힌 제목 줄에 보인다).
@@ -1085,6 +1105,8 @@ async function refreshUsage($: EngineInterface, opts: { categories: boolean; pus
 async function refreshUsageInner($: EngineInterface, opts: { categories: boolean; pushHistory: boolean }): Promise<void> {
   try {
     const measured = await $.session.usage(opts.categories ? { breakdown: 'summary' } : undefined)
+    // 0.9.1: 훅이 못 본 컴팩트를 먼저 적는다 — 아래 흐름이 그 컴팩트를 보고 컴팩트 전 크기를 안 띄운다
+    await catchMissedCompact($, measured.context.tokens, measured.startedAt).catch(err => log($, `missed compact check failed — ${String(err)}`))
     const prev = await read($, usage)
     // 컨텍스트 크기는 우리가 잰 마지막 메인 요청 값(흐름의 마지막 점)이 기준 — 띠 · 패널 · 그래프 · 질문별 비용이
     // 같은 값을 보인다. 흐름이 비었으면(기록을 못 읽음 · 첫 요청 전) 엔진 값.
@@ -1698,6 +1720,24 @@ let measureAfterCompact = false
 /** N2: 엔진이 컴팩트 결과로 직후 크기(tokensAfter)를 줬다 — 다음 요청으로 직후를 다시 재지 않는다(요약 몫만) */
 let afterFromEngine = false
 /**
+ * 0.9.1(회사 PC 0.9.0 — "컴팩트가 다 됐는데 컨텍스트가 컴팩트 전 크기 · 한 번 더 눌러야 맞음", 패널 "컴팩트 0회"): session.compact 훅이
+ * 못 적은 컴팩트. 엔진은 우리 $ 호출 아래에서 일어난 이벤트엔 우리 훅을 안 부르고 .catch 만 부른다(재진입 — HookFailure 're-entry',
+ * 그때 $ 는 거절). 그래서 .catch 는 결과만 받아 두고 다음 재기(refreshUsage)가 적는다
+ */
+let missedCompact: { trigger: string; result: CompactResultLike } | null = null
+/** 이번 컴팩트를 훅이 이미 적었나 — .catch 가 같은 컴팩트를 겹쳐 적지 않게(훅이 적은 뒤 던진 때) */
+let hookCompact: { isRecorded: boolean } | null = null
+/**
+ * 0.9.1: 이 프로세스에서 엔진 컨텍스트 값을 봤다. 엔진 값은 컴팩트 직후 다음 응답까지 빈다(엔진 문서 SessionContextUsage) — 본 뒤 비면
+ * 훅도 .catch 도 못 본 컴팩트로 적는다(앞 크기 = 마지막 점, 뒤 크기는 다음 요청이 채운다)
+ */
+let engineHadTokens = false
+/** 마지막으로 본 세션 시작 시각 — /clear 는 이 값을 바꾼다(그건 컴팩트로 적지 않는다) */
+let startedAtSeen: number | null = null
+
+/** 컴팩트 결과 중 적는 데 쓰는 것(엔진 SessionCompacted 의 일부) */
+type CompactResultLike = { tokensBefore?: number; tokensAfter?: number; usage?: Tokens }
+/**
  * 컴팩트 끝 줄어듦: 엔진이 컴팩트 결과를 돌려준 순간 앞 · 뒤 크기를 두고
  * 바 · 패널 머리 게이지가 앞 크기에서 뒤 크기로 1.3초 줄어든다. 그동안은 뒤 크기로 고정해 그린다 — 그림이 같아야 앱이 틀을 남겨 움직임이 이어진다
  */
@@ -2101,6 +2141,97 @@ async function addCompactStep($: EngineInterface, parts: CostParts | null, befor
   $.ui.invalidate('ui.render')
 }
 
+/**
+ * 컴팩트 한 번을 적는다: 계산식 재료(섞임 · 출력 · 직후 크기) · 컨텍스트 흐름 · 질문별 비용 줄 · 끝 줄어듦. session.compact 훅이 본 컴팩트와
+ * 훅이 못 본 컴팩트(0.9.1 — .catch 가 받아 둔 결과, 또는 엔진 값이 빈 것으로 안 컴팩트) 둘 다 이 길로. mark = 훅의 이번 디스패치 표시
+ */
+async function recordCompaction($: EngineInterface, trigger: string, result: CompactResultLike, mark?: { isRecorded: boolean }): Promise<void> {
+  measureAfterCompact = true
+  // 컴팩트 요청이 입력을 어떻게 냈는지(정가 · 캐시 읽기 · 쓰기 몫) — 다음 손익 계산에 쓴다.
+  // 캐시가 살아 있던 컴팩트만 남긴다 — "지금 컴팩트하면" 셈(compactPayoff)은 캐시가 살아 있을 때만 쓰고, 식은 캐시는
+  // coldCompact 가 따로 센다. 식은 캐시의 몫(정가 입력)이 남으면 다음 손익이 7배쯤 비싸 보였다
+  const mix = result.usage ? compactMixOf(result.usage) : null
+  if (mix && isWarmMix(mix)) await $.store.set(MIX_KEY, mix)
+  // 요약을 쓴 출력 토큰 — 다음 계산식 재료(없으면 가정 OUTPUT_GUESS)
+  if (result.usage && result.usage.output_tokens > 0) await $.store.set(OUTPUT_KEY, result.usage.output_tokens)
+  // 컨텍스트 흐름에 컴팩트 한 번: 직전 크기와 실제 값(엔진이 준 토큰 × 요율). 직후 크기는 다음 요청이 채운다
+  const flow = await readFlow($)
+  const before0 = await read($, usage)
+  const parts = result.usage && before0 ? costOf(result.usage, before0.model) : null
+  const measured = parts?.usd ?? null
+  const before = result.tokensBefore ?? before0?.contextTokens ?? flow.points[flow.points.length - 1]?.ctx ?? 0
+  // N2: 직후 크기는 엔진이 준 tokensAfter(요약 + 남긴 메시지) — 없을 때만 다음 요청이 채운다
+  const after = typeof result.tokensAfter === 'number' && result.tokensAfter > 0 ? result.tokensAfter : null
+  afterFromEngine = after !== null
+  if (after !== null) await $.store.set(AFTER_KEY, after)
+  // 엔진이 컴팩트를 끝낸 이 순간 게이지가 줄어든다(직후 크기를 엔진이 줬을 때만 — 모르면 다음 요청까지 그대로)
+  if (after !== null && before > after) {
+    gaugeShrink = { from: before, to: after, at: await $.clock.now() }
+    $.ui.invalidate('ui.render')
+    try {
+      $.clock.after(GAUGE_SHRINK_MS, () => {
+        gaugeShrink = null
+        $.ui.invalidate('ui.render')
+      })
+    } catch {
+      // 타이머를 못 걸면 다음 그리기에서 시각으로 끝난다(shrinkNow)
+    }
+  }
+  const event = { atMs: await $.clock.now(), trigger, before, after, costUsd: measured, index: flow.points.length }
+  await writeFlow($, { points: flow.points, compactions: [...flow.compactions, event] })
+  if (mark) mark.isRecorded = true
+  // 저절로 펴진 바를 ✕ 로 접어 둔 것은 컴팩트로 끝난다 — 다음 컴팩트 때는 다시 펴진다
+  await update($, autoDismissed, () => null)
+  // 질문별 비용에도 한 줄(앱 자체 요청으로 세지 않게 우리가 본 값에 넣는다)
+  if (parts) trackedUsd += parts.usd
+  await addCompactStep($, parts, before)
+  if (after !== null) await fillCompactAfter($, after)
+}
+
+/**
+ * 0.9.1: 훅이 못 본 컴팩트를 적는다 — ① .catch 가 받아 둔 결과(엔진 값 그대로) ② 엔진 컨텍스트 값이 이 프로세스에서 보인 뒤 비었다(컴팩트
+ * 직후 다음 응답 전 — 엔진 문서). ②는 앞 크기 = 마지막 점, 뒤 크기는 다음 요청이 채운다. /clear(세션 시작 시각이 바뀜)와 이미 적은
+ * 컴팩트(마지막 점 뒤 컴팩트가 있음)는 적지 않는다. 돌려주는 값: 적었나
+ */
+async function catchMissedCompact($: EngineInterface, engineTokens: number | undefined, startedAt: number): Promise<boolean> {
+  const isClear = startedAtSeen !== null && startedAt !== startedAtSeen
+  startedAtSeen = startedAt
+  if (missedCompact !== null) {
+    const m = missedCompact
+    missedCompact = null
+    await recordCompaction($, m.trigger, m.result)
+    log($, `compact the hook did not see (${m.trigger}) — recorded from .catch`)
+    return true
+  }
+  if (typeof engineTokens === 'number' && engineTokens > 0) {
+    engineHadTokens = true
+    return false
+  }
+  if (!engineHadTokens) return false
+  // 컴팩트가 도는 중이면 미룬다 — 훅이 곧 적거나(겹쳐 적지 않게), 우리 버튼이 명령을 아직 기다린다
+  const phase = await read($, compactPhase)
+  if (phase === 'compacting' || phase === 'tidying') return false
+  engineHadTokens = false
+  if (isClear) return false
+  const flow = await readFlow($)
+  const last = flow.points[flow.points.length - 1]
+  if (!last || last.ctx <= 0 || compactSince(flow) !== null) return false
+  // 누가 돌렸는지(사람 /compact · 자동)는 모른다 — 화면엔 그냥 "컴팩트"
+  await recordCompaction($, 'manual', { tokensBefore: last.ctx })
+  log($, `compact the hook did not see — engine context went empty after ${last.ctx}`)
+  return true
+}
+
+/** 0.9.1: 1.5초마다 — 훅이 못 본 컴팩트가 있으면 바로 다시 잰다(.catch 가 결과를 받아 뒀거나, 본 엔진 값이 비었다). 아니면 그냥 돌아온다 */
+async function watchCompact($: EngineInterface): Promise<void> {
+  if (missedCompact === null) {
+    if (!engineHadTokens) return
+    const tokens = (await $.session.usage()).context.tokens
+    if (typeof tokens === 'number' && tokens > 0) return
+  }
+  await refreshUsage($, { categories: false, pushHistory: false })
+}
+
 /** 컴팩트 뒤 첫 메인 요청이 잰 직후 크기를 아직 비어 있는 컴팩트 줄에(진행 중 질문 · 끝난 질문) */
 async function fillCompactAfter($: EngineInterface, after: number): Promise<void> {
   const fill = (details: readonly StepDetail[]) =>
@@ -2159,6 +2290,9 @@ async function compactNow($: EngineInterface, args = ''): Promise<void> {
   } finally {
     await update($, compactPhase, () => 'idle')
   }
+  // 0.9.1: 우리가 돌린 /compact 는 우리 $ 호출 아래라 엔진이 session.compact 훅을 안 부를 수 있다(재진입) — 끝나면 바로 다시 재
+  // 훅이 못 본 컴팩트를 적는다(회사 PC: 컴팩트가 끝났는데 바가 컴팩트 전 크기, 패널 "컴팩트 0회")
+  await refreshUsage($, { categories: false, pushHistory: false }).catch(() => {})
 }
 
 /**
@@ -2204,22 +2338,21 @@ function answerPreview($: EngineInterface, ui: Ui, summary: TurnSummary, isSampl
   // 질문 강조가 켜져 있으면 견본 칩도 마우스를 올리면 회색. 지난 질문 값으로 그린
   // 견본은 그 질문과 한 묶음 — 올리면 채팅창의 그 답변 · 칩 · 패널 줄도 함께. 예시 값은 묶을 답변이 없어 견본만
   const hover = isHover && surface !== 'terminal' ? { hover: { ...(isSample ? {} : { scope: questionScope(summary.atMs) }), backgroundColor: 'promptBorder' } } : {}
-  return (
-    <Box key="pv-answer" flexDirection="column" marginTop={1}>
-      {/* 제목(무엇 — 어디)과 흐린 풀이 한 줄 — "답변 아래(마지막 질문)" 은 무엇인지 · 언제 붙는지 안 읽혔다.
-          칩은 질문마다 붙고, 견본만 지난 질문 값(없으면 예시 값)으로 그린다 */}
-      {(() => {
-        // 설명은 마우스 올림 칩(데스크톱) — 설정 글 양을 줄임. 터미널은 제목만
-        const title = <Text>{L('답변 끝 칩 — 질문 비용', 'Answer chip — question cost')}</Text>
-        const tip =
-          L(
-            '이 세션 채팅창에서 Claude 의 답변이 끝날 때마다 그 답변 바로 아래에 붙습니다 — 보낸 질문 하나에 든 금액과 요청 수.',
-            "Appears right below each finished Claude answer in this session's chat — what that question cost and how many requests it took.",
-          ) +
-          (isSample ? L(' 견본은 예시 값 — 첫 답변이 끝나면 이 세션 값.', ' Example values until the first answer ends.') : L(' 견본은 이 세션 지난 질문 값.', " The sample uses this session's last question.")) +
-          (isHover && surface !== 'terminal' ? L(' 칩에 마우스를 올리면 그 답변이 회색으로 강조됩니다(질문 강조).', ' Hover the chip and its answer turns gray (Highlight).') : '')
-        return hoverTip(ui, 'pv-answer-tip', title, tip, { isOpen: isTipOpen, onToggle: () => void toggleFold($, 'desc-pv-answer-tip') })
-      })()}
+  // S13(0.9.1): 견본 틀 = 미리보기 칩 + 옅은 바탕(바 견본과 같은 꼴) — 예전 제목 줄 "답변 끝 칩 — 질문 비용" 은 카드 제목과 겹쳐 칩으로 옮겼다.
+  // 칩은 질문마다 붙고, 견본만 지난 질문 값(없으면 예시 값)으로 그린다. 설명은 "?"(데스크톱 마우스 올림 · 누르면 펼침)
+  const tip =
+    L(
+      '이 세션 채팅창에서 Claude 의 답변이 끝날 때마다 그 답변 바로 아래에 붙습니다 — 보낸 질문 하나에 든 금액과 요청 수.',
+      "Appears right below each finished Claude answer in this session's chat — what that question cost and how many requests it took.",
+    ) +
+    (isSample ? L(' 견본은 예시 값 — 첫 답변이 끝나면 이 세션 값.', ' Example values until the first answer ends.') : L(' 견본은 이 세션 지난 질문 값.', " The sample uses this session's last question.")) +
+    (isHover && surface !== 'terminal' ? L(' 칩에 마우스를 올리면 그 답변이 회색으로 강조됩니다(질문 강조).', ' Hover the chip and its answer turns gray (Highlight).') : '')
+  const label = hoverTip(ui, 'pv-answer-tip', previewChip(ui, 'pv-answer-chip', L('미리보기 · 답변 아래', 'Preview · below each answer')), tip, { isOpen: isTipOpen, onToggle: () => void toggleFold($, 'desc-pv-answer-tip') })
+  return previewFrame(
+    ui,
+    'pv-answer',
+    label,
+    <Box key="pv-answer-body" flexDirection="column">
       {surface === 'terminal' ? (
         line
       ) : (
@@ -2239,17 +2372,21 @@ function answerPreview($: EngineInterface, ui: Ui, summary: TurnSummary, isSampl
           {canFold && isOpen ? answerDetail(ui, summary) : null}
         </Box>
       )}
-    </Box>
+    </Box>,
   )
 }
 
 /**
- * 진단 덤프 — 이 세션의 패널 상태 · 질문 기록 · 사용량을 데이터 폴더 debug-<세션>.json 으로(이미 있는 폴더 — 하위 폴더는 안 만든다). 짝 없는 서로게이트 · 제어 문자 수도
- * 함께 센다(데스크톱이 그리기를 통째로 거부하는 글 후보). 같은 세션은 덮어쓴다
+ * 진단 덤프 재료 — 이 세션의 버전 · 설치 · 설정 · 패널 상태 · 질문 기록 · 사용량. 파일은 데이터 폴더 debug-<세션>.json(이미 있는 폴더 —
+ * 하위 폴더는 안 만든다, 같은 세션은 덮어쓴다)
  */
-async function writeDump($: EngineInterface): Promise<{ path: string; chars: number; lone: number; ctrl: number }> {
-  const state = {
+async function dumpObject($: EngineInterface): Promise<Record<string, unknown>> {
+  const inst = await installNow($)
+  return {
     at: new Date(await $.clock.now()).toISOString(),
+    // 0.9.1: 제보를 받으면 어느 버전 · 어떤 설치(개발본 dev · 마켓 이름 · 디렉터리 synced)인지부터
+    version: await ownVersion($),
+    install: inst ? inst.marketplace : 'dev',
     settings: await currentSettings($),
     usageTab: await read($, usageTab),
     paneModeLocal: await read($, paneModeLocal),
@@ -2277,30 +2414,96 @@ async function writeDump($: EngineInterface): Promise<{ path: string; chars: num
     trackedUsd,
     questionsUsd: (await read($, turnSummaries)).reduce((sum, t) => sum + t.cost.usd, 0) + ((await read($, live))?.cost.usd ?? 0),
   }
+}
+
+/** 덤프 글 + 짝 없는 서로게이트 · 제어 문자 수(데스크톱이 그리기를 통째로 거부하는 글 후보) */
+function dumpText(state: Record<string, unknown>): { text: string; lone: number; ctrl: number } {
   const text = JSON.stringify(state, null, 2)
   const lone = (text.match(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g) ?? []).length
-  const ctrl = (text.match(/\\u00[01][0-9a-f]/gi) ?? []).length
-  const path = `${await dataDir($)}/debug-${await $.session.id()}.json`
-  await $.fs.write(path, `${text}\n`)
-  return { path, chars: text.length, lone, ctrl }
+  const ctrl = (text.match(/\u00[01][0-9a-f]/gi) ?? []).length
+  return { text, lone, ctrl }
+}
+
+async function dumpPath($: EngineInterface): Promise<string> {
+  return `${await dataDir($)}/debug-${await $.session.id()}.json`
 }
 
 
+/** 진단 카드 사본을 만든다(연 때 · 빼기를 바꿀 때) — 카드에 보이는 글 = [복사] · [파일로 저장] 하는 글 */
+async function buildDiagSnap($: EngineInterface, redact: boolean): Promise<void> {
+  const raw = await dumpObject($)
+  const got = redactDump(raw, redact)
+  const { text } = dumpText(got.state)
+  const { head, lines } = diagHead(text)
+  const turns = Array.isArray(raw.turnSummaries) ? raw.turnSummaries.length : 0
+  diagSnap = { text, head, lines, turns, counts: got.counts, samples: got.samples }
+}
+
 /**
- * 판 서랍 [진단](0.9.0 — 공개 · 마켓 판엔 단축 명령이 없다): 진단 파일을 만들고 경로를 서랍 한 줄 · 토스트로. 대화엔 안
- * 남긴다(명령 답은 기록에 남아 다음 요청이 같이 읽는다). 파일은 데이터 폴더에만 — 밖으로 안 보낸다(사용자가 직접 붙인다)
+ * 진단 내용 보기(0.9.1 U6 — 사용자 "덤프는 뽑히는 내용을 사람한테 보여 줘야 · 복사해도 되는지 봐야"): 판 서랍 · 설정 › 일반 탭의 [진단 내용
+ * 보기] 가 그 줄 아래 카드를 연다(같은 자리에서 다시 누르면 닫음). 파일은 [파일로 저장] 때만 — 대화엔 안 남긴다(명령 답은 기록에 남아 다음
+ * 요청이 같이 읽는다). 밖으로는 안 보낸다(사용자가 직접 붙인다)
  */
-async function runDiagnose($: EngineInterface): Promise<void> {
+async function openDiag($: EngineInterface, where: 'drawer' | 'gen'): Promise<void> {
+  const cur = await read($, diagCard)
+  if (cur.open && cur.where === where) return closeDiag($)
   try {
-    const got = await writeDump($)
-    await update($, diagFile, () => got.path)
-    $.ui.toast(
-      L(
-        `진단 파일을 만들었습니다: ${got.path} — 제보할 때 붙여 주세요(질문 글 · 금액이 들어 있으니 올리기 전에 한 번 보세요)`,
-        `Saved a diagnostics file: ${got.path} — attach it to your report (it contains your questions and costs, so look it over first)`,
-      ),
-      { timeoutMs: HIDDEN_NOTE_MS },
-    )
+    await buildDiagSnap($, cur.redact)
+  } catch (err) {
+    $.ui.toast(L(`진단 내용을 못 만들었습니다 — ${String(err)}`, `Couldn't build the diagnostics — ${String(err)}`))
+    return
+  }
+  await update($, diagCard, prev => ({ ...prev, open: true, where, copiedLines: null, savedPath: null }))
+  $.ui.invalidate('ui.render')
+}
+
+async function closeDiag($: EngineInterface): Promise<void> {
+  await update($, diagCard, prev => ({ ...prev, open: false, copiedLines: null, savedPath: null }))
+  diagSnap = null
+  $.ui.invalidate('ui.render')
+}
+
+/** 카드 그리기 재료 — 그 자리(판 서랍 · 일반 탭)에 열려 있을 때만, 아니면 null(줄 버튼은 [진단 내용 보기]) */
+async function diagViewOf($: EngineInterface, where: 'drawer' | 'gen'): Promise<DiagView | null> {
+  const c = await read($, diagCard)
+  if (!c.open || c.where !== where || !diagSnap) return null
+  return { where, redact: c.redact, head: diagSnap.head, lines: diagSnap.lines, turns: diagSnap.turns, counts: diagSnap.counts, samples: diagSnap.samples, copiedLines: c.copiedLines, savedPath: c.savedPath }
+}
+
+/** 질문 · 동작 글 빼기 — 사본을 다시 만든다(복사 · 저장 표시는 지움: 다른 글이 됐다) */
+async function setDiagRedact($: EngineInterface, isOn: boolean): Promise<void> {
+  await buildDiagSnap($, isOn)
+  await update($, diagCard, prev => ({ ...prev, redact: isOn, copiedLines: null, savedPath: null }))
+  $.ui.invalidate('ui.render')
+}
+
+async function copyDiag($: EngineInterface, surface?: string): Promise<void> {
+  if (!diagSnap) await buildDiagSnap($, (await read($, diagCard)).redact)
+  const snap = diagSnap!
+  let isCopied = false
+  try {
+    const got = await $.ui.copy({ text: snap.text, ...(surface ? { surface: surface as Parameters<typeof $.ui.copy>[0]['surface'] } : {}) })
+    isCopied = got.isCopied
+  } catch {
+    isCopied = false
+  }
+  if (isCopied) {
+    await update($, diagCard, prev => ({ ...prev, copiedLines: snap.lines }))
+    $.ui.toast(L('복사했습니다 — 제보 글에 붙여 넣으세요', 'Copied — paste it into your report'))
+  } else {
+    $.ui.toast(L('복사하지 못했습니다 — [파일로 저장] 으로 파일을 붙여 주세요', "Couldn't copy — use [Save as file] and attach the file"))
+  }
+  $.ui.invalidate('ui.render')
+}
+
+async function saveDiag($: EngineInterface): Promise<void> {
+  if (!diagSnap) await buildDiagSnap($, (await read($, diagCard)).redact)
+  const snap = diagSnap!
+  try {
+    const path = await dumpPath($)
+    await $.fs.write(path, `${snap.text}\n`)
+    await update($, diagCard, prev => ({ ...prev, savedPath: path }))
+    $.ui.toast(L(`진단 파일을 만들었습니다: ${path} — 제보할 때 붙여 주세요`, `Saved a diagnostics file: ${path} — attach it to your report`), { timeoutMs: HIDDEN_NOTE_MS })
   } catch (err) {
     $.ui.toast(L(`진단 파일을 못 만들었습니다 — ${String(err)}`, `Couldn't save the diagnostics file — ${String(err)}`))
   }
@@ -2550,7 +2753,11 @@ function settingsActs($: EngineInterface): SettingsActions {
     checkUpdate: () => void checkUpdate($),
     applyUpdate: () => void applyUpdate($),
     toggleUpdate: key => void toggleUpdateOpen($, key),
-    diagnose: () => void runDiagnose($),
+    diagOpen: where => void openDiag($, where),
+    diagClose: () => void closeDiag($),
+    diagRedact: isOn => void setDiagRedact($, isOn),
+    diagCopy: surface => void copyDiag($, surface),
+    diagSave: () => void saveDiag($),
     openOverview: () => void openUsageTab($, 'main'),
   }
 }
@@ -2616,6 +2823,8 @@ export const register: Register = on => {
       void reconcileAgents($).catch(() => {})
       // B10: 입력창 아래 한 줄(컴팩트 단계 · 다른 세션에서 바꾼 설정을 따라간다 — 글이 같으면 그냥 돌아온다)
       void syncStatusLine($).catch(() => {})
+      // 0.9.1: 훅이 못 본 컴팩트(사람 /compact · 앱이 돌린 것 포함) — 컴팩트 뒤 다음 요청까지 컴팩트 전 크기가 남지 않게
+      void watchCompact($).catch(() => {})
     })
     // 캐시 남은 분을 갱신한다 — 그리기만 다시, 모델 호출 없음. 오늘 · 이번 달 사용량을 켰으면 5분마다 다시 잰다(다른 세션 몫 · 날짜 넘김)
     $.clock.every(60000, () => {
@@ -2908,13 +3117,13 @@ export const register: Register = on => {
   // 버튼 · 자동 · /compact 어느 쪽이든 도는 동안은 띠에 "컴팩트 중" 을 그리고, 끝나면 숫자를 다시 잰다.
   // 버튼이 돌린 것은 이미 'compacting' 이고 이름도 세워 뒀다 — 그대로 둔다
   on('session.compact', async ($, e, next) => {
+    const mark = { isRecorded: false }
+    hookCompact = mark
     await ensureLang($)
     const isMine = e.agentId === undefined && e.trigger !== 'precompute'
     if (isMine && (await read($, compactPhase)) !== 'compacting') await startCompacting($, compactKindOf(e.trigger))
     try {
       const result = await next(e)
-      if (isMine && !result.skip) measureAfterCompact = true
-      // 컴팩트 요청이 입력을 어떻게 냈는지(정가 · 캐시 읽기 · 쓰기 몫) — 다음 손익 계산에 쓴다
       // 컴팩트 미리 계산(엔진이 다음 컴팩트를 위해 미리 요약)도 대화 기록에 없는 요청 — 앱 자체 요청 줄로
       if (e.agentId === undefined && e.trigger === 'precompute' && !result.skip && result.usage) {
         const pre = costOf(result.usage, (await read($, usage))?.model ?? (await $.session.model()))
@@ -2923,51 +3132,21 @@ export const register: Register = on => {
           await addAppCost($, pre.usd, L('컴팩트 미리 계산', 'compact precompute'))
         }
       }
-      // 캐시가 살아 있던 컴팩트만 남긴다 — "지금 컴팩트하면" 셈(compactPayoff)은 캐시가 살아 있을 때만 쓰고, 식은 캐시는
-      // coldCompact 가 따로 센다. 식은 캐시의 몫(정가 입력)이 남으면 다음 손익이 7배쯤 비싸 보였다
-      const mix = isMine && !result.skip && result.usage ? compactMixOf(result.usage) : null
-      if (mix && isWarmMix(mix)) await $.store.set(MIX_KEY, mix)
-      // 요약을 쓴 출력 토큰 — 다음 계산식 재료(없으면 가정 OUTPUT_GUESS)
-      if (isMine && !result.skip && result.usage && result.usage.output_tokens > 0) await $.store.set(OUTPUT_KEY, result.usage.output_tokens)
-      // 컨텍스트 흐름에 컴팩트 한 번: 직전 크기와 실제 값(엔진이 준 토큰 × 요율). 직후 크기는 다음 요청이 채운다
-      if (isMine && !result.skip) {
-        const flow = await readFlow($)
-        const before0 = await read($, usage)
-        const parts = result.usage && before0 ? costOf(result.usage, before0.model) : null
-        const measured = parts?.usd ?? null
-        const before = result.tokensBefore ?? before0?.contextTokens ?? flow.points[flow.points.length - 1]?.ctx ?? 0
-        // N2: 직후 크기는 엔진이 준 tokensAfter(요약 + 남긴 메시지) — 없을 때만 다음 요청이 채운다
-        const after = typeof result.tokensAfter === 'number' && result.tokensAfter > 0 ? result.tokensAfter : null
-        afterFromEngine = after !== null
-        if (after !== null) await $.store.set(AFTER_KEY, after)
-        // 엔진이 컴팩트를 끝낸 이 순간 게이지가 줄어든다(직후 크기를 엔진이 줬을 때만 — 모르면 다음 요청까지 그대로)
-        if (after !== null && before > after) {
-          gaugeShrink = { from: before, to: after, at: await $.clock.now() }
-          $.ui.invalidate('ui.render')
-          try {
-            $.clock.after(GAUGE_SHRINK_MS, () => {
-              gaugeShrink = null
-              $.ui.invalidate('ui.render')
-            })
-          } catch {
-            // 타이머를 못 걸면 다음 그리기에서 시각으로 끝난다(shrinkNow)
-          }
-        }
-        const event = { atMs: await $.clock.now(), trigger: e.trigger, before, after, costUsd: measured, index: flow.points.length }
-        await writeFlow($, { points: flow.points, compactions: [...flow.compactions, event] })
-        // 저절로 펴진 바를 ✕ 로 접어 둔 것은 컴팩트로 끝난다 — 다음 컴팩트 때는 다시 펴진다
-        await update($, autoDismissed, () => null)
-        // 질문별 비용에도 한 줄(앱 자체 요청으로 세지 않게 우리가 본 값에 넣는다)
-        if (parts) trackedUsd += parts.usd
-        await addCompactStep($, parts, before)
-        if (after !== null) await fillCompactAfter($, after)
-      }
+      if (isMine && !result.skip) await recordCompaction($, e.trigger, result, mark)
       await refreshUsage($, { categories: false, pushHistory: false })
       return result
     } finally {
       if (isMine) await update($, compactPhase, () => 'idle')
     }
-  }).catch(($, e, next) => next(e)) // 다시 재기가 실패해도 컴팩트는 그대로 간다
+  }).catch(async (_$, e, next) => {
+    // 다시 재기가 실패해도 컴팩트는 그대로 간다. 0.9.1: 훅이 못 돈 컴팩트(재진입 — 우리 $ 호출 아래, 또는 적기 전에 던짐)는 결과만
+    // 받아 두고 다음 재기가 적는다 — 여기선 $ 가 거절될 수 있다
+    const mark = hookCompact
+    const result = await next(e)
+    const wasRecorded = next.called && mark !== null && mark.isRecorded
+    if (e.agentId === undefined && e.trigger !== 'precompute' && result && !result.skip && !wasRecorded) missedCompact = { trigger: e.trigger, result }
+    return result
+  })
 
   // 사람이 패널을 닫으면 닫아 둔다 — 같이 열기면 모든 데스크톱 세션에서, 아니면(기본 · 터미널) 이 세션만
   on('ui.close', async ($, e, next) => {
@@ -3010,6 +3189,11 @@ export const register: Register = on => {
       case 'questionHover':
         isOn = !s.questionHover
         await saveFromSettings($, { ...s, questionHover: isOn })
+        break
+      // 0.9.1 U6: 진단 카드 질문 · 동작 글 빼기(설정이 아니라 이 카드 값)
+      case 'diagRedact':
+        isOn = !(await read($, diagCard)).redact
+        await setDiagRedact($, isOn)
         break
       // S1(0.6.1 피드백): 움직임 스위치 — 켬 = system(OS 동작 줄이기는 따름), 끔 = reduce
       case 'motion':
@@ -3074,9 +3258,10 @@ export const register: Register = on => {
     const isSettings = (await read($, usageTab)) === 'settings'
     // 업데이트 칸(설치본만 — 개발본은 null): 설정 탭 맨 아래 칸 · 새 판이면 설정 탭 이름에 점(2안) · 업데이트 뒤 첫 실행 알림(3안)
     // 디렉터리 설치본은 켤 때 읽기 전에도 "저절로 받음" 칸(버튼 없음) — idle 의 [업데이트 확인] 이 잠깐이라도 나오지 않게
+    // 0.9.1 U5: 개발본(설치 자리 없음)도 버튼 · 서랍은 늘 — 단계는 dev(판 · 바뀐 것 · 문제 제보만)
     const updInst = await installNow($)
-    const updNow = updInst ? await read($, updateInfo) : null
-    const upd = updNow && updInst?.marketplace === 'synced' ? { ...updNow, phase: 'synced' as const } : updNow
+    const updNow = await read($, updateInfo)
+    const upd: UpdateState = !updInst ? { ...updNow, phase: 'dev' } : updInst.marketplace === 'synced' ? { ...updNow, phase: 'synced' } : updNow
     // 탭: 고르기 버튼(pickButton — 고른 쪽 채움, 데스크톱은 ✓ 없이 · 터미널은 ✓). 흐림 차이만으론 지금 보는 쪽이 안 읽혔고,
     // ✓ 를 붙이니 고른 탭만 넓어져 옆 탭이 밀렸다(fb A4)
     // 탭 · 보기 = 묶음 버튼(고른 쪽 칩 · 나머지 plain 흐린 글 — 앱 탭 · 묶음 꼴)
@@ -3119,24 +3304,46 @@ export const register: Register = on => {
       const pvBoxW = cols - (isTerminal ? 10 : 7)
       const setTab = await read($, settingsTab)
       // S10 · S11(0.8.1): 미리보기는 탭에 맞는 것만 그린다 — 바 탭 = 바 전체 + 줄마다(한도 · 비용 · 질문), 답변 칩 탭 = 칩 견본
-      const pvBand = (part: 'all' | 'limits' | 'cost' | 'turn') =>
-        drawBandPreview(ui, e.surface, u ?? sampleUsage(nowMs, pvModel), nowMs, inputsNow, bandShowOf(sSet), sSet.sessionColors, pvTurn, sSet.screen === 'simple', spendSet, pvBoxW, part)
+      const pvU = u ?? sampleUsage(nowMs, pvModel)
+      const pvBand = (part: 'all' | 'limits' | 'cost' | 'turn', extra: BandPreviewExtra = {}) =>
+        drawBandPreview(ui, e.surface, pvU, nowMs, inputsNow, bandShowOf(sSet), sSet.sessionColors, pvTurn, sSet.screen === 'simple', spendSet, pvBoxW, part, extra)
+      // S14(0.9.1 uxi 점검 — 옵션을 바꿔도 견본이 그대로였다): 바 크기 한 줄 · 접어 두기 · 입력창 아래 한 줄도 바 전체 견본에
+      const pvLevel = pvU.contextTokens > 0 ? levelOf(pvU.contextTokens) : null
+      const pvStatus =
+        setTab === 'bar' && sSet.statusLine
+          ? statusLineText({
+              tokens: pvU.contextTokens > 0 ? pvU.contextTokens : null,
+              window: pvU.window,
+              level: pvLevel,
+              thr: thresholds(),
+              unit: sSet.ctxUnit,
+              costUsd: pvU.costUsd ?? null,
+              phase: await read($, compactPhase),
+            })
+          : null
       const spendSet = setTab === 'bar' ? await spendShownOf($, sSet) : null
       // 미리보기 제목 "?" 도 누르면 아래에 풀이(S5 — 모든 "?" 같은 동작, 터미널은 [ ? ])
       const openSet = await read($, settingsOpen)
       const previews =
         setTab === 'bar'
           ? {
+              // S13(0.9.1): "바 — 입력창 위" 제목 줄 → 견본 틀 안 "미리보기 · 입력창 위" 칩(+ "?"), 견본은 입력창 모형 위 무대(데스크톱)
               bar: (
                 <Box key="pv" flexDirection="column">
-                  {(() => {
-                    const title = <ui.Text>{L('바 — 입력창 위', 'Bar — above the input')}</ui.Text>
-                    const tip =
-                      L('채팅 입력창 바로 위에 늘 떠 있는 줄 — 세션 금액 · 컨텍스트 · 캐시와 컴팩트 버튼. 아래 카드마다 그 줄만 다시 보입니다.', 'Always shown right above the chat input — session cost, context, cache and the Compact button. Each card below shows its own row again.') +
-                      (u ? L(' 견본은 이 세션 값.', ' The sample uses this session.') : L(' 견본은 예시 값 — 첫 질문이 끝나면 이 세션 값.', ' Example values until the first question ends.'))
-                    return hoverTip(ui, 'pv-bar-tip', title, tip, { isOpen: openSet['desc-pv-bar-tip'] === true, onToggle: () => void toggleFold($, 'desc-pv-bar-tip') })
-                  })()}
-                  {pvBand('all')}
+                  {pvBand('all', {
+                    label: hoverTip(
+                      ui,
+                      'pv-bar-tip',
+                      previewChip(ui, 'pv-bar-chip', L('미리보기 · 입력창 위', 'Preview · above the input')),
+                      L('채팅 입력창 바로 위에 늘 떠 있는 줄 — 세션 금액 · 컨텍스트 · 캐시와 컴팩트 버튼. 아래 카드마다 그 줄만 다시 보입니다. 견본의 버튼은 눌러지지 않습니다.', 'Always shown right above the chat input — session cost, context, cache and the Compact button. Each card below shows its own row again. The sample’s buttons do not press.') +
+                        (u ? L(' 견본은 이 세션 값.', ' The sample uses this session.') : L(' 견본은 예시 값 — 첫 질문이 끝나면 이 세션 값.', ' Example values until the first question ends.')),
+                      { isOpen: openSet['desc-pv-bar-tip'] === true, onToggle: () => void toggleFold($, 'desc-pv-bar-tip') },
+                    ),
+                    stage: true,
+                    band: sSet.band,
+                    foldedLabel: sSet.bandFolded ? revealLabel(false, pvLevel) : null,
+                    statusLine: pvStatus,
+                  })}
                 </Box>
               ),
               limits: pvBand('limits'),
@@ -3181,6 +3388,7 @@ export const register: Register = on => {
         u ? (u.rateLimits.length > 0 ? true : allSums.length > 0 ? false : null) : null,
         await read($, compactDraft),
         setTab,
+        await diagViewOf($, 'gen'),
       )
     } else {
       const nowTurn = await read($, live)
@@ -3261,6 +3469,9 @@ export const register: Register = on => {
     const isDrawerOpen = await read($, updDrawer)
     const paneMotion = sNowPane.motion !== 'reduce'
     const paneShrink = await shrinkNow($)
+    // B11(0.9.1): 패널 머리 게이지도 컴팩트 · 저장 중엔 진행 파랑으로 움직인다(그림 설명에 "컴팩트 중")
+    const headPhase = await read($, compactPhase)
+    const headBusy = headPhase === 'compacting' || headPhase === 'tidying'
     return (
       // 폭을 못 박는다 — 데스크톱은 줄을 안 바꾸는 글(버튼 이름 등)이 길면 안쪽 틀이 그만큼 넓어져 다른 글이
       // 넓어진 틀에서 줄을 바꾸고 패널 밖으로 잘렸다(화면 크기와 상관없이)
@@ -3275,12 +3486,18 @@ export const register: Register = on => {
               // 컴팩트 끝 줄어듦은 바 게이지와 같이 — 그동안 뒤 크기로 고정
               const shrink = paneShrink
               const moving = paneMotion
+              const busy = headBusy && !shrink
               return gaugeEl(ui, e.surface, shrink ? shrink.to : (u?.contextTokens ?? 0), {
                 key: 'pane-head-gauge',
-                alt: u ? L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`) : L('컨텍스트 아직 모름', 'Context not known yet'),
+                alt: u
+                  ? busy
+                    ? L(`컨텍스트 ${fmtTokens(u.contextTokens)} · ${headPhase === 'tidying' ? '저장 중' : '컴팩트 중'}`, `Context ${fmtTokens(u.contextTokens)} · ${headPhase === 'tidying' ? 'saving' : 'compacting'}`)
+                    : L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`)
+                  : L('컨텍스트 아직 모름', 'Context not known yet'),
                 px: 18,
                 motion: moving,
                 live: moving,
+                busy,
                 ...(shrink ? { fromCtx: shrink.from } : {}),
               })
             })()}
@@ -3292,22 +3509,20 @@ export const register: Register = on => {
           {/* 사용량 탭에서 바로 간단 ⇄ 자세히 — 이 세션 보기만(기본은 설정 탭 "화면" 값, 프리셋은 세부를 못 바꾼다).
               상위 탭과 한 단계 아래로 보이게 "보기" 이름 + 붙은 두 칸, 탭 줄 오른쪽 끝 — 좁으면 아래 줄 오른쪽(2026-10-14 uxi 안 A).
               둥근 테두리 묶음은 데스크톱에서 위아래 한 줄씩 더 먹어(바 창 버튼에서 겪음) 테두리 없이 간격 0 */}
-          {/* 오른쪽 끝: [보기 간단|자세히](현황) · 업데이트 버튼(설치본만 — U4, 0.6.1 피드백 "업데이트 확인을 위쪽 버튼으로, 누르면 내역") */}
-          {isSettings && !upd ? null : (
-            <Box key="pane-mode" columnGap={1} alignItems="center" flexGrow={1} justifyContent="flex-end" flexWrap="wrap">
-              {isSettings ? null : <ui.Text dimColor>{L('보기', 'View')}</ui.Text>}
-              {isSettings
-                ? null
-                : segGroup(ui, 'pane-mode-pair', [
-                    tab('simple', paneModeName('simple'), paneMode === 'simple', () => void setPaneMode($, 'simple')),
-                    tab('detail', paneModeName('detail'), paneMode === 'detail', () => void setPaneMode($, 'detail')),
-                  ])}
-              {upd ? updateButton(ui, upd, isDrawerOpen, () => void toggleUpdateDrawer($)) : null}
-            </Box>
-          )}
+          {/* 오른쪽 끝: [보기 간단|자세히](현황) · 버전 버튼(U4 — 0.9.1 U5 부터 개발본도 늘) */}
+          <Box key="pane-mode" columnGap={1} alignItems="center" flexGrow={1} justifyContent="flex-end" flexWrap="wrap">
+            {isSettings ? null : <ui.Text dimColor>{L('보기', 'View')}</ui.Text>}
+            {isSettings
+              ? null
+              : segGroup(ui, 'pane-mode-pair', [
+                  tab('simple', paneModeName('simple'), paneMode === 'simple', () => void setPaneMode($, 'simple')),
+                  tab('detail', paneModeName('detail'), paneMode === 'detail', () => void setPaneMode($, 'detail')),
+                ])}
+            {updateButton(ui, upd, isDrawerOpen, () => void toggleUpdateDrawer($))}
+          </Box>
         </Box>
-        {/* 업데이트 서랍(U4): 판 · 상태 · [업데이트 확인]/[업데이트] · 판별 바뀐 것(U1) — 탭을 바꾸거나 패널을 닫으면 닫힌다(U3) */}
-        {upd && isDrawerOpen ? drawUpdateDrawer(settingsActs($), ui, upd, await $.clock.now(), e.surface, await read($, diagFile)) : null}
+        {/* 업데이트 서랍(U4): 버전 · 상태 · [업데이트 확인]/[업데이트] · 문제 제보 · 버전별 바뀐 것(U1) — 탭을 바꾸거나 패널을 닫으면 닫힌다(U3) */}
+        {isDrawerOpen ? drawUpdateDrawer(settingsActs($), ui, upd, await $.clock.now(), e.surface, await diagViewOf($, 'drawer')) : null}
         {/* 세로 상자라 본문이 패널 폭을 꽉 채운다 — 가로 상자(예전)면 본문이 내용 폭이라 카드 끝선이 탭 · 보기마다 달랐다(fb A3) */}
         <Box marginTop={1} flexDirection="column">
           {body}

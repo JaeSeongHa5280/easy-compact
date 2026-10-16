@@ -82,12 +82,12 @@ export function gaugeEl(
   ui: Ui,
   surface: string,
   ctx: number,
-  o: { key: string; alt: string; px: number; blink?: boolean; motion?: boolean; from?: number; fromCtx?: number; live?: boolean },
+  o: { key: string; alt: string; px: number; blink?: boolean; motion?: boolean; from?: number; fromCtx?: number; live?: boolean; busy?: boolean },
 ) {
   const Svg = svgOf(ui, surface)
   if (!Svg) return null
   const t = thresholds()
-  // 컴팩트 끝 줄어듦: 앞 크기(fromCtx)의 채움 · 단계에서 지금으로
+  // 컴팩트 끝 줄어듦: 앞 크기(fromCtx)의 채움에서 지금으로 — 색은 진행 파랑에서(B11, 컴팩트 중이 파랑이었다)
   const hasFrom = o.fromCtx !== undefined && o.fromCtx > 0
   const shape = gaugeShapeNow()
   const source = gaugeSvg({
@@ -99,6 +99,8 @@ export function gaugeEl(
     motion: o.motion,
     from: hasFrom ? gaugeFrac(o.fromCtx!, t.ctxWarn, t.ctxCut) : o.from,
     fromLevel: hasFrom ? levelOf(o.fromCtx!) : undefined,
+    ...(hasFrom ? { fromBusy: true } : {}),
+    ...(o.busy === true ? { busy: true } : {}),
   })
   // live = 샌드박스 틀(isInteractive). 앱은 화면을 다시 그릴 때 같은 틀(iframe)만 남기고 img 는 새로 만든다 — img 면 깜빡임 · 줄어듦이
   // 다시 그릴 때마다 처음부터라 움직이지 않는 것처럼 보였다(앱 2.37337 렌더러 실측 · 사용자 "애니메이션 안 됨"). 같은 그림이면 틀이 남아 이어진다
@@ -106,7 +108,7 @@ export function gaugeEl(
 }
 
 /** 설정 "게이지 모양"(B8) — register 가 설정을 읽을 때 넣는다(움직임과 같은 방식). 기본 가로 막대 */
-let gaugeShape: GaugeShape = 'bar'
+let gaugeShape: GaugeShape = 'cells'
 
 export function setGaugeShape(shape: GaugeShape): void {
   gaugeShape = shape
@@ -464,6 +466,61 @@ export const CARD_INSET = 4
  * 세 겹이 된다. 색은 카드와 같은 회색(상태 색이면 다시 알록달록)
  */
 export const TILE = CARD
+
+/**
+ * 설정 미리보기 바탕(0.9.1 S13 — 사용자 "미리보기 내용을 점선이나 테두리 · 미리보기라고 표시해 줘야 아 이게 미리보기구나", 조화 검토 ★ "칩 +
+ * 옅은 바탕"): 테두리 대신 옅은 회색 — 두 테마 다 보이는 rgba(엔진은 테마 이름 말고 rgba 도 받는다 — 스위치 길과 같은 수). 점선은 Svg 조각으로
+ * 그릴 수 있지만 "빈 자리 · 끌어 놓기"로 읽혀 견본엔 덜 맞았다
+ */
+export const PREVIEW_WELL = 'rgba(128,128,128,0.10)'
+
+/** 미리보기 칩: 데스크톱 = 앱 배지 꼴 옅은 파랑(둥근 상자 + 바탕 background = bg-accent · 글 suggestion = text-accent), 터미널 = 은은한 띠 */
+export function previewChip(ui: Ui, key: string, text: string) {
+  const { Box, Text } = ui
+  if (onTerminal())
+    return (
+      <Box key={key} backgroundColor="userMessageBackground" paddingX={1} flexShrink={0}>
+        <Text>{text}</Text>
+      </Box>
+    )
+  return (
+    <Box key={key} borderStyle="round" borderColor="background" backgroundColor="background" paddingX={1} paddingY={0} flexShrink={0}>
+      <Text color="suggestion">{text}</Text>
+    </Box>
+  )
+}
+
+/** 미리보기 이름표 줄 — 칩(+ 옆 "?" 같은 덧붙임). 줄은 왼쪽에 붙는다(칩이 늘어나지 않게) */
+export function previewLabel(ui: Ui, key: string, text: string, tail: unknown = null) {
+  const { Box } = ui
+  return (
+    <Box key={key} columnGap={1} alignItems="center" alignSelf="flex-start">
+      {previewChip(ui, `${key}-chip`, text)}
+      {tail}
+    </Box>
+  )
+}
+
+/**
+ * 미리보기 틀: 데스크톱 = 테두리 없는 옅은 회색 바탕(둥근 모서리 — 같은 색 테두리) + 맨 위 이름표, 터미널 = 둥근 테두리(TILE) + 이름표 띠.
+ * 설정 카드(테두리)와 갈려 "카드 안 카드"로 안 읽힌다
+ */
+export function previewFrame(ui: Ui, key: string, label: unknown, children: unknown) {
+  const { Box } = ui
+  if (onTerminal())
+    return (
+      <Box key={key} flexDirection="column" {...TILE}>
+        {label}
+        {children}
+      </Box>
+    )
+  return (
+    <Box key={key} flexDirection="column" rowGap={1} borderStyle="round" borderColor={PREVIEW_WELL} backgroundColor={PREVIEW_WELL} paddingX={1}>
+      {label}
+      {children}
+    </Box>
+  )
+}
 
 /** 타일 안 막대 폭(px)이 줄어드는 만큼: 타일 안쪽 칸 수 × 칸당 px — 터미널 칸 그림은 6px 가 한 칸, 데스크톱은 1ch = CH_PX */
 export const TILE_PX = CARD_INSET * 6

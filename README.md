@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.9.0-4c9be8" alt="Version 0.9.0">
+  <img src="https://img.shields.io/badge/version-0.9.1-4c9be8" alt="Version 0.9.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-090">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-091">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 ---
@@ -78,7 +78,7 @@ No `claude` command (usual if you only use the desktop app)? Send the one line a
 
 ## Update
 
-**From 0.5.0, inside the app:** the bar's **gauge** — the bar before **Compact** (a ring on 0.8.x, **◔** on 0.6–0.7, **📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *New N* (on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
+**From 0.5.0, inside the app:** the bar's **gauge** — the steps before **Compact** (a horizontal bar on 0.9.0, a ring on 0.8.x, **◔** on 0.6–0.7, **📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *Update N* (*New N* up to 0.9.0; on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
 
 **On 0.4.1 or earlier, or to do it yourself, send this one line to Claude**, then restart Claude:
 
@@ -109,7 +109,20 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.9.0
+## What's new in 0.9.1
+
+- **Show diagnostics before you share** — **Report a problem** in the pane's version drawer and in the Settings **General** tab: **[Show diagnostics]** first shows what's inside and the first lines. Your questions, answer endings, step names and custom texts are left out from the start; then **[Copy]**, **[Save as file]** or **[Open an issue ↗]** — exactly what you saw. See [Something wrong?](#something-wrong--report-it).
+- **Settings previews look like previews** — a light well with a blue **Preview** chip instead of a border; the whole-bar preview sits above a mock input. The preview shows the gauge in your shape, with a four-step sample under **Gauge shape**. Bar size one line · keep folded · line below the input show in the preview too.
+- **The gauge moves while compacting** — progress blue, per shape (bars breathe · the ring spins an arc · steps light in turn), then shrinks from blue to the new size.
+- **Steps gauge by default** — the horizontal bar looked like the plan-limit bars next to it (a shape you picked stays).
+- **The version button is always there** — *Update 0.9.1* when a new version is out.
+- **No more pre-compact size after a compact** — a compact Claude Code didn't announce (one from the bar button, for one) went unrecorded: the bar kept the old size and the pane said *0 compacts* until the next request. Now it is recorded within 1.5 seconds.
+- **Sonnet 5.5 cache reads** — the October 7 price cut ($0.20 → $0.10) is counted by date.
+
+Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.9.0</b></summary>
 
 - **The gauge is a horizontal bar by default** — the ring looked exactly like the app's own context ring next to the input. **Gauge shape** in the Settings **Bar** tab offers **Bar** · **Ring** · **Vertical bar** · **Steps** (the bar, the pane header and the compact card change together).
 - **Compact card: Easy Compact · Clear · Cancel** — *Save & compact* is now **Easy Compact**, and **Clear** (/clear) takes the place of *Compact now*. With a cold cache the card skips the save question: **Plain compact** (Claude's /compact — it shows the text it adds) · **Clear** · **Cancel**.
@@ -117,9 +130,9 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 - **The folded-bar button is one colored square** — **🟦 Easy Compact** below the input; the square follows the size step (🟦 room · 🟧 time to compact · 🟥 late). In a terminal a folded bar leaves one **[⇱ Easy Compact]** line in its place (ctrl+x tab → Enter).
 - **A line below the input** (optional) — while the app's end-of-turn "next step" box takes the bar away, the gist of the bar stays below the input.
 - **Overview** — the bars breathe while compacting and shrink when it ends, the compact timing bar fills from the left, Cost by size marks the row you are in, and **Context numbers** (size · % · both) reach the compact card.
-- **Diagnostics · reporting** — **[Diagnose]** in the pane's version drawer saves this session's state to one file — see [Something wrong?](#something-wrong--report-it). The `/easy-compact` command is gone (the bar's ✕ and the folded-bar button do the same).
+- **Diagnostics · reporting** — **[Diagnose]** in the pane's version drawer saves this session's state to one file ([Show diagnostics] from 0.9.1). The `/easy-compact` command is gone (the bar's ✕ and the folded-bar button do the same).
 
-Full list: [CHANGELOG](CHANGELOG.md).
+</details>
 
 <details>
 <summary><b>What's new in 0.8.0</b></summary>
@@ -259,7 +272,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 | 🔴 Red gauge (pulsing) · *Compact overdue* | Past your range — the deeper, the faster it pulses |
 | 🔴 *Cache expired* · **Plain compact advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
 
-Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as a horizontal bar — **Gauge shape** in the Settings **Bar** tab switches it to a ring (like the app's context ring), a vertical bar or steps. Colors, pulsing and the post-compact shrink are the same in every shape.
+Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring) or a vertical bar. Colors, pulsing and the post-compact shrink are the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light in turn).
 
 ### 4. Easy Compact — one click
 
@@ -309,7 +322,7 @@ Whether a folded bar opens by itself is **Open the bar when compacting** in the 
 
 <img src="docs/img/fold.png" width="900" alt="After folding the bar: a note that it opens by itself when it is time to compact, and the Easy Compact button below the input">
 
-**There are no slash commands** (from 0.9.0) — everything is on the bar's buttons and the **⚙ Settings** tab of the pane. Settings has the **Screen type** (Simple · Detailed · Custom) at the top, then tabs: **Bar** (Whole bar — bar size · gauge shape · keep the bar folded · open the bar when compacting · line below the input / Limits row / Cost row — its parts · All sessions · session-cost colors · cost order · context numbers as size, % or both / Question row — each card with a preview of its row), **Answer chip** (answer chip details · highlight), **Pane** (open the pane in new sessions · open and close together), **Compact** (compact text · cache), **General** (animations · language). The parts the screen type decides are changed on Custom and dimmed on the presets. Each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). In a terminal, value lists are buttons in a row instead of dropdowns. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version: press it for what changed in each newer version, **Check for updates**, **Update** and **Diagnose**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
+**There are no slash commands** (from 0.9.0) — everything is on the bar's buttons and the **⚙ Settings** tab of the pane. Settings has the **Screen type** (Simple · Detailed · Custom) at the top, then tabs: **Bar** (Whole bar — bar size · gauge shape · keep the bar folded · open the bar when compacting · line below the input / Limits row / Cost row — its parts · All sessions · session-cost colors · cost order · context numbers as size, % or both / Question row — each card with a preview of its row), **Answer chip** (answer chip details · highlight), **Pane** (open the pane in new sessions · open and close together), **Compact** (compact text · cache), **General** (animations on the desktop · report a problem · language). The parts the screen type decides are changed on Custom and dimmed on the presets. Each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). In a terminal, value lists are buttons in a row instead of dropdowns. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version (*dev* for a folder-loaded copy): press it for what changed in each version, **Check for updates**, **Update** and **Report a problem**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
 
 **Buttons cost nothing** — they leave nothing in the conversation.
 
@@ -327,7 +340,7 @@ Still stuck? See [Something wrong?](#something-wrong--report-it) below.
 
 ## Something wrong? — report it
 
-1. **Save a diagnostics file** — the Easy Compact pane (the bar's gauge; in a terminal, **[Pane ▸]**) → the version button at the right of the tab row (`v0.9.0 ▸`) → **[Diagnose]** in the drawer. The file's path shows in the drawer and a notice (nothing goes into the conversation).
+1. **Show diagnostics** — the Easy Compact pane (the bar's gauge; in a terminal, **[Pane ▸]**) → the version button at the right of the tab row (`v0.9.1 ▸`) → **[Show diagnostics]** under **Report a problem** in the drawer (also in the Settings **General** tab). You see what's inside and the first lines — your questions, answer endings, step names and custom texts are left out from the start (turn the switch off to include them; your own text going out then shows in yellow). Then **[Copy]** (clipboard) or **[Save as file]** (the path shows in the card and a notice — nothing goes into the conversation), exactly what you saw. **[Open an issue ↗]** opens a new issue.
 2. **What's in it** — every setting, the pane's state (open tab, open cards), usage numbers · the running question · compact phase, the question history (question text · cost per question · the end of each answer), the cost cross-check (the engine's total · what easy-compact measured), and counts of unpaired surrogates and control characters (candidates for a pane that doesn't draw at all).
 3. **Where** — `~/.claude/plugins/data/easy-compact-easy-compact/debug-<session id>.json` (`plugins/data/easy-compact-synced/` if you installed from Anthropic's directory). The same session overwrites it.
 4. **It stays on your computer** — easy-compact never sends it. Attach it yourself; it contains your questions and costs, so look it over and remove anything private before you post it.

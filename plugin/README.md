@@ -32,14 +32,15 @@ easy-compact is a Claude Code mod (`modules` in `hooks/hooks.json`), so it runs 
 
 ## What it sends
 
-- easy-compact itself sends nothing over the network: no telemetry and no requests of its own. Everything it measures stays on your computer.
+- easy-compact itself sends nothing over the network: no telemetry and no requests of its own. Everything it measures stays on your computer. The diagnostics card's **Open an issue** is a plain link that opens this repository's new-issue page in your browser; nothing is attached to it.
 - **Easy Compact** sends one message to Claude in your session, as part of your normal conversation. The message asks Claude to check what compacting would lose, to save decisions, progress and next steps that aren't in files yet (memory, work notes), and to reply with what to do next. It includes the text you set in Settings under Compact text. Nothing else goes into it: no text from your conversation or files, and no costs. The text you set for "after /compact" is added to the `/compact` command as instructions for the summary.
 
 ## What it writes
 
 - Its settings, to Claude Code's plugin store on this computer.
 - Each session's question history (question text, cost, the end of each answer), each session's running cost (so it survives an app restart), each session's cost by day of requests that aren't in the session records (compact summaries, Claude Code's own background requests — so today and this month include them) with the size and cost of each compact it measured, and its own small caches, to its data folder under `~/.claude/plugins/data`.
-- A diagnostics file, `debug-<session>.json` in that same folder (this session's settings, pane state, usage and question history), only when you press **Diagnose** in the pane's version drawer. It stays on your computer; you attach it to a bug report yourself.
+- A diagnostics file, `debug-<session>.json` in that same folder (version, this session's settings, pane state, usage and question history), only when you press **Save as file** in the diagnostics card (**Report a problem** → **Show diagnostics** — in the pane's version drawer or the Settings General tab). The card shows the content first; question text, answer endings, step names and custom texts are left out unless you turn that off. It stays on your computer; you attach it to a bug report yourself.
+- The same diagnostics text to your clipboard, only when you press **Copy** in that card.
 
 ## What its hooks do
 

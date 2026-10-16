@@ -5,7 +5,8 @@ import { bandShowOf, DEFAULT_SETTINGS, SESSION_COLORS_DEFAULT } from './settings
 import { agentPart, agentSum, callsOf, ctxNumText, limitName, rangeNumText, widthOf } from './text'
 import type { CtxUnit } from './text'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
-import { agentText, bar, decoIcon, TILE } from './ui-common'
+import { agentText, bar, CH_PX, decoIcon, gaugeEl, gaugeShapeNow, previewFrame, previewLabel, TILE } from './ui-common'
+import { gaugeWidth } from './gauge'
 import type { Ui } from './ui-common'
 
 /** 입력창 위 띠의 줄들 — 한도 · 예상(이 세션 · 요청당 · 컨텍스트 · 캐시) · 지난 질문. 칸마다 화면 보기 값(bandShow)으로 뺄 수 있다 */
@@ -389,10 +390,27 @@ export function rewriteNote(ui: Ui, rewriteUsd: number | undefined) {
   return <Text color="warning">{L(` · 캐시 다시 씀 ${fmtUsd(rewriteUsd)}`, ` · cache rewrite ${fmtUsd(rewriteUsd)}`)}</Text>
 }
 
+/** 바 미리보기 덧값(0.9.1 S13 · S12 · S14) — register 가 설정 · 이 세션 값으로 채운다 */
+export type BandPreviewExtra = {
+  /** 이름표 줄(바 전체 = "미리보기 · 입력창 위" + "?") — 없으면 "미리보기" */
+  label?: unknown
+  /** 무대: 바 견본을 입력창 모형 위에(바 전체 · 데스크톱만 — 조화 검토 ★) */
+  stage?: boolean
+  /** 바 크기 — 한 줄(min)이면 견본도 한 줄 꼴(S14) */
+  band?: 'full' | 'min'
+  /** 바 접어 두기 켬 — 맨 위에 접힌 모습(펴는 버튼 이름 — revealLabel) */
+  foldedLabel?: string | null
+  /** 입력창 아래 한 줄 켬 — 그 글(statusLineText) */
+  statusLine?: string | null
+}
+
 /**
  * 설정 탭 화면 칸의 바 미리보기 — 고른 화면 · 한도 줄 · 금액 색으로
  * 이 세션 값을 바(최대 크기)와 같은 줄 배치로 그린다(register.tsx AbovePrompt 의 줄 나눔과 같게). 버튼 자리는 흐린 글이라
- * 눌러지지 않는다. 한도 줄은 엔진이 한도를 준 세션(구독)에서만 — 바와 같다
+ * 눌러지지 않는다. 한도 줄은 엔진이 한도를 준 세션(구독)에서만 — 바와 같다.
+ * 0.9.1: 틀 = 미리보기 칩 + 옅은 바탕(S13 — 카드 안 카드로 읽히던 것), 컴팩트 자리에 게이지(S12 — 0.5 땐 글 줄에 그림을 못 넣어 뺐다,
+ * 지금 줄은 상자라 넣는다 · 고른 꼴 · 이 세션 단계 색), 바 크기 한 줄 · 접어 두기 · 입력창 아래 한 줄도 견본에(S14 — uxi 점검: 옵션을 바꿔도
+ * 견본이 그대로였다)
  */
 export function drawBandPreview(
   ui: Ui,
@@ -412,18 +430,21 @@ export function drawBandPreview(
    * 설정 바 탭에서 그 줄을 바꾸는 칸 바로 위에. 그 줄이 지금 화면에 없으면 까닭 한 줄
    */
   part: 'all' | 'limits' | 'cost' | 'turn' = 'all',
+  extra: BandPreviewExtra = {},
 ) {
   const { Box, Text } = ui
+  const label = extra.label ?? previewLabel(ui, `pv-label-${part}`, L('미리보기', 'Preview'))
+  const frame = (key: string, body: unknown) => previewFrame(ui, key, label, body)
   // 간단 화면은 한 줄 고정 — 한도 줄을 안 그린다(바와 같다)
   const limits = !isLean && u && u.rateLimits.length > 0 ? drawLimitsLine(ui, surface, u, nowMs, show) : null
   const turn = show.lastTurn ? drawLastTurnLine(ui, last, null) : null
-  const why = (key: string, text: string) => (
-    <Box key={key} flexDirection="column" {...TILE}>
-      <Text dimColor wrap="wrap">
+  const why = (key: string, text: string) =>
+    frame(
+      key,
+      <Text key={`${key}-why`} dimColor wrap="wrap">
         {text}
-      </Text>
-    </Box>
-  )
+      </Text>,
+    )
   if (part === 'limits' && !limits) {
     return why(
       'band-preview-limits',
@@ -445,18 +466,49 @@ export function drawBandPreview(
   // 창 버튼은 바와 같게 — 바가 한 줄(간단 · 한도 줄 · 질문 줄 없음)이면 [—] 가 없다(register.tsx isOneRow). 간단 미리보기에도
   // "📊  —  ✕" 가 나왔다(공개 세션 발견, 2026-10-13)
   const isOneRow = isLean || (!limits && !show.lastTurn)
-  // 0.5 묶음 2: 터미널 "패널 ▸", 컴팩트 버튼 이름 "컴팩트"(바와 같은 이름 — 게이지 그림은 미리보기 글 줄에 못 넣어 뺌). B5(0.7.0 피드백):
-  // 데스크톱은 게이지가 패널 문이라 창 버튼은 — ✕ 만
-  const winText = onDesktop() ? (isOneRow ? '✕' : '—  ✕') : isOneRow ? L('[패널 ▸] [✕]', '[Pane ▸] [✕]') : L('[패널 ▸] [—] [✕]', '[Pane ▸] [—] [✕]')
-  const compactText = L('컴팩트', 'Compact')
+  // S14: 바 크기 한 줄(최소)이면 견본도 한 줄 — 비용 줄 + [게이지 컴팩트] + □ ✕(ui-bar 최소 꼴). 바가 원래 한 줄이면 같다
+  const isMin = extra.band === 'min' && !isOneRow
+  const isTerm = !onDesktop()
+  // B5(0.7.0 피드백): 데스크톱은 게이지가 패널 문이라 창 버튼은 — ✕ 만(최소면 □ ✕)
+  const winText = !isTerm ? (isOneRow ? '✕' : isMin ? '□  ✕' : '—  ✕') : isOneRow ? L('[패널 ▸] [✕]', '[Pane ▸] [✕]') : isMin ? L('[패널 ▸] [□] [✕]', '[Pane ▸] [□] [✕]') : L('[패널 ▸] [—] [✕]', '[Pane ▸] [—] [✕]')
+  // 컴팩트 버튼 이름 = 바와 같은 말(이 세션 단계 — 최소 데스크톱은 늘 짧은 "컴팩트"), 왼쪽에 게이지(S12 — 데스크톱만, 고른 꼴 · 움직임 없이)
+  const ctx = u && u.contextTokens > 0 ? u.contextTokens : 0
+  const lv = ctx > 0 ? levelOf(ctx) : 'ok'
+  const isRange = thresholds().isRange === true
+  const compactText =
+    isMin && !isTerm
+      ? L('컴팩트', 'Compact')
+      : lv === 'cut'
+        ? isRange
+          ? L('컴팩트 늦어짐', 'Compact overdue')
+          : L('컴팩트 권장', 'Compact advised')
+        : lv === 'warn'
+          ? isRange
+            ? L('컴팩트할 때', 'Time to compact')
+            : L('곧 컴팩트할 때', 'Compact soon')
+          : L('컴팩트', 'Compact')
+  const gauge = gaugeEl(ui, surface, ctx, {
+    key: 'pv-gauge-svg',
+    alt: ctx > 0 ? L(`컨텍스트 견본 ${Math.round(ctx / 1000)}k`, `Sample context ${Math.round(ctx / 1000)}k`) : L('컨텍스트 견본', 'Sample context'),
+    px: 16,
+    motion: false,
+  })
+  const gaugeCols = gauge ? Math.ceil(gaugeWidth(gaugeShapeNow(), 16) / CH_PX) + 1 : 0
   const win = fake('pv-win', winText)
-  const compact = fake('pv-compact', compactText)
+  const compact = (
+    <Box key="pv-compact" columnGap={1} alignItems="center">
+      {gauge ? <Box key="pv-gauge">{gauge}</Box> : null}
+      {fake('pv-compact-name', compactText)}
+    </Box>
+  )
   // 질문 줄을 뺀 화면이면 이지 컴팩트는 비용 줄 오른쪽(한도 줄이 없으면 한 줄) — 바와 같은 규칙
   const hasTurnRow = show.lastTurn
   // 비용 줄 폭 = 견본 바 안쪽 − 같은 줄 오른쪽 글(줄 사이 2칸). 칸은 빼지 않고(최대 크기 견본) 이 폭으로만 나눈다
-  const isTerm = !onDesktop()
-  const estRight = limits ? (hasTurnRow ? 0 : widthOf(compactText, isTerm)) : hasTurnRow ? widthOf(winText, isTerm) : widthOf(compactText, isTerm) + 2 + widthOf(winText, isTerm)
-  const estW = boxW === null ? null : Math.max(12, boxW - (estRight > 0 ? estRight + 2 : 0))
+  const compactW = gaugeCols + widthOf(compactText, isTerm)
+  const estRight = isMin ? compactW + 2 + widthOf(winText, isTerm) : limits ? (hasTurnRow ? 0 : compactW) : hasTurnRow ? widthOf(winText, isTerm) : compactW + 2 + widthOf(winText, isTerm)
+  // 무대(테두리 상자 · 안쪽 여백)만큼 안쪽 폭이 준다
+  const stageW = extra.stage && !isTerm ? 4 : 0
+  const estW = boxW === null ? null : Math.max(12, boxW - stageW - (estRight > 0 ? estRight + 2 : 0))
   const est = u ? drawEstimateLine(ui, u, nowMs, inputs, show, colors, false, spend, estW) : <Text dimColor>{L('질문이 한 번 끝나면 비용이 보입니다', 'Costs appear after the first question finishes')}</Text>
   const line = (key: string, left: unknown, right: unknown) => (
     <Box key={key} columnGap={2} alignItems="flex-start">
@@ -464,7 +516,7 @@ export function drawBandPreview(
         {left ?? <Text> </Text>}
       </Box>
       {right ? (
-        <Box key={`${key}-r`} flexShrink={0} columnGap={2}>
+        <Box key={`${key}-r`} flexShrink={0} columnGap={2} alignItems="center">
           {right}
         </Box>
       ) : null}
@@ -473,19 +525,55 @@ export function drawBandPreview(
   // 줄 미리보기(S10): 그 줄 글만 — 창 버튼은 바 전체에만, 컴팩트 버튼은 질문 줄 끝에(바와 같은 자리)
   if (part !== 'all') {
     const one = part === 'limits' ? line('pv-1', limits, null) : part === 'cost' ? line('pv-2', est, null) : line('pv-3', turn, compact)
-    return (
-      <Box key={`band-preview-${part}`} flexDirection="column" {...TILE}>
-        {one}
-      </Box>
-    )
+    return frame(`band-preview-${part}`, one)
   }
-  const rows = limits
-    ? [line('pv-1', limits, win), est ? line('pv-2', est, hasTurnRow ? null : compact) : null, hasTurnRow || !est ? line('pv-3', turn, compact) : null]
-    : [line('pv-1', est, hasTurnRow ? win : [compact, win]), hasTurnRow ? line('pv-3', turn, compact) : null]
-  return (
-    <Box key="band-preview" flexDirection="column" {...TILE}>
+  const rows = isMin
+    ? [line('pv-min', est, [compact, win])]
+    : limits
+      ? [line('pv-1', limits, win), est ? line('pv-2', est, hasTurnRow ? null : compact) : null, hasTurnRow || !est ? line('pv-3', turn, compact) : null]
+      : [line('pv-1', est, hasTurnRow ? win : [compact, win]), hasTurnRow ? line('pv-3', turn, compact) : null]
+  // 무대(S13 ★ — 바 전체 · 데스크톱): 바 견본을 테두리 상자에, 그 아래 입력창 모형 — "입력창 위에 뜨는 바"를 그대로
+  const isStage = extra.stage === true && !isTerm
+  const barBox = isStage ? (
+    <Box key="pv-bar" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1} paddingY={0}>
       {rows}
     </Box>
+  ) : (
+    <Box key="pv-bar" flexDirection="column">
+      {rows}
+    </Box>
+  )
+  const input = isStage ? (
+    <Box key="pv-input" borderStyle="round" borderColor="promptBorder" paddingX={1} justifyContent="space-between" alignItems="center">
+      <Text dimColor>{L('메시지 입력', 'Type a message')}</Text>
+      <Text dimColor>↑</Text>
+    </Box>
+  ) : null
+  // S14: 접어 두기 켬 — 맨 위에 접힌 모습(펴는 버튼 — 데스크톱 입력창 아래 · 터미널 바 자리), 그 아래 "펼치면" 바 견본
+  const folded = extra.foldedLabel ? (
+    <Box key="pv-folded" flexDirection="column">
+      <Text dimColor>{isTerm ? L('접힌 모습 · 바 자리', 'Folded · in the bar’s place') : L('접힌 모습 · 입력창 아래', 'Folded · below the input')}</Text>
+      <Box key="pv-folded-btn" alignSelf="flex-start" borderStyle="round" borderColor="promptBorder" paddingX={1} paddingY={0}>
+        <Text>{extra.foldedLabel}</Text>
+      </Box>
+      <Text dimColor>{L('펼치면', 'When opened')}</Text>
+    </Box>
+  ) : null
+  // S14: 입력창 아래 한 줄 켬 — 바닥 띠 글(statusLineText)
+  const status = extra.statusLine ? (
+    <Box key="pv-status" flexDirection="column">
+      <Text dimColor>{L('입력창 아래 한 줄', 'Line below the input')}</Text>
+      <Text wrap="truncate-end">{extra.statusLine}</Text>
+    </Box>
+  ) : null
+  return frame(
+    'band-preview',
+    <Box key="band-preview-body" flexDirection="column" rowGap={isStage ? 1 : 0}>
+      {folded}
+      {barBox}
+      {input}
+      {status}
+    </Box>,
   )
 }
 

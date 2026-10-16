@@ -239,8 +239,9 @@ export const DEFAULT_SETTINGS: Settings = {
   bandOrder: ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache'],
   motion: 'system',
   ctxUnit: 'size',
-  // B8: 기본은 가로 막대
-  gaugeShape: 'bar',
+  // B8: 앱 고리와 같은 꼴은 기본이 아니다(동료). 0.9.1: 바 안 한도 막대(5시간 · 7일)와
+  // 같은 가로 막대 꼴이라 헷갈렸다 · 16px 에서도 몇 칸 찼나가 단계로 읽힌다 · 컴팩트 중 차례로 켜짐이 가장 또렷하다. 이미 고른 사람은 그대로
+  gaugeShape: 'cells',
   // B10: 입력창 아래 한 줄은 기본 끔(바와 같은 내용이 두 번 — 바가 빠질 때만 쓸모)
   statusLine: false,
 }
@@ -762,9 +763,9 @@ export function normalizeSettings(raw: unknown): Settings {
   // B1(0.6.1 피드백): 컨텍스트 · 컴팩트 구간 숫자 꼴 — 크기(281k) · %(최대 컨텍스트 대비 28%) · 둘 다
   const rawUnit = (r as { ctxUnit?: unknown }).ctxUnit
   const ctxUnit = rawUnit === 'pct' || rawUnit === 'both' ? rawUnit : 'size'
-  // B8(0.8.1): 게이지 꼴 — 모르는 값 · 없음이면 가로 막대(0.8.0 까지 쓰던 사람도 새 기본으로)
+  // B8(0.8.1): 게이지 꼴 — 모르는 값 · 없음이면 기본(0.9.1 부터 칸 막대 — 고른 적 없는 사람도 새 기본으로)
   const rawShape = (r as { gaugeShape?: unknown }).gaugeShape
-  const gaugeShape = rawShape === 'ring' || rawShape === 'vbar' || rawShape === 'cells' ? rawShape : 'bar'
+  const gaugeShape = rawShape === 'ring' || rawShape === 'vbar' || rawShape === 'bar' || rawShape === 'cells' ? rawShape : DEFAULT_SETTINGS.gaugeShape
   const statusLine = (r as { statusLine?: unknown }).statusLine === true
   const custom = normalizeView((r as { custom?: unknown }).custom)
   // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)

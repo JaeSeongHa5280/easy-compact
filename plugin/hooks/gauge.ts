@@ -75,7 +75,22 @@ export type GaugeLook = {
   blink?: number | null
   /** 움직임(미끄러짐 · 깜빡임) — 설정 "모션 줄임" 이면 false */
   motion?: boolean
+  /**
+   * 컴팩트 · 저장 중(0.9.1 B11 — 사용자 "게이지 모양별 컴팩트 중 · 완료 깜빡임, 없으면 현황 컴팩트 시점 · 컨텍스트처럼"): 진행 파랑(BUSY_HEX —
+   * 옆 "컴팩트 중…" 글 · 진행 점과 같은 색 — 빨강 "권함" 깜빡임과 갈린다)에 꼴마다 움직임: 가로 · 세로 막대 = 숨쉬기(현황 막대와 같은
+   * .35 ↔ 1 · 1.4초), 고리 = 28% 호가 돈다(1.6초 한 바퀴 — 꽉 찬 고리는 돌아도 안 보인다), 칸 막대 = 네 칸이 차례로 밝아짐(1.4초 한 바퀴).
+   * 움직임이 꺼져 있으면 멈춘 파랑(지금 채움)
+   */
+  busy?: boolean
+  /** 컴팩트 끝 줄어듦을 진행 파랑에서 시작(컴팩트 중이 파랑이었으니 — 앞 단계 색 대신) */
+  fromBusy?: boolean
 }
+
+/** 컴팩트 · 저장 중 게이지 색(진행 파랑 — ui-common LIVE_HEX · PHASE_HEX 와 같은 계열) */
+export const BUSY_HEX = '#4c9be8'
+
+/** 컴팩트 중 움직임 CSS(꼴마다) — 키프레임엔 고정 값만. 동작 줄이기면 멈춤 */
+const REDUCE = '@media (prefers-reduced-motion:reduce){.f,.g,.s,.c0,.c1,.c2,.c3{animation:none!important}}'
 
 /** 게이지 SVG 글 — 순수 함수(시험 · README 그림이 같이 쓴다) */
 export function gaugeSvg(g: GaugeLook): string {
@@ -83,6 +98,14 @@ export function gaugeSvg(g: GaugeLook): string {
   const f = Math.max(0, Math.min(1, g.frac))
   const pct = Math.max(0.01, f * 100)
   const motion = g.motion !== false
+  // 컴팩트 중(B11): 바탕 고리 + 28% 진행 파랑 호가 돈다 — 움직임이 꺼져 있으면 지금 채움을 멈춘 파랑으로
+  if (g.busy === true) {
+    const track = `<path d="${RING}Z" stroke="currentColor" stroke-opacity=".2" stroke-width="8"/>`
+    const arc = motion
+      ? `<style>@keyframes gr{to{transform:rotate(360deg)}}.s{transform-origin:32px 32px;animation:gr 1.6s linear infinite}${REDUCE}</style><path class="s" d="${RING}" pathLength="100" stroke="${BUSY_HEX}" stroke-width="8" stroke-linecap="round" stroke-dasharray="28 100"/>`
+      : `<path d="${RING}" pathLength="100" stroke="${BUSY_HEX}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${pct.toFixed(2)} 100"/>`
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${g.px}" height="${g.px}" viewBox="0 0 64 64" fill="none">${track}${arc}</svg>`
+  }
   const fromPct = g.from !== undefined && motion && Math.abs(g.from - f) > 0.005 ? Math.max(0.01, Math.min(1, Math.max(0, g.from)) * 100) : null
   const stroke = g.level === 'ok' ? 'currentColor' : GAUGE_HEX[g.level]
   // 0 이면 바탕 고리만 — 앱 고리처럼 빈 원(둥근 끝이 12시에 점으로 남지 않게)
@@ -90,8 +113,10 @@ export function gaugeSvg(g: GaugeLook): string {
   const t = g.blink === null || g.blink === undefined || !motion ? null : Math.max(0, Math.min(1, g.blink))
   // 미끄러짐 0.5초, 크게 줄면(컴팩트 뒤) 1.3초
   const dur = fromPct !== null && fromPct - pct > 15 ? 1.3 : 0.5
-  // 앞 단계 색(고정 hex)에서 시작 — 끝 값은 그 선의 제 색(아직 = currentColor)이라 키프레임엔 hex 만 들어간다(color-mix 금지)
-  const fromStroke = fromPct !== null && g.fromLevel !== undefined && g.fromLevel !== g.level && g.fromLevel !== 'ok' ? `;stroke:${GAUGE_HEX[g.fromLevel]};stroke-opacity:1` : ''
+  // 앞 단계 색(고정 hex)에서 시작 — 끝 값은 그 선의 제 색(아직 = currentColor)이라 키프레임엔 hex 만 들어간다(color-mix 금지). 컴팩트 끝은
+  // 진행 파랑에서(B11 — 컴팩트 중이 파랑이었다)
+  const fromHex = fromPct === null ? null : g.fromBusy === true ? BUSY_HEX : g.fromLevel !== undefined && g.fromLevel !== g.level && g.fromLevel !== 'ok' ? GAUGE_HEX[g.fromLevel] : null
+  const fromStroke = fromHex ? `;stroke:${fromHex};stroke-opacity:1` : ''
   const slide = fromPct === null ? '' : `@keyframes gs{from{stroke-dasharray:${fromPct.toFixed(2)} 100${fromStroke}}}`
   const pulse = t === null ? '' : `@keyframes gp{50%{stroke:${lerpHex('#ea7c7c', '#ffe2e2', t)};stroke-width:${(8 + 1.8 * t).toFixed(2)}}}`
   const anim = [fromPct !== null ? `gs ${dur}s ease-out` : '', t !== null ? `gp ${(1.6 - 0.9 * t).toFixed(2)}s ease-in-out infinite` : ''].filter(Boolean).join(',')
@@ -111,16 +136,50 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
   const clamp = (v: number) => Math.max(0, Math.min(1, v))
   const f = clamp(g.frac)
   const motion = g.motion !== false
+  const W = gaugeWidth(shape, g.px)
+  const H = g.px
+  const th = Math.max(4, Math.round(H * 0.38))
+  const n2 = (v: number) => v.toFixed(2)
+  const filled = (v: number) => (v <= 0 ? 0 : Math.min(4, Math.ceil(v * 4 - 1e-9)))
+  // 칸 막대 자리(4칸 — 25%씩)
+  const cellAt = (i: number) => {
+    const gap = Math.max(1, Math.round(H * 0.08))
+    const ch = Math.max(5, Math.round(H * 0.5))
+    const cw = (W - 2 - gap * 3) / 4
+    return `x="${n2(1 + i * (cw + gap))}" y="${n2((H - ch) / 2)}" width="${n2(cw)}" height="${ch}" rx="1.5"`
+  }
+  // 컴팩트 중(B11): 진행 파랑 — 막대는 지금 채움이 숨쉬고(현황 막대와 같은 .35 ↔ 1 · 1.4초), 칸 막대는 네 칸이 차례로 밝아진다(1.4초 한 바퀴,
+  // 음수 지연이라 처음부터 차례 — 양수면 기다리는 동안 다 밝았다). 움직임이 꺼져 있으면 지금 채움을 멈춘 파랑으로
+  if (g.busy === true) {
+    let body = ''
+    let css = ''
+    if (shape === 'cells') {
+      const n = motion ? 4 : filled(f)
+      for (let i = 0; i < 4; i++) body += i < n ? `<rect class="c${i}" ${cellAt(i)} fill="${BUSY_HEX}"/>` : `<rect ${cellAt(i)} fill="currentColor" fill-opacity=".2"/>`
+      if (motion) css = `@keyframes gc{0%,100%{opacity:.3}18%{opacity:1}45%{opacity:.3}}${[0, -1.05, -0.7, -0.35].map((d, i) => `.c${i}{animation:gc 1.4s linear ${d}s infinite}`).join('')}`
+    } else if (shape === 'bar') {
+      const y = (H - th) / 2
+      const len = W - 2
+      body = `<rect x="1" y="${n2(y)}" width="${len}" height="${th}" rx="${th / 2}" fill="currentColor" fill-opacity=".2"/>`
+      body += `<rect class="f" x="1" y="${n2(y)}" width="${n2(Math.max(th, len * f))}" height="${th}" rx="${th / 2}" fill="${BUSY_HEX}"/>`
+    } else {
+      const x = (W - th) / 2
+      const len = H - 2
+      const h = Math.max(th, len * f)
+      body = `<rect x="${n2(x)}" y="1" width="${th}" height="${len}" rx="${th / 2}" fill="currentColor" fill-opacity=".2"/>`
+      body += `<rect class="f" x="${n2(x)}" y="${n2(1 + len - h)}" width="${th}" height="${n2(h)}" rx="${th / 2}" fill="${BUSY_HEX}"/>`
+    }
+    if (motion && shape !== 'cells') css = '@keyframes gb{50%{opacity:.35}}.f{animation:gb 1.4s ease-in-out infinite}'
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${css ? `<style>${css}${REDUCE}</style>` : ''}${body}</svg>`
+  }
   const from = g.from !== undefined && motion && Math.abs(g.from - f) > 0.005 ? clamp(g.from) : null
   const color = g.level === 'ok' ? 'currentColor' : GAUGE_HEX[g.level]
   const opacity = f === 0 && from === null ? '0' : g.level === 'ok' ? '.8' : '1'
   const t = g.blink === null || g.blink === undefined || !motion ? null : clamp(g.blink)
   const dur = from !== null && from - f > 0.15 ? 1.3 : 0.5
-  const fromFill = from !== null && g.fromLevel !== undefined && g.fromLevel !== g.level && g.fromLevel !== 'ok' ? `;fill:${GAUGE_HEX[g.fromLevel]};fill-opacity:1` : ''
-  const W = gaugeWidth(shape, g.px)
-  const H = g.px
-  const th = Math.max(4, Math.round(H * 0.38))
-  const n2 = (v: number) => v.toFixed(2)
+  // 컴팩트 끝 줄어듦은 진행 파랑에서(B11), 그 밖엔 앞 단계 색에서
+  const fromHex = from === null ? null : g.fromBusy === true ? BUSY_HEX : g.fromLevel !== undefined && g.fromLevel !== g.level && g.fromLevel !== 'ok' ? GAUGE_HEX[g.fromLevel] : null
+  const fromFill = fromHex ? `;fill:${fromHex};fill-opacity:1` : ''
   let shapes = ''
   let slide = ''
   if (shape === 'bar') {
@@ -141,18 +200,14 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells'): string {
     }
   } else {
     // 칸 막대: 단계가 칸으로(4칸 — 25%씩). 컴팩트로 줄면 비워지는 칸이 앞 색에서 바탕으로 옅어진다(.g)
-    const gap = Math.max(1, Math.round(H * 0.08))
-    const ch = Math.max(5, Math.round(H * 0.5))
-    const y = (H - ch) / 2
-    const cw = (W - 2 - gap * 3) / 4
-    const filled = (v: number) => (v <= 0 ? 0 : Math.min(4, Math.ceil(v * 4 - 1e-9)))
     const n = filled(f)
     const nFrom = from !== null ? filled(from) : n
     for (let i = 0; i < 4; i++) {
-      const at = `x="${n2(1 + i * (cw + gap))}" y="${n2(y)}" width="${n2(cw)}" height="${ch}" rx="1.5"`
+      const at = cellAt(i)
       shapes += i < n ? `<rect class="f" ${at} fill="${color}" fill-opacity="${opacity}"/>` : i < nFrom ? `<rect class="g" ${at} fill="currentColor" fill-opacity=".2"/>` : `<rect ${at} fill="currentColor" fill-opacity=".2"/>`
     }
-    if (nFrom > n) slide = `@keyframes gs{from{fill-opacity:1${fromFill || `;fill:${g.level === 'ok' ? '#888888' : GAUGE_HEX[g.level]}`}}}`
+    // 비는 칸: 앞 색(컴팩트 끝이면 진행 파랑 — B11)에서 바탕으로 옅어진다
+    if (nFrom > n) slide = `@keyframes gs{from{fill:${fromHex ?? (g.level === 'ok' ? '#888888' : GAUGE_HEX[g.level])};fill-opacity:1}}`
   }
   const pulse = t === null ? '' : `@keyframes gp{50%{fill:${lerpHex('#ea7c7c', '#ffe2e2', t)}}}`
   const fAnim = [slide && shape !== 'cells' ? `gs ${dur}s ease-out` : '', t !== null ? `gp ${(1.6 - 0.9 * t).toFixed(2)}s ease-in-out infinite` : ''].filter(Boolean).join(',')

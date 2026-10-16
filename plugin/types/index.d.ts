@@ -114,7 +114,8 @@ export type SpendTotals = { atMs: number; today: number; month: number; retroMon
  * (known_marketplaces.json lastUpdated)
  */
 export type UpdateState = {
-  phase: 'idle' | 'checking' | 'latest' | 'newer' | 'updating' | 'done' | 'failed' | 'synced'
+  /** dev = 폴더로 불러온 개발본(0.9.1 — 버튼은 늘 보이되 업데이트 명령은 없다) */
+  phase: 'idle' | 'checking' | 'latest' | 'newer' | 'updating' | 'done' | 'failed' | 'synced' | 'dev'
   own: string | null
   market: string | null
   marketAt: string | null
@@ -476,8 +477,11 @@ declare module 'claude-code' {
       settingsOpen: Record<string, boolean>
       /** S10(0.9.0): 설정 안 탭 — 바 · 답변 칩 · 패널 · 컴팩트 · 일반. 이 세션, 패널을 닫으면 바 탭으로 */
       settingsTab: 'bar' | 'chip' | 'pane' | 'compact' | 'gen'
-      /** 0.9.0: 판 서랍 [진단] 으로 마지막에 만든 진단 파일 경로(이 세션) — 서랍에 보인다 */
-      diagFile: string | null
+      /**
+       * 0.9.1 U6: 진단 내용 카드(이 세션) — 연 자리(판 서랍 · 설정 › 일반 탭) · 질문 · 동작 글 빼기 · [복사] 한 줄 수 · [파일로 저장] 한 경로.
+       * 보이는 덤프 글은 연 때 · 빼기를 바꿀 때 한 번 만든 사본(register.tsx diagSnap — 본 그대로 복사 · 저장)
+       */
+      diagCard: { open: boolean; where: 'drawer' | 'gen'; redact: boolean; copiedLines: number | null; savedPath: string | null }
       /** 사용량 카드 펼침: 접으면 제목 줄의 요약만. 패널을 열 때 이 세션 카드는 펼침 · 질문별 비용은 접힘(CARDS_OPEN_DEFAULT) */
       cardsOpen: { now: boolean; history: boolean; compact: boolean }
       /** 오늘 · 이번 달 사용량(설정에서 켰거나 패널 자세히를 볼 때 잰다) — 못 쟀으면 null */

@@ -222,18 +222,26 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 저장 · 컴팩트 중 · 식은 캐시 비권함 · 아낄 게 적음엔 색만 — 사용자 규칙 12). 깜빡이는 점은 뺐다(게이지가 맡는다)
   const canBlink = !e.props.isWorking && !isConfirming && phase !== 'tidying' && phase !== 'compacting' && !isNotNow && !isLittle && level === 'cut'
   const motion = sNow.motion !== 'reduce'
+  // B11(0.9.1): 컴팩트 · 저장 중엔 게이지가 진행 파랑으로 움직인다(꼴마다) — 옆 깜빡이는 점은 뺀다(게이지가 맡는다, 아래 compactRow)
+  const isBusy = phase === 'compacting' || phase === 'tidying'
   const gaugeBox = (blink: boolean) => {
     const isBlink = blink && Boolean(u) && !shrink
+    const busy = isBusy && !shrink
     const el = gaugeEl(ui, e.surface, shrink ? shrink.to : (u?.contextTokens ?? 0), {
       key: 'compact-icon-svg',
-      alt: u ? L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`) : L('컨텍스트 아직 모름', 'Context not known yet'),
+      alt: u
+        ? busy
+          ? L(`컨텍스트 ${fmtTokens(u.contextTokens)} · ${phase === 'tidying' ? '저장 중' : '컴팩트 중'}`, `Context ${fmtTokens(u.contextTokens)} · ${phase === 'tidying' ? 'saving' : 'compacting'}`)
+          : L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`)
+        : L('컨텍스트 아직 모름', 'Context not known yet'),
       px: 16,
       blink: isBlink,
       motion,
-      // B6(0.7.0 피드백 "바를 최소 · 최대로 열 때마다 게이지가 깜빡"): 틀(샌드박스 iframe)은 움직일 때만(깜빡임 · 컴팩트 끝 줄어듦) —
-      // 늘 틀이면 최소 ↔ 최대처럼 게이지가 다른 줄 · 다른 상자로 옮겨 갈 때 앱이 틀을 새로 띄워 빈칸이 번쩍였다. 가만히 있는 게이지는
-      // 그림(img)이라 다시 그려도 바로 그려진다(패널 머리 게이지와 같은 규칙)
-      live: motion && (isBlink || Boolean(shrink)),
+      busy,
+      // B6(0.7.0 피드백 "바를 최소 · 최대로 열 때마다 게이지가 깜빡"): 틀(샌드박스 iframe)은 움직일 때만(깜빡임 · 컴팩트 중 · 컴팩트 끝
+      // 줄어듦) — 늘 틀이면 최소 ↔ 최대처럼 게이지가 다른 줄 · 다른 상자로 옮겨 갈 때 앱이 틀을 새로 띄워 빈칸이 번쩍였다. 가만히 있는
+      // 게이지는 그림(img)이라 다시 그려도 바로 그려진다(패널 머리 게이지와 같은 규칙)
+      live: motion && (isBlink || busy || Boolean(shrink)),
       ...(shrink ? { fromCtx: shrink.from } : {}),
     })
     return el ? <Box key="compact-icon">{el}</Box> : null
@@ -259,11 +267,13 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const gaugePx = gaugeWidth(gaugeShapeNow(), 16)
   const ICON_W = isTerm ? 0 : Math.ceil(gaugePx / CH_PX) + 1
   const shortLabel = L('컴팩트', 'Compact')
+  // 진행 점(+2칸)은 게이지가 없는 표면(터미널)에만 — B11 데스크톱은 게이지가 맡는다
+  const dotW = ICON_W > 0 ? 0 : 2
   const compactW = (label: string) =>
     phase === 'compacting' && look
-      ? ICON_W + 2 + txtW(look.text)
+      ? ICON_W + dotW + txtW(look.text)
       : phase === 'tidying' && look
-        ? ICON_W + 2 + txtW(look.text) + 1 + btnW(L('취소', 'Cancel'))
+        ? ICON_W + dotW + txtW(look.text) + 1 + btnW(L('취소', 'Cancel'))
         : e.props.isWorking
           ? ICON_W + txtW(isTerm ? `[ ${label} ]` : label)
           : isConfirming
@@ -342,17 +352,18 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       </Box>
     )
   // 진행 중엔 버튼 대신 글자 — 눌러도 아무 일 없다
+  // B11(0.9.1): 게이지가 그려지는 표면(데스크톱)은 게이지가 컴팩트 중을 맡아 깜빡이는 점을 뺀다 — 터미널은 게이지가 없어 점 그대로
   const compactRow =
     phase === 'compacting' && look ? (
       <Box columnGap={1} alignItems="center">
         {gaugeDoor(brandIcon)}
-        {pulse(look.hex, L('컴팩트 중', 'Compacting'))}
+        {brandIcon ? null : pulse(look.hex, L('컴팩트 중', 'Compacting'))}
         <Text color={look.color}>{look.text}</Text>
       </Box>
     ) : phase === 'tidying' && look ? (
       <Box columnGap={1} alignItems="center">
         {gaugeDoor(brandIcon)}
-        {pulse(look.hex, L('저장 중', 'Saving'))}
+        {brandIcon ? null : pulse(look.hex, L('저장 중', 'Saving'))}
         <Text color={look.color}>{look.text}</Text>
         <Button key="compact-cancel" label={L('취소', 'Cancel')} variant="secondary" onPress={() => act.cancelTidy()} />
       </Box>

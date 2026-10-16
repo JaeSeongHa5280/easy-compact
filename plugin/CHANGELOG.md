@@ -4,6 +4,25 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.9.1] — 2026-10-16
+
+### Added
+- **Show diagnostics before you share** — **[Show diagnostics]** under **Report a problem** (in the version drawer and the Settings **General** tab) opens a card right below with what's inside and the first 40 lines (20 in a terminal). Your questions, answer endings, step names (file names, commands) and custom texts are left out from the start as *(removed · N chars)* — turn the switch off and your own text going out shows in yellow — then **[Copy]** (clipboard), **[Save as file]** or **[Open an issue ↗]**, exactly what you saw. Replaces 0.9.0's [Diagnose] (which wrote the file at once). The diagnostics start with the version and install kind.
+
+### Changed
+- **Settings previews look like previews** — a preview had the same border as the settings card around it and read as a card in a card. Now a light gray well with a blue **Preview** chip instead of a border; the whole-bar preview sits above a mock input, the way it shows above yours (a label band in a terminal).
+- **The gauge in the preview** — the compact spot in the whole-bar and question-row previews shows the gauge in your shape (it was missing, so changing the gauge shape changed nothing in the preview). A four-step sample under **Gauge shape** (normal · time to compact · overdue · compacting).
+- **Bar size one line · keep folded · line below the input show in the preview** — the whole-bar preview turns into the one-line bar, the folded look (the reopen button) or the line below the input.
+- **The gauge moves while compacting** — while compacting or saving, the gauge on the bar and the pane header moves in progress blue, per shape (horizontal and vertical bars breathe · the ring spins an arc · steps light in turn), then shrinks from blue to the new size. The blinking dot on the desktop bar is gone (the gauge does it). With *Animations* off it stays still in blue.
+- **Steps gauge by default** — the horizontal bar looked like the plan-limit bars (5h · 7d) next to it. A shape you picked stays.
+- **The version button is always there** — the version button at the right of the tab row shows on a folder-loaded copy too (*v0.9.1 dev*). With a new version out it reads **Update 0.9.1**; the drawer says **Version 0.9.1 is available** · **Up to date**.
+- **Terminal: no Animations row in General** — nothing moves in a terminal.
+
+### Fixed
+- **Context stuck at the pre-compact size after a compact** — when Claude Code didn't tell easy-compact about a compact (one started from the bar button, for one), the compact went unrecorded: the bar kept the size from before and the pane said *0 compacts · No compacts yet* until the next request. Now it is recorded within 1.5 seconds without the notice, the bar shows the *just compacted* size, and it lands in the flow chart and the compact log.
+- **Sonnet 5.5 cache-read price** — Anthropic cut it from $0.20 to $0.10 on October 7 (same as Claude Code 2.1.299's price table). Requests since then use the new price; older records (today · this month · the estimated compacts) keep the old one.
+- **Terminal: the issue link in the diagnostics card printed twice.**
+
 ## [0.9.0] — 2026-10-16
 
 ### Added

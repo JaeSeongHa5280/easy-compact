@@ -1,11 +1,11 @@
 import type { ChangeGroup, CostShow, Optimal, ScreenView, Settings, Source, TidyStyleId, TtlConfig, UpdateState } from '../types'
-import { cacheWarnFor, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_TEXT, ttlName, writeRate } from './cost'
+import { cacheWarnFor, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_TEXT, thresholds, ttlName, writeRate } from './cost'
 import { BAND_MODES, BAND_PARTS, bandModeName, bandAutoUse, bandStateText, bandModeUse, bandPartName, bandShowOf, chooseScreen, editView, foldName, fmtUsd0, nudgeSessionColor, SESSION_COLOR_STEPS, paneAutoUse, paneSyncUse, infoName, infoUse, resetCustom, SCREEN_PRESETS, screenName, screenUse, screenStateText, setBandPart, setFolded, setLimits, viewOf, chooseTidy, customName, customUse, DEFAULT_SETTINGS, nudgeCache, CACHE_STEPS, CACHE_STEPS_5M, parseTokens, RANGE_BANDS, RANGE_ROWS, setCompactAt, thresholdsOf, TIDY_IDS, tidyStyles, tidySteps, usesCustom, BAND_ORDER_DEFAULT, moveEarlier, normalizeOrder, MONEY_ORDERS, moneyOf, withMoney, compactText, tidyBody, rangeBands, rangeRows, compactMax, contextWindowNow, autoCompactAt, revealWhere } from './settings'
 import { COMPACT_MIN, penaltyAt, rangeThresholdsFor, thresholdsFor, WARN_RATIO } from './optimal'
 import { tidyScript } from './tidy'
 import { L } from './i18n'
 import type { Lang } from './i18n'
-import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, section, segButton, segGroup, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW, plainCard } from './ui-common'
+import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, section, segButton, segGroup, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW, plainCard, gaugeEl } from './ui-common'
 import type { Fold } from './ui-common'
 import { fitLine } from './ui-band'
 import { onTerminal } from './glyph'
@@ -14,6 +14,8 @@ import { bandNumText, cellsOf, ctxNumText, paneTitle, widthOf } from './text'
 import { GAUGE_SHAPES } from './gauge'
 import type { GaugeShape } from './gauge'
 import { statusLineUse } from './status-line'
+import { diagOwnText, diagSummary, ISSUE_URL } from './diag'
+import type { DiagView } from './diag'
 
 /** 게이지 꼴 이름(B8) */
 function gaugeShapeName(g: GaugeShape): string {
@@ -62,8 +64,15 @@ export type SettingsActions = {
   checkUpdate: () => void
   applyUpdate: () => void
   toggleUpdate: (key: 'changes' | 'error' | 'note') => void
-  /** 판 서랍 [진단](0.9.0): 진단 파일을 만들고 경로를 서랍 · 토스트로 */
-  diagnose: () => void
+  /**
+   * 진단 내용 카드(0.9.1 U6): 판 서랍 · 설정 › 일반 탭의 문제 제보 줄에서 연다(같은 자리 다시 = 닫기) · 질문 · 동작 글 빼기 · [복사](누른
+   * 표면의 클립보드) · [파일로 저장]
+   */
+  diagOpen: (where: 'drawer' | 'gen') => void
+  diagClose: () => void
+  diagRedact: (isOn: boolean) => void
+  diagCopy: (surface?: string) => void
+  diagSave: () => void
   /** 컴팩트 시점 안내 줄의 [현황에서 고르기] — 현황 탭으로(0.6.0, 컴팩트 시점을 현황으로 옮김) */
   openOverview: () => void
   /** 설정 안 탭(S10, 0.8.1) */
@@ -454,6 +463,31 @@ export function drawSettings(
           ),
           choiceControl(ui, 'gauge-shape', GAUGE_SHAPES.map(g => ({ value: g, label: gaugeShapeName(g) })), s.gaugeShape, v => save({ ...s, gaugeShape: v as GaugeShape })),
           choiceW(GAUGE_SHAPES.map(gaugeShapeName)),
+          // S12(0.9.1 — 사용자 "바 전체에 칸 막대 게이지 미리보기 표시 안 됨" · "게이지 모양별 컴팩트 중 · 완료"): 고른 꼴로 네 단계 견본 —
+          // 평소 · 컴팩트할 때 · 늦어짐(깜빡) · 컴팩트 중(움직임). 크기는 지금 걸린 컴팩트 기준에서 단계마다 한 점
+          [
+            (() => {
+              const t = thresholds()
+              const motion = s.motion !== 'reduce'
+              const isRange = t.isRange === true
+              const samples = [
+                { id: 'ok', ctx: t.ctxWarn * 0.5, name: L('평소', 'Normal'), blink: false, busy: false },
+                { id: 'warn', ctx: (t.ctxWarn + t.ctxCut) / 2, name: isRange ? L('컴팩트할 때', 'Time to compact') : L('곧 컴팩트할 때', 'Compact soon'), blink: false, busy: false },
+                { id: 'cut', ctx: t.ctxCut * 1.12, name: isRange ? L('늦어짐', 'Overdue') : L('권장', 'Advised'), blink: true, busy: false },
+                { id: 'busy', ctx: t.ctxCut * 1.12, name: L('컴팩트 중', 'Compacting'), blink: false, busy: true },
+              ]
+              return (
+                <Box key="gauge-strip" columnGap={2} rowGap={1} flexWrap="wrap" alignItems="center">
+                  {samples.map(x => (
+                    <Box key={`gauge-strip-${x.id}`} columnGap={1} alignItems="center">
+                      {gaugeEl(ui, surface, x.ctx, { key: `gauge-strip-${x.id}-svg`, alt: x.name, px: 16, blink: x.blink, busy: x.busy, motion, live: motion && (x.blink || x.busy) })}
+                      <Text dimColor>{x.name}</Text>
+                    </Box>
+                  ))}
+                </Box>
+              )
+            })(),
+          ],
         ),
     // 창 상태(켜기/끄기 = 스위치, R3): 바의 창 버튼 ✕ · 입력창 아래 버튼과 같은 값
     row(
@@ -618,21 +652,24 @@ export function drawSettings(
   // ── 컴팩트 탭: 컴팩트 문구(이지 컴팩트 저장 턴 · /compact 뒤 글) · 캐시
   const compactTab = [tidy, isLean ? null : cacheSection]
 
-  // ── 일반 탭: 움직임(S1 — 게이지 · 점 · 캐릭터 · 현황 막대) · 언어(drawSettingsView)
+  // ── 일반 탭: 움직임(S1 — 게이지 · 점 · 캐릭터 · 현황 막대) · 문제 제보(0.9.1 U6) · 언어(drawSettingsView)
   const genTab = [
     plainCard(ui, 'set-gen', L('일반', 'General'), [
       // S1(0.6.1 피드백 "모션 시스템 / 줄임 용어가 안 맞음"): 앱 설정 낱말을 옮겼던 [시스템 | 줄임] → "움직임" 스위치. 앱 설정의 모션 값은 mod 가
-      // 못 읽어 따로 — 켜도 OS 동작 줄이기면 멈춘다(그림 안 prefers-reduced-motion). 저장 값은 그대로(system = 켬, reduce = 끔)
-      row(
-        'motion-row',
-        L('움직임', 'Animations'),
-        L(
-          '끄면 게이지 깜빡임 · 진행 점 · 에이전트 캐릭터 · 컴팩트 중 현황 막대가 멈춘 모습입니다. 켜도 운영체제의 동작 줄이기가 켜져 있으면 움직이지 않습니다.',
-          'Off: the gauge pulse, progress dots, the agent character and the Overview bars while compacting stay still. Even when on, your OS reduce-motion setting stops them.',
-        ),
-        onOffControl(ui, 'motion', s.motion !== 'reduce', on => save({ ...s, motion: on ? 'system' : 'reduce' })),
-        onOffW(),
-      ),
+      // 못 읽어 따로 — 켜도 OS 동작 줄이기면 멈춘다(그림 안 prefers-reduced-motion). 저장 값은 그대로(system = 켬, reduce = 끔).
+      // 0.9.1: 터미널엔 움직이는 그림이 없어(게이지 · 캐릭터 · 막대 그림이 데스크톱만) 줄을 뺀다
+      isTerminal
+        ? null
+        : row(
+            'motion-row',
+            L('움직임', 'Animations'),
+            L(
+              '끄면 게이지 움직임(깜빡임 · 컴팩트 중) · 진행 점 · 에이전트 캐릭터 · 컴팩트 중 현황 막대가 멈춘 모습입니다. 켜도 운영체제의 동작 줄이기가 켜져 있으면 움직이지 않습니다.',
+              'Off: the gauge motion (pulse, compacting), progress dots, the agent character and the Overview bars while compacting stay still. Even when on, your OS reduce-motion setting stops them.',
+            ),
+            onOffControl(ui, 'motion', s.motion !== 'reduce', on => save({ ...s, motion: on ? 'system' : 'reduce' })),
+            onOffW(),
+          ),
       ...genExtra,
     ]),
   ]
@@ -1317,6 +1354,8 @@ export function drawSettingsView(
   hasLimits: boolean | null = null,
   compactDraft: string | null = null,
   tab: SettingsTab = 'bar',
+  /** 0.9.1 U6: 일반 탭 진단 카드(그 자리에 열려 있을 때만) */
+  diag: DiagView | null = null,
 ) {
   const { Box, Text } = ui
   const look = phaseLook(phase, kind)
@@ -1368,7 +1407,7 @@ export function drawSettingsView(
         </Text>
       )}
       {/* 업데이트 칸은 뺐다 — 탭 줄 업데이트 버튼 · 서랍(U4, 0.6.1 피드백: 늘 보이는 칸이 불편 · 위쪽 버튼으로) */}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [langRow])}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow])}
     </Box>
   )
 }
@@ -1402,9 +1441,10 @@ function changesList(ui: Ui, key: string, groups: ChangeGroup[]) {
 }
 
 /**
- * U4(0.6.1 피드백 "업데이트 확인을 위쪽에 버튼으로, 누르면 내역 — 늘 내용이 보이면 불편"): 패널 탭 줄 오른쪽 버튼. 평소엔 판만 흐리게
- * ("v0.6.1"), 알릴 것이 있으면 칩 — 새 판 "새 판 0.6.2" · 업데이트 뒤 첫 실행 "0.6.2 바뀐 것" · 받음 · 확인 못 함. 누르면 탭 줄 아래
- * 서랍(drawUpdateDrawer). 예전 설정 탭 맨 위 칸 · 현황 맨 위 카드 둘은 뺐다(마켓 설치본만 — 폴더로 불러온 개발본엔 버튼이 없다)
+ * U4(0.6.1 피드백 "업데이트 확인을 위쪽에 버튼으로, 누르면 내역 — 늘 내용이 보이면 불편"): 패널 탭 줄 오른쪽 버튼. 평소엔 버전만 흐리게
+ * ("v0.6.1"), 알릴 것이 있으면 칩 — 새 버전 "0.6.2 업데이트" · 업데이트 뒤 첫 실행 "0.6.2 바뀐 것" · 받음 · 확인 못 함. 누르면 탭 줄 아래
+ * 서랍(drawUpdateDrawer). 0.9.1 U5: 폴더로 불러온 개발본도 늘 — "v0.9.0 개발본".
+ * 0.9.1 사용자 "새판이라는 단어는 안 익숙함": 화면 글의 "판" → "버전", 새 버전 칩은 "0.9.1 업데이트"
  */
 export function updateButton(ui: Ui, upd: UpdateState, isOpen: boolean, onPress: () => void) {
   const { Button } = ui
@@ -1414,16 +1454,18 @@ export function updateButton(ui: Ui, upd: UpdateState, isOpen: boolean, onPress:
       : upd.phase === 'updating'
         ? L('업데이트 중…', 'Updating…')
         : upd.phase === 'newer' && upd.market
-          ? L(`새 판 ${upd.market}`, `New ${upd.market}`)
+          ? L(`${upd.market} 업데이트`, `Update ${upd.market}`)
           : upd.phase === 'done' && upd.market
             ? L(`${upd.market} 받음`, `${upd.market} downloaded`)
             : upd.phase === 'failed'
               ? L('업데이트 확인 못 함', 'Update check failed')
               : upd.updatedTo
                 ? L(`${upd.updatedTo} 바뀐 것`, `What's new in ${upd.updatedTo}`)
-                : upd.own
-                  ? `v${upd.own}`
-                  : L('판', 'Version')
+                : upd.phase === 'dev' && upd.own
+                  ? L(`v${upd.own} 개발본`, `v${upd.own} dev`)
+                  : upd.own
+                    ? `v${upd.own}`
+                    : L('버전', 'Version')
   const isHot = upd.phase === 'newer' || upd.phase === 'done' || upd.phase === 'failed' || Boolean(upd.updatedTo)
   const text = `${label} ${isOpen ? '▾' : '▸'}`
   return isHot || isOpen ? <Button key="upd-btn" label={text} variant="secondary" onPress={onPress} /> : <Button key="upd-btn" label={text} plain dimColor onPress={onPress} />
@@ -1432,13 +1474,106 @@ export function updateButton(ui: Ui, upd: UpdateState, isOpen: boolean, onPress:
 /** 서랍에 판별 바뀐 것을 몇 판까지 — 패널 크기 한도(직렬화 ~10만 자)와 읽을 양 */
 const DRAWER_VERSIONS = 6
 
+/** 터미널은 패널 높이가 정해져 있어 진단 글을 덜 보인다(버튼은 글 위라 스크롤 없이 닿는다) */
+const DIAG_HEAD_TERMINAL = 20
+
+/**
+ * 문제 제보 줄(0.9.1 U6 — 판 서랍 · 설정 › 일반 탭 같은 줄): [진단 내용 보기] 가 그 줄 바로 아래 진단 카드를 연다 · 열려 있으면 [접기].
+ * 0.9.0 의 [진단](누르면 바로 파일 · 경로만 알림)을 바꿨다 — 사용자 "뽑히는 내용을 사람한테 보여 줘야 · 복사해도 되는지 봐야"
+ */
+export function diagRow(act: SettingsActions, ui: Ui, where: 'drawer' | 'gen', view: DiagView | null, surface: string) {
+  const { Box, Button, Text } = ui
+  const isOpen = view !== null
+  return (
+    <Box key={`diag-${where}`} flexDirection="column">
+      {settingRow(
+        ui,
+        `diag-row-${where}`,
+        <Text key="diag-name" bold>
+          {L('문제 제보', 'Report a problem')}
+        </Text>,
+        <Text key="diag-use" dimColor wrap="wrap">
+          {L('보내기 전에 진단 내용을 먼저 보여 드립니다', 'Shows you the diagnostics before anything leaves')}
+        </Text>,
+        [<Button key={`diag-btn-${where}`} label={isOpen ? L('접기', 'Hide') : L('진단 내용 보기', 'Show diagnostics')} variant="secondary" onPress={() => (isOpen ? act.diagClose() : act.diagOpen(where))} />],
+      )}
+      {view ? drawDiagCard(act, ui, view, surface) : null}
+    </Box>
+  )
+}
+
+/**
+ * 진단 카드: 무엇이 들어 있나 · [질문 · 동작 글 빼기](처음 켬 — 끄면 나갈 내 글을 노랗게) · [복사] [파일로 저장] [이슈 쓰기] · 처음 몇 줄(Code).
+ * 버튼을 글 위에 둔다 — 터미널은 패널 높이가 정해져 있어 글 아래면 스크롤해야 닿았다. 복사 · 저장하는 글 = 보이는 사본(register diagSnap)
+ */
+export function drawDiagCard(act: SettingsActions, ui: Ui, v: DiagView, surface: string) {
+  const { Box, Button, Code, Link, Text } = ui as Ui & { Link: (p: { key?: string; href: string; label?: string }) => unknown }
+  const isTerm = surface === 'terminal'
+  const shownLines = isTerm ? Math.min(DIAG_HEAD_TERMINAL, v.lines) : Math.min(v.head.split('\n').length, v.lines)
+  const head = isTerm ? v.head.split('\n').slice(0, DIAG_HEAD_TERMINAL).join('\n') : v.head
+  return (
+    <Box key="diag-card" flexDirection="column" marginTop={1} {...CARD}>
+      <Text key="diag-title" bold>
+        {L('진단 내용 — 공유 전에 확인하세요', 'Diagnostics — check before you share')}
+      </Text>
+      <Text key="diag-sum" dimColor wrap="wrap">
+        {diagSummary(v)}
+      </Text>
+      {settingRow(ui, 'diag-redact-row', L('질문 · 동작 글 빼기', 'Leave out questions and step names'), null, onOffControl(ui, 'diagRedact', v.redact, isOn => act.diagRedact(isOn)))}
+      {v.redact ? (
+        <Text key="diag-redact-use" dimColor wrap="wrap">
+          {L('질문 글 · 답 끝 글 · 동작 이름(파일 이름 · 명령) · 직접 쓴 문구를 (뺌)으로 바꿉니다 — 글자 수만 남습니다.', 'Questions, answer endings, step names (file names, commands) and your custom texts become (removed) — only their length stays.')}
+        </Text>
+      ) : (
+        <Box key="diag-own" flexDirection="column">
+          <Text key="diag-own-head" color="warning" wrap="wrap">
+            {diagOwnText(v.counts)}
+          </Text>
+          {v.samples.map((s, i) => (
+            <Text key={`diag-own-${i}`} color="warning" wrap="truncate-end">
+              {`· ${s}`}
+            </Text>
+          ))}
+        </Box>
+      )}
+      <Box key="diag-acts" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center" marginTop={1}>
+        <Button key="diag-copy" label={L('복사', 'Copy')} variant="primary" onPress={(p?: { surface?: string }) => act.diagCopy(p?.surface ?? surface)} />
+        <Button key="diag-save" label={L('파일로 저장', 'Save as file')} variant="secondary" onPress={() => act.diagSave()} />
+        {/* 이슈 쓰기 — 공개 저장소 새 이슈. 터미널은 링크를 못 여는 곳도 있어 주소 글자 그대로 —
+            엔진은 터미널에서 이름 있는 링크를 '이름 주소' 로 그려서, 이름 없이 줘야 주소가 한 번만 나온다(0.9.1 CLI 실측) */}
+        {isTerm
+          ? <Link key="diag-issue" href={ISSUE_URL} />
+          : <Link key="diag-issue" href={ISSUE_URL} label={L('이슈 쓰기 ↗', 'Open an issue ↗')} />}
+      </Box>
+      {v.copiedLines !== null ? (
+        <Text key="diag-copied" color="success" wrap="wrap">
+          {L(`복사함 · ${v.copiedLines.toLocaleString()}줄${v.redact ? '(질문 · 동작 글 뺌)' : ''}`, `Copied · ${v.copiedLines.toLocaleString()} lines${v.redact ? ' (questions and step names left out)' : ''}`)}
+        </Text>
+      ) : null}
+      {v.savedPath ? (
+        <Box key="diag-saved">
+          <Text color="success" wrap="wrap">
+            {L(`저장: ${v.savedPath}`, `Saved: ${v.savedPath}`)}
+          </Text>
+        </Box>
+      ) : null}
+      <Box key="diag-code-box" marginTop={1} flexDirection="column">
+        <Code key="diag-code" source={head} language="json" startLine={1} wrap="truncate-end" />
+      </Box>
+      <Text key="diag-more" dimColor wrap="wrap">
+        {L(`처음 ${shownLines}줄 · 전체 ${v.lines.toLocaleString()}줄 — 복사 · 파일엔 전체가 들어갑니다`, `First ${shownLines} of ${v.lines.toLocaleString()} lines — Copy and the file take all of it`)}
+      </Text>
+    </Box>
+  )
+}
+
 /**
  * 업데이트 서랍(U4): 한 줄 = "easy-compact 판" + 상태 · 오른쪽 버튼, 그 아래 판별 바뀐 것(U1 — 새 판이면 지금 판 위 모든 판, 업데이트 뒤
  * 첫 실행이면 본 판 위 모든 판, 그 밖엔 지금 판). [업데이트 확인] 은 바쁠 때(확인 · 업데이트 중)와 새 판이 있을 때 빼고 늘(U2 — 받은 뒤에도).
  * 확인 · 업데이트는 Claude Code 명령(claude plugin …)이 하고 그때만 마켓 저장소(GitHub)를 받는다 — 이 mod 는 통신하지 않는다(README 약속).
  * 상태 글 색: 진행 = 파랑 점, 최신 · 받음 = 초록, 실패 = 빨강
  */
-export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState, nowMs: number, surface: string, diagPath: string | null = null) {
+export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState, nowMs: number, surface: string, diag: DiagView | null = null) {
   const { Box, Button, Text } = ui
   const btn = (key: string, label: string, onPress: () => void, isMain = false) =>
     isMain ? <Button key={key} label={label} variant="primary" onPress={onPress} /> : <Button key={key} label={label} variant="secondary" onPress={onPress} />
@@ -1456,7 +1591,7 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
   let buttons: unknown[] = []
   switch (upd.phase) {
     case 'checking':
-      state = busy('upd-busy', L('새 판 확인 중…', 'Checking for a new version…'))
+      state = busy('upd-busy', L('업데이트 확인 중…', 'Checking for updates…'))
       break
     case 'updating':
       state = busy('upd-busy', L('업데이트 중…', 'Updating…'))
@@ -1464,7 +1599,7 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
     case 'latest':
       state = [
         <Text key="upd-state" color="success">
-          {L(`최신 판입니다(${upd.own ?? '?'})`, `Up to date (${upd.own ?? '?'})`)}
+          {L(`최신 버전입니다(${upd.own ?? '?'})`, `Up to date (${upd.own ?? '?'})`)}
         </Text>,
       ]
       buttons = [checkBtn]
@@ -1472,7 +1607,7 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
     case 'newer':
       state = [
         <Text key="upd-state" bold>
-          {L(`새 판 ${upd.market} 있음`, `New version ${upd.market}`)}
+          {L(`${upd.market} 업데이트가 있습니다`, `Version ${upd.market} is available`)}
         </Text>,
       ]
       buttons = [btn('upd-apply', L('업데이트', 'Update'), act.applyUpdate, true)]
@@ -1490,7 +1625,15 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
       // 앤트로픽 디렉터리에서 받은 판 — 마켓 명령이 안 맞아 버튼 없이(0.6.0). 새 판은 Claude Code 를 켤 때 계정 동기화로
       state = [
         <Text key="upd-state" dimColor wrap="wrap">
-          {L('claude.ai 디렉터리에서 받은 판 — 새 판은 Claude Code 를 켤 때 저절로 받습니다', "Installed from Anthropic's directory — Claude Code picks up new versions by itself when it starts")}
+          {L('claude.ai 디렉터리에서 받은 버전 — 새 버전은 Claude Code 를 켤 때 저절로 받습니다', "Installed from Anthropic's directory — Claude Code picks up new versions by itself when it starts")}
+        </Text>,
+      ]
+      break
+    case 'dev':
+      // 0.9.1 U5: 폴더로 불러온 개발본 — 업데이트 명령(claude plugin)은 마켓 설치본 것이라 버튼 없이
+      state = [
+        <Text key="upd-state" dimColor wrap="wrap">
+          {L('폴더에서 불러온 개발본이라 업데이트 버튼이 없습니다 — 저장소에서 받으세요', 'Loaded from a folder (dev copy), so there is no Update button — pull it from the repository')}
         </Text>,
       ]
       break
@@ -1498,7 +1641,7 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
       state = [
         <Text key="upd-state" color="error" wrap="wrap">
           {!upd.error
-            ? L('claude 명령을 못 찾았습니다 — README 의 새 판 받기를 보세요', 'claude command not found — see Updating in the README')
+            ? L('claude 명령을 못 찾았습니다 — README 의 업데이트 받기를 보세요', 'claude command not found — see Updating in the README')
             : upd.failedOn === 'apply'
               ? L('업데이트 못 함 — git · 네트워크를 확인하세요', 'Update failed — check git and your network')
               : L('확인 못 함 — git · 네트워크를 확인하세요', 'Check failed — check git and your network')}
@@ -1561,44 +1704,22 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
           ) : null,
         ],
       )}
-      {/* 0.9.0 진단(공개 · 마켓 판엔 덤프 명령이 없다): 이 세션 상태를 파일 하나로 — 제보할 때 붙이는 것. 경로는 여기와 토스트에 */}
-      {settingRow(
-        ui,
-        'diag-row',
-        <Text key="diag-name" bold>
-          {L('진단', 'Diagnostics')}
-        </Text>,
-        <Box key="diag-desc" flexDirection="column">
-          <Text key="diag-use" dimColor wrap="wrap">
-            {L(
-              '문제가 생기면 [진단] 을 눌러 이 세션의 설정 · 패널 상태 · 사용량 · 질문 기록을 파일 하나로 남기고, GitHub 이슈에 증상 · 재현 순서와 같이 붙여 주세요. 파일은 이 컴퓨터에만 생깁니다 — 질문 글 · 금액이 들어 있으니 올리기 전에 한 번 보세요.',
-              'If something goes wrong, press [Diagnose] to save this session’s settings, pane state, usage and question history to one file, and attach it to a GitHub issue with what happened and how to reproduce it. The file stays on this computer — it contains your questions and costs, so look it over before you post it.',
-            )}
-          </Text>
-          {diagPath ? (
-            <Box key="diag-path">
-              <Text color="success" wrap="wrap">
-                {L(`만듦: ${diagPath}`, `Saved: ${diagPath}`)}
-              </Text>
-            </Box>
-          ) : null}
-        </Box>,
-        [btn('diag-btn', L('진단', 'Diagnose'), act.diagnose)],
-      )}
+      {/* 0.9.1 U6: 문제 제보 줄 + 진단 카드(0.9.0 의 [진단] 을 바꿈 — 보고 나서 복사 · 저장) */}
+      {diagRow(act, ui, 'drawer', diag, surface)}
       {listed.length > 0 ? (
         <Box key="upd-list" flexDirection="column">
           {listed.map(v => (
             <Box key={`upd-v-${v}`} flexDirection="column" marginTop={1}>
               <Box key={`upd-v-${v}-head`} columnGap={1} alignItems="center">
                 <Text bold>{`v${v}`}</Text>
-                {v === upd.own ? <Text dimColor>{L('· 지금 판', '· this version')}</Text> : null}
+                {v === upd.own ? <Text dimColor>{L('· 지금 버전', '· this version')}</Text> : null}
               </Box>
               {changesList(ui, `upd-v-${v}-list`, upd.changes![v]!)}
             </Box>
           ))}
           {more > 0 ? (
             <Text key="upd-more" dimColor wrap="wrap">
-              {L(`그 앞 ${more}판은 CHANGELOG 에`, `${more} earlier ${more === 1 ? 'version' : 'versions'} in the CHANGELOG`)}
+              {L(`그 앞 ${more}개 버전은 CHANGELOG 에`, `${more} earlier ${more === 1 ? 'version' : 'versions'} in the CHANGELOG`)}
             </Text>
           ) : null}
         </Box>
