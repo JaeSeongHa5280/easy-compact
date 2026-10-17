@@ -18,9 +18,6 @@ export const GAUGE_HEX = { warn: '#d9722b', cut: '#e05555' } as const
 /** 채움 단계(고리 위 몫): 주황 시작 · 빨강 시작 */
 const STEP = { warn: 0.58, cut: 0.78 } as const
 
-/** 칸 막대의 칸마다 자리 단계(0.9.4 레벨 미터) — 켜지면 그 단계 색: 1 · 2칸 아직 · 3칸 컴팩트할 때 · 4칸 늦어짐 */
-const CELL_LEVEL: readonly Level[] = ['ok', 'ok', 'warn', 'cut']
-
 /** 꽉 참 = 빨강 시작 × 1.25 — 패널 "컴팩트 시점" 막대 끝(cells timingCells)과 같은 자리 */
 export const FULL_RATIO = 1.25
 
@@ -95,7 +92,7 @@ export type GaugeLook = {
 export const BUSY_HEX = '#4c9be8'
 
 /** 컴팩트 중 움직임 CSS(꼴마다) — 키프레임엔 고정 값만. 동작 줄이기면 멈춤 */
-const REDUCE = '@media (prefers-reduced-motion:reduce){.f,.g,.p,.s,.c0,.c1,.c2,.c3{animation:none!important}}'
+const REDUCE = '@media (prefers-reduced-motion:reduce){.f,.g,.s,.c0,.c1,.c2,.c3{animation:none!important}}'
 
 /** 게이지 SVG 글 — 순수 함수(시험 · README 그림이 같이 쓴다) */
 export function gaugeSvg(g: GaugeLook): string {
@@ -145,8 +142,8 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): 
   const H = g.px
   const th = Math.max(4, Math.round(H * 0.38))
   const n2 = (v: number) => v.toFixed(2)
-  // 켜진 칸 수 = 단계(0.9.4 레벨 미터 — 사용자 "기존에 레벨미터 색상 적용"): 칸마다 자리 색이라 칸 수가 단계와 맞아야 한다 — 아직 = 1 · 2칸
-  // (주황 시작의 반까지 1칸), 컴팩트할 때 = 3칸, 늦어짐 = 4칸. 예전엔 채움 × 4 를 올림해 아직인데 3칸 · 컴팩트할 때인데 4칸인 때가 있었다
+  // 켜진 칸 수 = 단계(0.9.4 — 0.9.5 에 색을 단계 색 통째로 되돌려도 그대로): 아직 = 1 · 2칸(주황 시작의 반까지 1칸), 컴팩트할 때 = 3칸,
+  // 늦어짐 = 4칸. 예전엔 채움 × 4 를 올림해 아직인데 3칸 · 컴팩트할 때인데 4칸인 때가 있었다
   const filled = (v: number) => (v <= 0 ? 0 : v < STEP.warn ? (v < STEP.warn / 2 ? 1 : 2) : v < STEP.cut ? 3 : 4)
   const isCells = shape === 'cells' || shape === 'vcells'
   // 칸 막대 · 칸 막대 세로(0.9.2): 배터리 테두리 안에 네 칸(25%씩) — 가로는 왼쪽부터, 세로는 아래부터. 테두리는 둘 다. 세로 칸만 쌓으면 메뉴 아이콘 ≡ 처럼 보였다
@@ -221,26 +218,22 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): 
     }
   } else {
     // 칸 막대: 단계가 칸으로(4칸). 컴팩트로 줄면 비워지는 칸이 앞 색에서 바탕으로 옅어진다(.g).
-    // 0.9.4 레벨 미터: 켜진 칸은 자기 자리 색 — 1 · 2칸 = 글자색 .8, 3칸 = 주황,
-    // 4칸 = 빨강(패널 컴팩트 시점 막대의 주황 · 빨강 눈금과 같은 자리). 늦어짐 깜빡임(gp — 빨강 계열 색으로 번쩍임)은 빨강 칸만 —
-    // 다른 칸에 걸면 흰 · 주황 칸이 빨강으로 번쩍였다
+    // 켜진 칸 색 = 지금 단계 색 통째로(0.9.5 — 사용자 "컴팩트 할 때랑 늦어짐 시인성이 안 좋아졌음 · 원래대로 할 때는 칸 막대 주황색으로,
+    // 늦어짐은 빨간색으로 깜빡임으로"): 0.9.4 레벨 미터(칸마다 자리 색 · 깜빡임은 빨강 칸만)는 컴팩트할 때 주황이 한 칸, 늦어짐 빨강이 한
+    // 칸뿐이라 눈에 덜 띄었다. 늦어짐 깜빡임(gp)은 켜진 칸 모두
     const n = filled(f)
     const nFrom = from !== null ? filled(from) : n
     shapes = frame
     for (let i = 0; i < 4; i++) {
       const at = cellAt(i)
-      const lv = CELL_LEVEL[i]!
-      const fill = lv === 'ok' ? `fill="currentColor" fill-opacity="${opacity === '0' ? '0' : '.8'}"` : `fill="${GAUGE_HEX[lv]}" fill-opacity="${opacity === '0' ? '0' : '1'}"`
-      // 켜진 칸 = f(채움 — 시험 · QA 가 이 칸 색을 단계로 본다), 깜빡이는 칸(빨강)만 p 를 더 단다
-      shapes += i < n ? `<rect class="${lv === 'cut' ? 'f p' : 'f'}" ${at} ${fill}/>` : i < nFrom ? `<rect class="g" ${at} fill="currentColor" fill-opacity=".2"/>` : `<rect ${at} fill="currentColor" fill-opacity=".2"/>`
+      shapes += i < n ? `<rect class="f" ${at} fill="${color}" fill-opacity="${opacity}"/>` : i < nFrom ? `<rect class="g" ${at} fill="currentColor" fill-opacity=".2"/>` : `<rect ${at} fill="currentColor" fill-opacity=".2"/>`
     }
     // 비는 칸: 앞 색(컴팩트 끝이면 진행 파랑 — B11)에서 바탕으로 옅어진다
     if (nFrom > n) slide = `@keyframes gs{from{fill:${fromHex ?? (g.level === 'ok' ? '#888888' : GAUGE_HEX[g.level])};fill-opacity:1}}`
   }
   const pulse = t === null ? '' : `@keyframes gp{50%{fill:${lerpHex('#ea7c7c', '#ffe2e2', t)}}}`
   const fAnim = [slide && !isCells ? `gs ${dur}s ease-out` : '', t !== null ? `gp ${(1.6 - 0.9 * t).toFixed(2)}s ease-in-out infinite` : ''].filter(Boolean).join(',')
-  // 칸 막대의 깜빡임은 빨강 칸(p)만 — 0.9.4 레벨 미터(흰 · 주황 칸이 빨강으로 번쩍이지 않게)
-  const rules = [fAnim ? `${isCells ? '.p' : '.f'}{animation:${fAnim}}` : '', slide && isCells ? `.g{animation:gs ${dur}s ease-out}` : ''].join('')
+  const rules = [fAnim ? `.f{animation:${fAnim}}` : '', slide && isCells ? `.g{animation:gs ${dur}s ease-out}` : ''].join('')
   const css = rules ? `<style>${slide}${pulse}${rules}@media (prefers-reduced-motion:reduce){.f,.g{animation:none!important}}</style>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${css}${shapes}</svg>`
 }

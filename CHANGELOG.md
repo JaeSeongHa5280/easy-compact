@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [0.9.5] — 2026-10-17
+
+### Changed
+- **The steps gauge is easy to spot again** — at *Time to compact* every lit step is orange, and when *Overdue* all four steps are red and blink, as before 0.9.4. The 0.9.4 level meter (each step in the color of its place, only the red step blinking) left just one orange or red step, which was easy to miss. The step count still follows the stage (Room left 1–2 · Time to compact 3 · Overdue 4), and while compacting the steps still light up from the far end. Steps and Vertical steps both.
+
 ## [0.9.4] — 2026-10-17
 
 ### Changed

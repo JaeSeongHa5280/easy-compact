@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.9.4-4c9be8" alt="Version 0.9.4">
+  <img src="https://img.shields.io/badge/version-0.9.5-4c9be8" alt="Version 0.9.5">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-094">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-095">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 ---
@@ -109,7 +109,14 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
-## What's new in 0.9.4
+## What's new in 0.9.5
+
+- **The steps gauge is easy to spot again** — at *Time to compact* every lit step is orange, and when *Overdue* all four steps are red and blink, as before 0.9.4. The 0.9.4 level meter left just one orange or red step, which was easy to miss. The step count (Room left 1–2 · Time to compact 3 · Overdue 4) and the far-end order while compacting stay. Steps and Vertical steps.
+
+Full list: [CHANGELOG](CHANGELOG.md).
+
+<details>
+<summary><b>What's new in 0.9.4</b></summary>
 
 - **The bar lines up** — on the Detailed screen, row 2 is the money so far (Session · Today · This month) and row 3 the values right now (Per request · Context · Compact range · Cache), then this question and **Compact**. On a wide bar the cells of all three rows start in the same columns; on a narrow one they wrap between cells as before.
 - **Quieter numbers** — plan-limit percentages stay gray until 70% (orange) and 90% (red), *Context* colors only its number, and amounts get thousands separators ($2,636.86).
@@ -118,7 +125,7 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 - **The Easy Compact mark in Cost per question** — the old 🗜 is now your gauge shape, drawn still in blue (desktop).
 - **Fixed** — diagnostic lines in the conversation after a compact the hook didn't see; the input box flickering when the bar closes or reopens and around Claude Code's quick survey (desktop); the bar part name *Cache time left*; and one parameter name that kept 0.9.2 and 0.9.3 out of the Anthropic directory.
 
-Full list: [CHANGELOG](CHANGELOG.md).
+</details>
 
 <details>
 <summary><b>What's new in 0.9.3</b></summary>
@@ -303,7 +310,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 | 🔴 Red gauge (pulsing) · *Compact overdue* | Past your range — the deeper, the faster it pulses |
 | 🔴 *Cache expired* · **Plain compact advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
 
-Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring), a vertical bar or vertical steps. Steps and Vertical steps sit in a battery frame and read like a level meter: each step has the color of its place (1–2 white · 3 orange · 4 red), the stage sets how many are lit, and only the red step pulses. Colors, pulsing and the post-compact shrink mean the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light up from the far end).
+Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring), a vertical bar or vertical steps. Steps and Vertical steps sit in a battery frame: the stage sets how many steps are lit (Room left 1–2 · Time to compact 3 · Overdue 4) and they all take its color — orange at Time to compact, red and pulsing when Overdue. Colors, pulsing and the post-compact shrink mean the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light up from the far end).
 
 ### 4. Easy Compact — one click
 
