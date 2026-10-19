@@ -287,7 +287,7 @@ export function drawPaneMain(ui: Ui, surface: string, d: PaneMainData, act: Pane
     toggle: act.toggleFold,
   }
   const timingEl = (mode: 'simple' | 'detail') =>
-    drawCompactTiming(timingAct, ui, sPane, opt, u?.contextTokens ?? null, surface, cols - CARD_INSET, { ttl: ttlOf(u), measured: u?.cacheTtlMeasured === true, config: null }, mode, d.timingErr, d.open, d.autoBand)
+    drawCompactTiming(timingAct, ui, sPane, opt, u?.contextTokens ?? null, surface, cols - CARD_INSET, { ttl: ttlOf(u), measured: u?.cacheTtlMeasured === true, config: null }, mode, d.timingErr, d.open, d.autoBand, true)
   // 간단(12): 이 세션 카드(누적 · 질문 · 메인/🤖/⚙ · "지금" 결정 줄 하나) + 질문별 비용. 자세히: 지금까지의 패널 전부.
   // "지금" 은 결정 줄 하나(상태 + 숫자 하나 + 할 일) — 예전엔 바 비용 줄을 옮긴 줄과 컴팩트 판단 줄이 따로라 같은 판단을 두 번
   // 읽었다(2026-10-14 uxi D6). 간단엔 모델 견줌 줄을 안 붙인다(정보 최소), 자세히의 이 세션 카드에

@@ -641,34 +641,10 @@ export function drawSettings(
     ]),
   ]
 
-  // ── 컴팩트 탭: 컴팩트 구간 · 바로 아래 이지 오토 구간(시안 1019c ② · 1019d — 같은 꼴 칸 · 끔 없음, 켜기는 [컴팩트] 팝업 — 사용자 2026-10-19
-  // "설정에선 구간만, 켜고 끄기는 컴팩트 누르면") · 컴팩트 문구 · 캐시. 컴팩트 구간 칸은 현황 컴팩트 시점의 간단 줄과 같은 칸(같은 값)
-  const autoNowValue = `${s.autoStart}-${s.autoEnd}`
-  const autoName = (a: number, b: number) => bandNumText(a, b, contextWindowNow(), s.ctxUnit)
-  const autoOpts = autoBands().map(([a, b]) => ({ value: `${a}-${b}`, label: autoName(a, b) }))
-  // 지금 값이 목록에 없으면(엔진 자동 컴팩트를 낮춤 · 명령으로 고른 구간) 그 값도 보인다
-  const autoChoices = autoOpts.some(o => o.value === autoNowValue) ? autoOpts : [...autoOpts, { value: autoNowValue, label: autoName(s.autoStart, s.autoEnd) }]
-  const autoRow = row(
-    'auto-range-pick',
-    L('이지 오토 구간', 'Easy Auto range'),
-    L(
-      '답이 끝났을 때 앞쪽을 넘었으면 저장하고 컴팩트합니다. 일하는 도중 뒤쪽을 넘으면 멈추고 저장, 컴팩트한 뒤 이어서 합니다. 켜기는 [컴팩트] 팝업에서 합니다.',
-      'When an answer ends past the start, it saves and compacts. If work goes past the end, it pauses, saves, compacts and then continues. Turn it on from the [Compact] popup.',
-    ),
-    choiceControl(ui, 'auto-range-select', autoChoices, autoNowValue, v => {
-      const [a, b] = v.split('-').map(Number)
-      if (a && b) save(setAutoRange(s, a, b))
-    }),
-    choiceW(autoChoices.map(o => o.label)),
-    [],
-    <Box key="auto-range-name" columnGap={1} alignItems="center">
-      {autoIcon(ui, surface, 'auto-range-icon', 12)}
-      <Text>{L('이지 오토 구간', 'Easy Auto range')}</Text>
-    </Box>,
-  )
+  // ── 컴팩트 탭: 컴팩트 구간 · 바로 아래 이지 오토 구간(drawCompactTiming withAuto — 현황 컴팩트 시점과 같은 두 줄) · 컴팩트 문구 · 캐시.
+  // 컴팩트 구간 칸은 현황 컴팩트 시점의 간단 줄과 같은 칸(같은 값)
   const zoneCard = plainCard(ui, 'set-zone', L('컴팩트 시점', 'When to compact'), [
-    drawCompactTiming({ save, sizeError: msg => act.sizeError?.(msg), toggle: act.toggleFold }, ui, s, opt, ctxNow, surface, cols === null ? null : cols - CARD_INSET, cache, 'simple', sizeErr, open),
-    autoRow,
+    drawCompactTiming({ save, sizeError: msg => act.sizeError?.(msg), toggle: act.toggleFold }, ui, s, opt, ctxNow, surface, cols === null ? null : cols - CARD_INSET, cache, 'simple', sizeErr, open, null, true),
   ])
   const compactTab = [zoneCard, tidyNote, isLean ? null : cacheSection]
 
@@ -742,6 +718,8 @@ export function drawCompactTiming(
   open: Record<string, boolean> = {},
   /** 이지 오토가 이 세션에서 일하는 중이면 그 구간 — 크기별 비용 표 그 줄 끝에 아이콘 + "오토" */
   autoBand: { start: number; end: number } | null = null,
+  /** 컴팩트 구간 줄 바로 아래 이지 오토 구간 줄 — 설정 컴팩트 탭 · 현황 컴팩트 시점 */
+  withAuto = false,
 ) {
   const { Box, Button, Input, Select, Text } = ui
   const ttl = cache?.ttl ?? 60
@@ -1396,10 +1374,37 @@ export function drawCompactTiming(
     ]
   }
 
+  // 이지 오토 구간(시안 1019c ② · 1019d — 컴팩트 구간과 같은 꼴 칸 · 끔 없음, 켜기는 [컴팩트] 팝업 — 사용자 2026-10-19 "설정에선 구간만,
+  // 켜고 끄기는 컴팩트 누르면"): 컴팩트 구간(또는 직접 정한 크기) 줄 바로 아래. 예전엔 설정 탭만 카드 끝에 따로 붙였다
+  const autoNowValue = `${s.autoStart}-${s.autoEnd}`
+  const autoName = (a: number, b: number) => bandNumText(a, b, contextWindowNow(), s.ctxUnit)
+  const autoOpts = autoBands().map(([a, b]) => ({ value: `${a}-${b}`, label: autoName(a, b) }))
+  // 지금 값이 목록에 없으면(엔진 자동 컴팩트를 낮춤 · 명령으로 고른 구간) 그 값도 보인다
+  const autoChoices = autoOpts.some(o => o.value === autoNowValue) ? autoOpts : [...autoOpts, { value: autoNowValue, label: autoName(s.autoStart, s.autoEnd) }]
+  const autoRow = withAuto
+    ? row(
+        'auto-range-pick',
+        L('이지 오토 구간', 'Easy Auto range'),
+        L(
+          '답이 끝났을 때 앞쪽을 넘었으면 저장하고 컴팩트합니다. 일하는 도중 뒤쪽을 넘으면 멈추고 저장, 컴팩트한 뒤 이어서 합니다. 켜기는 [컴팩트] 팝업에서 합니다.',
+          'When an answer ends past the start, it saves and compacts. If work goes past the end, it pauses, saves, compacts and then continues. Turn it on from the [Compact] popup.',
+        ),
+        choiceControl(ui, 'auto-range-select', autoChoices, autoNowValue, v => {
+          const [a, b] = v.split('-').map(Number)
+          if (a && b) act.save(setAutoRange(s, a, b))
+        }),
+        choiceW(autoChoices.map(o => o.label)),
+        [],
+        <Box key="auto-range-name" columnGap={1} alignItems="center">
+          {autoIcon(ui, surface, 'auto-range-icon', 12)}
+          <Text>{L('이지 오토 구간', 'Easy Auto range')}</Text>
+        </Box>,
+      )
+    : null
   void [applyArea, appliedRow, leanNote, ctxColor, draftText, dAt]
   return (
     <Box key="cmp-timing" flexDirection="column">
-      {rows.filter(r => r !== null && r !== undefined)}
+      {[rows[0], autoRow, ...rows.slice(1)].filter(r => r !== null && r !== undefined)}
     </Box>
   )
 

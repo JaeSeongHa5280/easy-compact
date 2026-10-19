@@ -13,9 +13,10 @@ const AUTO_HEX = '#4c9be8'
 
 /** 3×4 칸 글자 A(배지 안 흰 글자 — 글꼴 없이 칸으로 그려 16px 에서도 또렷하다) */
 function pixA(x: number, y: number, s: number): string {
-  return ['.X.', 'X.X', 'XXX', 'X.X']
-    .flatMap((r, j) => [...r].map((c, i) => (c === 'X' ? `<rect x="${x + i * s}" y="${y + j * s}" width="${s}" height="${s}" fill="#ffffff"/>` : '')))
-    .join('')
+  // 칸마다 rect 면 아이콘 하나가 1.2천 자라 패널 그리기 크기(size.test)를 먹었다 — 칸들을 path 하나로(그림은 같다, 2026-10-20)
+  const n = (v: number) => String(Math.round(v * 100) / 100)
+  const d = ['.X.', 'X.X', 'XXX', 'X.X'].flatMap((r, j) => [...r].map((c, i) => (c === 'X' ? `M${n(x + i * s)} ${n(y + j * s)}h${s}v${s}h-${s}z` : ''))).join('')
+  return `<path d="${d}" fill="#ffffff"/>`
 }
 
 /** 꺼진 아이콘 · 글 회색(바 흐린 글과 같은 값) */

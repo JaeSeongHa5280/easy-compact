@@ -83,7 +83,7 @@ import {
   OUTPUT_GUESS,
   SUMMARY_GUESS,
 } from './optimal'
-import { afterGuess, afterInNowTokens, compactSince, compactSummary, costScanFromLines, costScanOf, flowFromRecords, lacksModels, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, withPoint, withQuestion, recordsFromTranscript } from './flow'
+import { afterGuess, afterInNowTokens, compactSince, compactSummary, costScanFromLines, costScanOf, flowFromRecords, isNotShrunk, lacksModels, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, withPoint, withQuestion, recordsFromTranscript } from './flow'
 import type { CostScan, Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, agentPart, agentSum, attachHead, continuedName, ctxNumText, PLUGIN_SENT, promptHead, stepLabel, paneTitle } from './text'
@@ -1883,9 +1883,15 @@ let missedCompact: { trigger: string; result: CompactResultLike } | null = null
 let hookCompact: { isRecorded: boolean } | null = null
 /**
  * 0.9.1: 이 프로세스에서 엔진 컨텍스트 값을 봤다. 엔진 값은 컴팩트 직후 다음 응답까지 빈다(엔진 문서 SessionContextUsage) — 본 뒤 비면
- * 훅도 .catch 도 못 본 컴팩트로 적는다(앞 크기 = 마지막 점, 뒤 크기는 다음 요청이 채운다)
+ * 훅도 .catch 도 못 본 컴팩트일 수 있다(suspectCompact)
  */
 let engineHadTokens = false
+/**
+ * 엔진 값이 본 뒤 비었다 — 컴팩트일 수 있다(before = 마지막 점, atMs = 빈 것을 본 때). 0.9.1 ~ 1.0 은 이때 바로 컴팩트로 적었는데 컴팩트
+ * 아닌 때도 빈다(이 PC 10-16 뒤 그렇게 적은 20개가 모두 가짜 — 안전 분류기가 응답을 멈춤 · 쉬던 세션 여럿이 같은 초에, 동료 제보
+ * "컴팩트 늦어짐인데 손해"). 이제 다음 메인 요청이 직전보다 확실히 작을 때만 적는다(recordStep — flow.ts isNotShrunk)
+ */
+let suspectCompact: { before: number; atMs: number } | null = null
 /** 마지막으로 본 세션 시작 시각 — /clear 는 이 값을 바꾼다(그건 컴팩트로 적지 않는다) */
 let startedAtSeen: number | null = null
 
@@ -1957,6 +1963,8 @@ async function recordStep(
 ): Promise<void> {
   trackedUsd += cost.usd
   const contextTokens = tokens.input_tokens + tokens.cache_read_input_tokens + tokens.cache_creation_input_tokens
+  // 엔진 값이 비어 의심해 둔 컴팩트 — 이 요청이 줄었으면 그 앞에 적는다(점을 잇기 전에)
+  await settleSuspect($, contextTokens)
   // 컨텍스트 흐름 그래프에 점 하나 — 잇기 전 마지막 점이 이 요청이 읽을 수 있던 캐시(다시 쓴 값의 기준)
   const flow = await readFlow($)
   // 다시 쓴 값 · 점의 유지 시간은 기록에서 잰 세션 유지 시간(엔진이 주는 요청 값엔 종류가 없다) — 못 쟀으면 점엔 안 적는다
@@ -1964,10 +1972,10 @@ async function recordStep(
   const rewrite = rewriteOf(tokens, model, lastCtxOf(flow), ttl ?? ttlOf(await read($, usage)), null, engineNow)
   // 기록을 다 읽은 흐름일 때만 공통 앞부분을 잰다(못 읽었거나 읽는 중이면 다시 연 세션의 첫 요청이 세션 첫 요청처럼 보인다)
   const isWhole = (await read($, flowLoaded)) && (await read($, flowNote)) === null
-  await writeFlow(
-    $,
-    withPoint(flow, { atMs: await $.clock.now(), ctx: contextTokens, usd: cost.usd, model, ...(ttl !== null ? { ttl } : {}), ...(engineNow ? { engine: engineNow } : {}) }, tokens, isWhole),
-  )
+  const nextFlow = withPoint(flow, { atMs: await $.clock.now(), ctx: contextTokens, usd: cost.usd, model, ...(ttl !== null ? { ttl } : {}), ...(engineNow ? { engine: engineNow } : {}) }, tokens, isWhole)
+  await writeFlow($, nextFlow)
+  // 옛 판이 적은 가짜 컴팩트가 이 점으로 빠졌다 — 질문별 비용의 그 컴팩트 줄도
+  if (nextFlow.compactions.length < flow.compactions.length) await syncCompactSteps($)
   await update($, live, prev => {
     const base: LiveTurn =
       prev && prev.turnId === turnId
@@ -2295,8 +2303,9 @@ async function addCompactStep($: EngineInterface, parts: CostParts | null, befor
  * 컴팩트 한 번을 적는다: 계산식 재료(섞임 · 출력 · 직후 크기) · 컨텍스트 흐름 · 질문별 비용 줄 · 끝 줄어듦. session.compact 훅이 본 컴팩트와
  * 훅이 못 본 컴팩트(0.9.1 — .catch 가 받아 둔 결과, 또는 엔진 값이 빈 것으로 안 컴팩트) 둘 다 이 길로. mark = 훅의 이번 디스패치 표시
  */
-async function recordCompaction($: EngineInterface, trigger: string, result: CompactResultLike, mark?: { isRecorded: boolean }): Promise<void> {
+async function recordCompaction($: EngineInterface, trigger: string, result: CompactResultLike, mark?: { isRecorded: boolean }, atMs?: number): Promise<void> {
   measureAfterCompact = true
+  suspectCompact = null
   // 컴팩트 요청이 입력을 어떻게 냈는지(정가 · 캐시 읽기 · 쓰기 몫) — 다음 손익 계산에 쓴다.
   // 캐시가 살아 있던 컴팩트만 남긴다 — "지금 컴팩트하면" 셈(compactPayoff)은 캐시가 살아 있을 때만 쓰고, 식은 캐시는
   // coldCompact 가 따로 센다. 식은 캐시의 몫(정가 입력)이 남으면 다음 손익이 7배쯤 비싸 보였다
@@ -2315,7 +2324,7 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
   // kept + 기본 적재로 어림(afterGuess)
   const kept = typeof result.tokensAfter === 'number' && result.tokensAfter > 0 ? result.tokensAfter : null
   if (kept !== null) await $.store.set(KEPT_KEY, kept)
-  const event: CompactEvent = { atMs: await $.clock.now(), trigger, before, after: null, costUsd: measured, index: flow.points.length, ...(kept !== null ? { kept } : {}) }
+  const event: CompactEvent = { atMs: atMs ?? (await $.clock.now()), trigger, before, after: null, costUsd: measured, index: flow.points.length, ...(kept !== null ? { kept } : {}) }
   const withEvent: Flow = { points: flow.points, compactions: [...flow.compactions, event] }
   const after = afterGuess(withEvent, event, before0?.model ?? '', await baseLoad($, flow))
   // 엔진이 컴팩트를 끝낸 이 순간 게이지가 줄어든다(직후 어림을 낼 수 있을 때만 — 모르면 다음 요청까지 그대로)
@@ -2342,12 +2351,13 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
 
 /**
  * 0.9.1: 훅이 못 본 컴팩트를 적는다 — ① .catch 가 받아 둔 결과(엔진 값 그대로) ② 엔진 컨텍스트 값이 이 프로세스에서 보인 뒤 비었다(컴팩트
- * 직후 다음 응답 전 — 엔진 문서). ②는 앞 크기 = 마지막 점, 뒤 크기는 다음 요청이 채운다. /clear(세션 시작 시각이 바뀜)와 이미 적은
- * 컴팩트(마지막 점 뒤 컴팩트가 있음)는 적지 않는다. 돌려주는 값: 적었나
+ * 직후 다음 응답 전 — 엔진 문서). ②는 의심만 해 두고(suspectCompact) 다음 메인 요청이 줄었으면 그때 적는다 — 값은 컴팩트 아닌 때도
+ * 빈다. /clear(세션 시작 시각이 바뀜)와 이미 적은 컴팩트(마지막 점 뒤 컴팩트가 있음)는 적지 않는다. 돌려주는 값: 적었나
  */
 async function catchMissedCompact($: EngineInterface, engineTokens: number | undefined, startedAt: number): Promise<boolean> {
   const isClear = startedAtSeen !== null && startedAt !== startedAtSeen
   startedAtSeen = startedAt
+  if (isClear) suspectCompact = null
   if (missedCompact !== null) {
     const m = missedCompact
     missedCompact = null
@@ -2368,10 +2378,25 @@ async function catchMissedCompact($: EngineInterface, engineTokens: number | und
   const flow = await readFlow($)
   const last = flow.points[flow.points.length - 1]
   if (!last || last.ctx <= 0 || compactSince(flow) !== null) return false
-  // 누가 돌렸는지(사람 /compact · 자동)는 모른다 — 화면엔 그냥 "컴팩트"
-  await recordCompaction($, 'manual', { tokensBefore: last.ctx })
-  log($, `compact the hook did not see — engine context went empty after ${last.ctx}`)
-  return true
+  suspectCompact = { before: last.ctx, atMs: await $.clock.now() }
+  log($, `engine context went empty after ${last.ctx} — a compact if the next request is smaller`)
+  return false
+}
+
+/**
+ * 의심해 둔 컴팩트(suspectCompact)를 다음 메인 요청 크기(ctx)로 가린다 — 확실히 줄었으면 그 요청 앞에 컴팩트를 적는다(흐름에 이 요청 점을
+ * 잇기 전에 불러야 이 점이 직후가 된다). 누가 돌렸는지(사람 /compact · 자동)는 모른다 — 화면엔 그냥 "컴팩트"
+ */
+async function settleSuspect($: EngineInterface, ctx: number): Promise<void> {
+  const s = suspectCompact
+  if (s === null) return
+  suspectCompact = null
+  if (isNotShrunk(s.before, ctx)) {
+    log($, `not a compact — engine context went empty but the next request is ${ctx} (before ${s.before})`)
+    return
+  }
+  await recordCompaction($, 'manual', { tokensBefore: s.before }, undefined, s.atMs)
+  log($, `compact the hook did not see — engine context went empty after ${s.before}, next request ${ctx}`)
 }
 
 /** 0.9.1: 1.5초마다 — 훅이 못 본 컴팩트가 있으면 바로 다시 잰다(.catch 가 결과를 받아 뒀거나, 본 엔진 값이 비었다). 아니면 그냥 돌아온다 */

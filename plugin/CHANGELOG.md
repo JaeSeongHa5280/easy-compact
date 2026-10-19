@@ -4,6 +4,14 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.0.1] — 2026-10-20
+
+### Changed
+- **Easy Auto range in the Overview tab** — the Compact timing card (Simple and Detailed views) now has the **Easy Auto range** dropdown right below the compact range. It is the same value as Settings → **Compact**.
+
+### Fixed
+- **"Compacting now would cost more than it saves" while overdue** — a moment when Claude Code briefly had no context size (after a safety stop, or several idle sessions at once) was counted as a compact the hook missed. The next request (say 490k) then became the size right after that compact, so *Resident* showed 490k and the bar said compacting would save almost nothing. Now such a moment counts as a compact only if the next request is clearly smaller (under 80% of the size before). Records like this saved by 0.9.1 – 1.0.0 are dropped when read, along with their compact line in **Cost per question**.
+
 ## [1.0.0] — 2026-10-19
 
 ### Added

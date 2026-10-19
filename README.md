@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-4c9be8" alt="Version 1.0.0">
+  <img src="https://img.shields.io/badge/version-1.0.1-4c9be8" alt="Version 1.0.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-100">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-101">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 ---
@@ -108,6 +108,11 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.0.1
+
+- **Fixed: "Compacting now would cost more" while overdue** — a moment when Claude Code briefly had no context size was counted as a compact, so the next request became the post-compact size (*Resident* 490k) and the bar called compacting a loss. Now it counts only if the next request is clearly smaller. Such records saved by 0.9.1 – 1.0.0 are dropped when read.
+- **Easy Auto range in the Overview tab** — right below the compact range in the Compact timing card, the same value as Settings → **Compact**.
 
 ## What's new in 1.0.0
 
@@ -320,7 +325,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 <img src="docs/img/settings.png" width="640" alt="Overview → Compact: the compact range dropdown and the Cost by size table, colored by verdict, with Chosen and Now tags at the row ends">
 
-**Pick a compact range in the Overview tab.** The Simple view has the range dropdown in the *This session* card, with one line under it: the verdict (★ Best · good · fair · not advised) and the cost of one read, one question and a cold cache. The Detailed view adds the suggested range (★, with **[Use this range]**) and the **Cost by size** table in the Compact card — one read and one question per size (10 requests assumed × the current model's rates); a wider pane adds the cold-cache cost and how far each size is from the cheapest (★) — a narrow one drops the least important columns first. Cell colors are the verdicts (the table's **?** says which ranges are not advised), and the last column tags rows with *Now 73%* (the row your size is in, on blue) · *Chosen* · *Auto* (the Easy Auto range) — all of them when they land on one row. Picking applies to all sessions at once, and **Enter a size…** at the end of the dropdown sets a single size by number.
+**Pick a compact range in the Overview tab.** The Simple view has the range dropdown in the *This session* card, with one line under it: the verdict (★ Best · good · fair · not advised) and the cost of one read, one question and a cold cache. The Detailed view adds the suggested range (★, with **[Use this range]**) and the **Cost by size** table in the Compact card — one read and one question per size (10 requests assumed × the current model's rates); a wider pane adds the cold-cache cost and how far each size is from the cheapest (★) — a narrow one drops the least important columns first. Cell colors are the verdicts (the table's **?** says which ranges are not advised), and the last column tags rows with *Now 73%* (the row your size is in, on blue) · *Chosen* · *Auto* (the Easy Auto range) — all of them when they land on one row. Picking applies to all sessions at once, and **Enter a size…** at the end of the dropdown sets a single size by number. Right below it is the **Easy Auto range** dropdown (from 1.0.1 — the same value as in Settings).
 
 | Gauge and button | Means |
 |---|---|
@@ -357,7 +362,7 @@ flowchart LR
 
 <img src="docs/img/auto.png" width="900" alt="Easy Auto on: the bar's compact button becomes a blue Auto 200k chip, and the Easy Auto switch at the top right of the Compact now? popup is on">
 
-**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch at the top right of the card the bar's **[Compact]** opens (per session — new sessions start with the value you last picked yourself; in a terminal it's **4** on the card). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k* (press it for that card). The range is Settings **Compact** tab → **Easy Auto range**, right below the compact range (it starts at your compact range and is shared by all sessions).
+**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch at the top right of the card the bar's **[Compact]** opens (per session — new sessions start with the value you last picked yourself; in a terminal it's **4** on the card). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k* (press it for that card). The range is **Easy Auto range**, right below the compact range — in the Settings **Compact** tab and in the Overview tab's Compact timing card (it starts at your compact range and is shared by all sessions).
 
 | When | What it does |
 |---|---|

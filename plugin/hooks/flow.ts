@@ -444,10 +444,47 @@ export function parseFlowFile(text: string): Flow | null {
       raw.v === 5 && raw.s !== null && typeof raw.s === 'object' && !Array.isArray(raw.s)
         ? Object.fromEntries(Object.entries(raw.s as Record<string, unknown>).map(([k, v]) => [k, num(v)]))
         : undefined
-    return fixAfters({ points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}) })
+    return fixAfters(dropFalseCompacts({ points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}) }))
   } catch {
     return null
   }
+}
+
+/**
+ * 컴팩트는 줄인다 — 직후 첫 요청이 직전 크기의 이만큼 이상이면 컴팩트가 아니다. 2026-10-20 이 PC 흐름 컴팩트 101개: 진짜는 0.08 ~ 0.77
+ * (0.6 넘는 것은 9만 안팎 작은 세션), 엔진 값이 비어 적은 가짜는 1.00 ~ 1.06. 모델을 바꾸면 같은 대화도 0.83배까지 작게 센다(tokenScales)
+ */
+export const COMPACT_SHRINK = 0.8
+
+/** 직후 첫 요청(after)이 직전(before)보다 확실히 작지 않다 — 컴팩트가 아니다 */
+export function isNotShrunk(before: number, after: number): boolean {
+  return before > 0 && after >= before * COMPACT_SHRINK
+}
+
+/**
+ * 엔진이 확인해 주지 않은 컴팩트 — 남긴 대화(엔진 tokensAfter)도 컴팩트 요청 값도 없다. 0.9.1 ~ 1.0 은 엔진 컨텍스트 값이 비기만 해도
+ * 이렇게 적었는데(훅이 못 본 컴팩트), 이 PC 에서 10-16 뒤 그렇게 적은 20개가 모두 기록에 컴팩트 경계가 없는 가짜였다 — 안전 분류기가
+ * 응답을 멈춘 때, 쉬던 세션 여럿이 같은 초에(앱 쪽 일로 추정). 미리 계산한 요약을 쓴 진짜 컴팩트도 이렇게 보이나 그것은 줄어 있다
+ */
+function isUnconfirmed(c: CompactEvent): boolean {
+  return c.kept === undefined && c.costUsd === null
+}
+
+/**
+ * 가짜 컴팩트 빼기(동료 제보 2026-10-20 "컴팩트 늦어짐인데 손해"): 확인 안 된 컴팩트 뒤 첫 요청이 줄지 않았으면 컴팩트가 아니다. 남겨 두면
+ * 그 요청(490k)이 직후 크기가 돼 상주 490k = 기본 적재 79k + 컴팩트 요약 411k, 계산식 직후 크기도 490k 라 "지금 컴팩트하면 손해" 였다.
+ * 첫 요청을 아직 모르면 그대로(다음 요청 때 본다). 빼낼 게 없으면 같은 흐름
+ */
+export function dropFalseCompacts(flow: Flow): Flow {
+  const n = flow.points.length
+  const compactions = flow.compactions.filter((c, i) => {
+    if (!isUnconfirmed(c)) return true
+    const later = flow.compactions[i + 1]
+    // 바로 다음 컴팩트가 이어지면 그 첫 요청은 뒤 컴팩트 것, 점이 잘린 흐름의 0 번 컴팩트는 첫 요청이 잘려 나갔을 수 있다(fixAfters 와 같게)
+    const first = later?.index !== c.index && !(c.index === 0 && n >= MAX_POINTS) ? flow.points[c.index] : undefined
+    return first === undefined || !isNotShrunk(c.before, first.ctx)
+  })
+  return compactions.length === flow.compactions.length ? flow : { ...flow, compactions }
 }
 
 /**
@@ -474,18 +511,22 @@ export function fixAfters(flow: Flow): Flow {
 /**
  * 질문별 비용의 컴팩트 줄("🗜 컴팩트 933k → 18k")을 흐름의 직후 크기에 맞춘다 — 같은 컴팩트 = 직전 크기가 같다. 흐름이 첫 요청을
  * 기다리는 컴팩트(fixAfters 가 비운 옛 값 = 남긴 대화)면 그 줄도 비워 다음 요청이 채우게(fillCompactAfter). 흐름이 모르는 컴팩트 줄은
- * 그대로. 바뀐 게 없으면 같은 배열
+ * 그대로 — 단 값 없이 적힌 가짜(dropFalseCompacts 가 흐름에서 뺀 것: 금액 0 에 직후가 비었거나 줄지 않음)는 뺀다. 바뀐 게 없으면 같은 배열
  */
 export function syncCompactAfter(details: StepDetail[], compactions: readonly CompactEvent[]): StepDetail[] {
   let isChanged = false
-  const out = details.map(d => {
-    if (!d.compact) return d
+  const out = details.flatMap(d => {
+    if (!d.compact) return [d]
     const before = d.compact.before
     const c = [...compactions].reverse().find(o => o.before === before)
+    if (!c && d.usd === 0 && (d.compact.after === null || isNotShrunk(before, d.compact.after))) {
+      isChanged = true
+      return []
+    }
     const after = !c ? d.compact.after : c.after !== null ? c.after : c.kept !== undefined && d.compact.after === c.kept ? null : d.compact.after
-    if (after === d.compact.after) return d
+    if (after === d.compact.after) return [d]
     isChanged = true
-    return { ...d, compact: { ...d.compact, after } }
+    return [{ ...d, compact: { ...d.compact, after } }]
   })
   return isChanged ? out : details
 }
@@ -584,7 +625,8 @@ export function withPoint(flow: Flow, p: CtxPoint, t?: Tokens, isWhole = true): 
   const next: Flow = { ...flow, points: [...flow.points], compactions: flow.compactions.map(c => ({ ...c })) }
   if (t && p.model && isWhole) noteShared(next, p.atMs, p.model, t.cache_read_input_tokens)
   addPoint(next, p, t ? t.input_tokens + t.cache_creation_input_tokens : undefined)
-  return trim(next)
+  // 옛 판이 적어 둔 가짜 컴팩트(첫 요청 전이던 것)는 이 점으로 가려진다
+  return trim(dropFalseCompacts(next))
 }
 
 function trim(flow: Flow): Flow {
@@ -800,14 +842,22 @@ export function flowSvg(
   // 마지막 컴팩트 앞(지난 구간)은 흐리게 — 오른쪽 진한 부분이 지금
   const lastMark = marks.length > 0 ? marks[marks.length - 1]! : 0
   let body = ''
+  // 막대는 색 · 흐림마다 path 하나로(그림은 같다) — 막대마다 rect 면 하나 ≈ 74자, 90개면 6.6천 자라 패널 그리기 크기(size.test)를 먹었다(2026-10-20
+  // 현황에 이지 오토 구간 줄을 더하며 줄임 — 2.3천 자 남짓)
+  const groups = new Map<string, string>()
+  const w = Math.max(1, bw - 1).toFixed(1)
   for (let b = 0; b < bars; b++) {
     const from = Math.floor(b * per)
     const to = Math.max(from + 1, Math.floor((b + 1) * per))
     let v = 0
     for (let i = from; i < to && i < n; i++) v = Math.max(v, points[i]!.ctx)
     const y = yOf(v)
-    const dim = from < lastMark ? ' fill-opacity="0.4"' : ''
-    body += `<rect x="${(b * bw).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${(height - y).toFixed(1)}" fill="${LEVEL_HEX[levelOf(v)]}"${dim}/>`
+    const key = `${LEVEL_HEX[levelOf(v)]}${from < lastMark ? ' fill-opacity="0.4"' : ''}`
+    groups.set(key, `${groups.get(key) ?? ''}M${(b * bw).toFixed(1)} ${y.toFixed(1)}h${w}V${height}h-${w}z`)
+  }
+  for (const [key, d] of groups) {
+    const [hex, ...dim] = key.split(' ')
+    body += `<path d="${d}" fill="${hex}"${dim.length > 0 ? ` ${dim.join(' ')}` : ''}/>`
   }
   // 0.5 묶음 2(N14): 기준선 = 단계 색(주황 = 컴팩트할 때 시작 · 빨강 = 늦어짐 시작) — 막대 색이 바뀌는 자리와 같은 색. 예전 회색은 노랑이
   // "좋은 때" 였던 때의 결정(빨강 · 노랑이면 비용이 많다로 읽혔다, 2026-10-11) — 이제 두 색은 구간 경고라 뜻이 맞다. 강조는 잘게, 권장은 길게
