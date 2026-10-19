@@ -8,8 +8,8 @@
     {
       "name": "easy-compact",
       "source": "./plugin",
-      "description": "The Easy Compact bar above the input and the Easy Compact pane for Claude Code: live context, cost and plan limits, when to compact, and a one-click Easy Compact that saves before compacting. Requires Claude Code 2.1.295+.",
-      "version": "0.9.5"
+      "description": "The Easy Compact bar above the input and the Easy Compact pane for Claude Code: live context, cost and plan limits, when to compact, a one-click Easy Compact that saves before compacting, and an optional Easy Auto that does it for you past a range you set. Requires Claude Code 2.1.295+.",
+      "version": "1.0.0"
     }
   ]
 }

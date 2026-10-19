@@ -9,7 +9,9 @@ import { atom, read, update } from 'claude-code'
 import type { AgentRun } from './turns'
 import type { EngineInterface, Register } from 'claude-code'
 import type {
+  AutoState,
   ChangeGroup,
+  CompactEvent,
   CompactInputs,
   CostShow,
   CostParts,
@@ -22,6 +24,7 @@ import type {
   Source,
   StepDetail,
   TtlConfig,
+  TurnsOlder,
   TurnSummary,
   UpdateState,
   Usage,
@@ -30,6 +33,7 @@ import type {
 import {
   addCost,
   average,
+  cacheWarnFor,
   compactMixOf,
   compactPayoff,
   costOf,
@@ -41,6 +45,8 @@ import {
   fmtUsd,
   LEVEL_TEXT,
   levelOf,
+  SESSION_TEXT,
+  sessionColorOf,
   thresholds,
   spendDay,
   monthStartMs,
@@ -60,10 +66,14 @@ import {
   WARM_COMPACT,
   ZERO_COST,
   ttlOf,
+  guessTtl,
+  cacheRankOf,
 } from './cost'
 import type { CompactCalib, CompactMix, RetroCompacts, SpendDays } from './cost'
-import { BAND_PARTS, setLimits, bandModeName, bandPartName, bandShowMode, bandShowOf, bandStateText, chooseScreen, editView, hiddenNote, isViewPart, HIDDEN_NOTE_MS, parseScreen, screenName, setFolded, viewOf, paneAutoUse, paneSyncUse, revealLabel, setBandShow, chooseTidy, isAutoWord, parseOnOff, DEFAULT_SETTINGS, normalizeSettings, NEW_INSTALL_SCREEN, UPDATE_SCREEN, paneModeName, paneModeOf, parseBandMode, parseBandPart, parseMinutes, parseTokens, setBandPart, setCompactAt, setFollow, setRange, setTidyCustom, thresholdsOf, tidyStyles, tidyBody, usesCustom, setCompactCustom, setContextWindow } from './settings'
+import { ARRIVE_SETTLE_MS, clearArrival, drawingBar, endFlash, FLASH_STEP_MS, markArrival, noteRank, stepFlash, takeArrival } from './flash'
+import { BAND_PARTS, isSlim, parseSlim, slimCustom, spendOf, PARTS, setPart, parsePartKey, parsePartLevel, partName, levelName, slimViewOf, setLimits, bandModeName, bandPartName, bandShowMode, bandShowOf, bandStateText, chooseScreen, editView, hiddenNote, isViewPart, HIDDEN_NOTE_MS, parseScreen, screenName, setFolded, viewOf, paneAutoUse, paneSyncUse, revealLabel, revealName, setBandShow, chooseTidy, isAutoWord, parseOnOff, DEFAULT_SETTINGS, normalizeSettings, NEW_INSTALL_SCREEN, UPDATE_SCREEN, paneModeName, paneModeOf, parseBandMode, parseBandPart, parseMinutes, parseTokens, setBandPart, setCompactAt, setFollow, setRange, setTidyCustom, thresholdsOf, tidyStyles, tidyBody, usesCustom, setCompactCustom, setContextWindow, setEngineAuto } from './settings'
 import {
+  baseOfCategories,
   GROWTH_GUESS,
   growthPerStep,
   keepOptimal,
@@ -73,44 +83,37 @@ import {
   OUTPUT_GUESS,
   SUMMARY_GUESS,
 } from './optimal'
-import { afterInNowTokens, compactSince, compactSummary, flowFromRecords, lacksModels, lastCtxOf, lastMainTtl, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, scanTranscript, serializeFlow, sharedFor, extraPerCall, withPoint, withQuestion, recordsFromTranscript } from './flow'
-import type { Flow, FlowRecord } from './flow'
+import { afterGuess, afterInNowTokens, compactSince, compactSummary, costScanFromLines, costScanOf, flowFromRecords, lacksModels, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, withPoint, withQuestion, recordsFromTranscript } from './flow'
+import type { CostScan, Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
-import { APP_MIN_USD, agentPart, agentSum, modelCompareText, promptHead, stepLabel, paneTitle } from './text'
-import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, tidyVerdict } from './tidy'
-import { agentText, BRAND_HEX, CH_PX, gaugeEl, setGaugeShape, setMotion, hoverTip, segButton, segGroup, row, gridOf, pickButton, CARD_INSET, questionScope, SVG_MAX_PX, previewChip, previewFrame } from './ui-common'
-import type { Ui, Fold } from './ui-common'
-import { drawBandPreview, setBandOrder, setCtxUnit } from './ui-band'
-import type { BandPreviewExtra, SpendShown } from './ui-band'
-import {
-  liveBlock,
-  compactingBlock,
-  drawFlow,
-  permanentOf,
-  drawEfficiency,
-  drawHistory,
-  drawNow,
-  drawCompactCard,
-  drawReference,
-  drawSummary,
-  decisionLine,
-  drawAllSpend,
-  setPaneBarMotion,
-} from './ui-usage'
-import type { AllSpendLine } from './ui-usage'
-import { draftCompactAt, drawCompactTiming, drawSettingsView, drawUpdateDrawer, updateButton } from './ui-settings'
-import { answerDetail, answerLine, sampleTurn, sampleUsage } from './ui-answer'
+import { APP_MIN_USD, agentPart, agentSum, attachHead, continuedName, ctxNumText, PLUGIN_SENT, promptHead, stepLabel, paneTitle } from './text'
+import type { AttachCounts } from './text'
+import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, directKeep, tidyVerdict, autoTurnOf, autoSavePrompt, autoContinuePrompt, autoCompactKeep, kindAuto, kindAutoSave, isAutoSaveKind } from './tidy'
+import { AUTO_AGAIN_REQUESTS, AUTO_LAST_KEY, AUTO_WAIT_MS, autoChipText, autoFromStore, autoKey, autoLossOf, autoNoteText, autoRangeText, autoToggleNote, freshAuto, isAutoActive, isChainStuck, isTooSoon } from './auto'
+import { drawAutoNote } from './ui-auto'
+import { BRAND_HEX, CH_PX, oldEngineNote, setGaugeShape, setMotion, row, gridOf, CARD_INSET, questionScope, SVG_MAX_PX } from './ui-common'
+import type { Ui } from './ui-common'
+import { setBandOrder, setCtxUnit, slimButtonText, slimParts } from './ui-band'
+import type { SpendShown } from './ui-band'
+import { permanentOf, drawAllSpend, setPaneBarMotion } from './ui-usage'
+import type { AllSpendLine, Tally } from './ui-usage'
+import { draftCompactAt, drawSettingsView, drawUpdateDrawer } from './ui-settings'
+import { answerDetail, answerLine, liveStrip, sampleTurn, sampleUsage } from './ui-answer'
 import { drawBar } from './ui-bar'
-import type { BarActions } from './ui-bar'
+import type { BarActions, BarData } from './ui-bar'
+import { drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
+import type { PaneMainActions } from './ui-pane'
 import { statusLineText } from './status-line'
-import { diagHead, redactDump } from './diag'
+import { diagHead, dumpText, redactDump } from './diag'
 import type { DiagCounts, DiagView } from './diag'
 import { isKorean, L, lang, plural, setLang } from './i18n'
 import { setSurface } from './glyph'
 import type { Lang } from './i18n'
-import { changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
+import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
-import { agentRunFromText, parseTurnsFile, serializeTurns, turnsFromRecords } from './turns'
+import { agentRunFromText, foldOlder, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, turnsFromRecords, withAgentStep, withAppStep } from './turns'
+import { AFTER_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
+import type { PaneEvent, Urgency } from './state'
 
 
 
@@ -152,6 +155,7 @@ async function dataDir($: EngineInterface): Promise<string> {
   if (installed) return `${installed.configDir}/plugins/data/${pluginDataId('easy-compact', installed.marketplace)}`
   return `${await claudeHome($)}/plugins/data/easy-compact`
 }
+
 
 // ── 업데이트 칸(설정 탭 맨 아래 easy-compact, 2026-10-14 사용자 결정: 1~3안 · 자동 확인 없음 · 개발본엔 숨김) ──
 // ① [업데이트 확인] — 누를 때만 Claude Code 가 GitHub 의 마켓을 받아 온다(`claude plugin marketplace update` — 네트워크는 엔진의 git,
@@ -214,12 +218,6 @@ async function readMarket($: EngineInterface, inst: { configDir: string; marketp
 }
 
 /**
- * 업데이트 뒤 첫 실행 표시(3안)의 기준: 마지막으로 본 판($.store, 모든 세션 같이). 처음 설치면 설정을 처음 적을 때(seedSettings) 지금
- * 판을 같이 적는다 — 그래서 값이 없으면 0.5.0 전부터 쓰던 사람(그땐 안 적었다)이라 업데이트로 본다
- */
-const SEEN_VERSION_KEY = 'seenVersion'
-
-/**
  * 서랍에 보일 판들과 그 바뀐 것(U1 — 0.6.1 피드백 "내 판보다 높은 모든 판의 바뀐 것을 판별로"): 받아 둔 마켓 사본(디렉터리 설치본은 이
  * 판 플러그인 폴더)의 CHANGELOG 에서 from < v ≤ to 를 새 판부터. 이 PC 파일만 — 통신 없음. 글은 읽는 때 언어(언어를 바꾸면 ensureLang 이
  * 다시 읽는다 — L1)
@@ -256,13 +254,6 @@ async function readChanges(
   return { versions: [], changes: {} }
 }
 
-/** 서랍에 보일 판의 범위: 새 판이 있으면 지금 판 < v ≤ 새 판, 업데이트 뒤 첫 실행이면 본 판 < v ≤ 지금 판, 그 밖엔 지금 판 하나 */
-function changeRange(own: string | null, market: string | null, seen: unknown, updatedTo: string | null | undefined): { from: string | null; to: string | null } {
-  if (own && market && versionGt(market, own)) return { from: own, to: market }
-  if (updatedTo) return { from: typeof seen === 'string' && versionGt(updatedTo, seen) ? seen : null, to: updatedTo }
-  return { from: null, to: own }
-}
-
 /**
  * 켤 때 · 패널을 열 때 · 서랍을 열 때(설치본만): 지금 판과 받아 둔 사본 판 — 사본이 더 새로우면 newer(탭 줄 버튼 "새 판 N"). 본 판과
  * 지금 판이 다르면 업데이트 뒤 첫 실행(버튼 "N 바뀐 것"). U3(0.6.1 피드백): [업데이트] 로 받은 판이 이미 떴으면(지금 판 = 받은 판 — 앱을
@@ -279,7 +270,9 @@ async function refreshUpdateInfo($: EngineInterface): Promise<void> {
   // 늘 — 판 · 이 판 바뀐 것 · 문제 제보만(업데이트 명령은 마켓 설치본 것이라 없다)
   if (!inst) {
     const got = await readChanges($, null, null, own)
-    await update($, updateInfo, prev => ({ ...prev, own, updatedTo: null, ...got, phase: 'dev' }))
+    // 개발자 모드가 꺼졌으면 판 표시를 공개판처럼(UpdateState.devOff) — 공개판엔 스위치가 없어 늘 false
+    let devOff = false
+    await update($, updateInfo, prev => ({ ...prev, own, updatedTo: null, ...got, phase: 'dev', devOff }))
     $.ui.invalidate('ui.render')
     return
   }
@@ -425,11 +418,6 @@ async function runClaude(
  */
 let updateJob: { kind: 'check' | 'apply'; at: number } | null = null
 
-/** 마켓 받기 · 플러그인 업데이트에 줄 시간(후보 모두 합쳐) — 넘기면 "응답이 없어 멈췄습니다" */
-const CHECK_TOTAL_MS = 90_000
-const APPLY_TOTAL_MS = 150_000
-/** 끝을 못 알린 일을 버리는 때: 줄 시간 + 이만큼(엔진이 명령을 안 끊었거나 결과를 못 받음) */
-const UPDATE_GRACE_MS = 30_000
 
 /** 끝을 못 알린 업데이트 일은 버린다 — 시간이 넘었으면 다시 누를 수 있게 */
 async function dropStaleUpdateJob($: EngineInterface): Promise<void> {
@@ -508,9 +496,6 @@ async function applyUpdate($: EngineInterface): Promise<void> {
 // ── 오늘 · 이번 달 사용량(설정 "모든 화면 공통" 에서 켰을 때만, 입력창 위에 일일 · 이번 달 전체 사용량을 옵션으로) ──
 
 let spendRunning = false
-// N6: node 가 없거나 기록을 못 읽어 재기가 실패하면 10분 동안 다시 안 잰다(사람이 옵션을 켤 때만 바로) — 예전엔 실패 뒤에도
-// 간격이 성공 시각으로만 재져 1분마다 node 를 띄우고 로그를 남겼다. 로그는 까닭이 바뀔 때 한 번
-const SPEND_RETRY_MS = 10 * 60_000
 let spendFailAt = 0
 let spendFailWhy = ''
 
@@ -519,7 +504,8 @@ let spendFailWhy = ''
  * 줄을 보인다 — 0.5.1). 옵션을 껐고 패널 자세히도 안 보는 동안엔 다른 세션 기록을 읽지 않는다
  */
 async function wantsSpend($: EngineInterface, s: Settings): Promise<boolean> {
-  if (s.spendToday || s.spendMonth) return true
+  const sp = spendOf(s)
+  if (sp.today || sp.month) return true
   return (await read($, paneView)) !== null && (await paneModeNow($)) === 'detail'
 }
 
@@ -692,8 +678,6 @@ async function saveLang($: EngineInterface, choice: Settings['lang']): Promise<v
   $.ui.invalidate('ui.render')
 }
 
-const PANE = 'easy-compact'
-
 /** 패널 제목을 마지막으로 바꾸려 한 값(L1 — 그릴 때 옛 제목이면 한 번만 다시 연다) */
 let retitledTo: string | null = null
 
@@ -701,36 +685,33 @@ let retitledTo: string | null = null
 /** $.store 키: 설정(Settings). 모든 세션이 같이 쓰고 앱을 껐다 켜도 남는다 */
 const SETTINGS_KEY = 'settings'
 
-// 이 PC 에서 잰 마지막 컴팩트 값($.store, 세션끼리 같이 쓴다). 이 세션에서 아직 컴팩트하지 않았을 때 쓰고, 그것도 없으면 가정
-/** 컴팩트 뒤 첫 요청의 컨텍스트 — 기록 앞부분을 못 읽어 기본 적재를 모를 때만 */
-const AFTER_KEY = 'afterCompactTokens'
-
-/** 컴팩트 요청의 입력 몫(CompactMix) — 캐시가 살아 있던 컴팩트만. 없으면 전부 캐시 읽기로 본다(WARM_COMPACT) */
-const MIX_KEY = 'compactMix'
-
-/** 컴팩트 요약 크기(직후 크기 − 기본 적재, 다시 붙는 파일 포함) */
-const SUMMARY_KEY = 'compactSummaryTokens'
-
-/** 컴팩트 요청의 출력 토큰(요약을 쓴 양) */
-const OUTPUT_KEY = 'compactOutputTokens'
-
 /**
  * 이 PC 의 최근 저장 턴들(SaveTurn[]) — 저장하고 컴팩트는 저장 턴을 먼저 돌린 뒤 컴팩트한다. 그 몫을 컴팩트 값에 넣어야
  * 권장 크기가 실제로 하는 흐름에 맞는다. 한 번마다 요청 1~4회로 들쭉날쭉해 최근 몇 번의 평균으로
  */
 const SAVE_KEY = 'saveTurns'
 
-const SAVE_KEEP = 5
-
 const isConfirmingCompact = atom({ plugin: 'easy-compact', key: 'isConfirmingCompact' } as const, false)
+/**
+ * 확인 카드의 [클리어]를 눌러 같은 자리가 경고 카드로 바뀜. 확인 카드를 열 때마다 꺼진 채 시작
+ */
+const isAskingClear = atom({ plugin: 'easy-compact', key: 'isAskingClear' } as const, false)
 
 const paneView = atom({ plugin: 'easy-compact', key: 'paneView' } as const, null)
 
 const localPane = atom({ plugin: 'easy-compact', key: 'localPane' } as const, null)
 
 const live = atom({ plugin: 'easy-compact', key: 'live' } as const, null)
+/** 1.0 값 강조 시계(0.2초)가 올리는 수 — 바(AbovePrompt)만 읽어, 강조 동안 그 칸만 다시 그린다 */
+const flashTick = atom({ plugin: 'easy-compact', key: 'flashTick' } as const, 0)
 
 const turnSummaries = atom({ plugin: 'easy-compact', key: 'turnSummaries' } as const, [])
+
+/**
+ * 질문 기록 한도(TURNS_KEEP) 밖으로 밀린 질문들의 합(1.0 — 사용자 2026-10-18 "세부 내용은 질문 60개만 하고, 따로 총 질문 개수 · 메인 · 에이전트
+ * 등 총 표기용 값이 따로 관리돼야"). 예전엔 61번째 질문부터 앞 질문이 합에서도 사라져 "질문 60개 $314 · 누적 $775" 였다
+ */
+const turnsOlder = atom({ plugin: 'easy-compact', key: 'turnsOlder' } as const, null)
 
 const compactPhase = atom({ plugin: 'easy-compact', key: 'compactPhase' } as const, 'idle')
 
@@ -740,6 +721,8 @@ const compactKind = atom({ plugin: 'easy-compact', key: 'compactKind' } as const
 const expandedTurn = atom({ plugin: 'easy-compact', key: 'expandedTurn' } as const, null)
 
 const answerOpen = atom({ plugin: 'easy-compact', key: 'answerOpen' } as const, [])
+/** 질문별 비용 [글 다 보기] 로 편 질문들(1.0 시안 1017o 안 3) */
+const stepsFull = atom({ plugin: 'easy-compact', key: 'stepsFull' } as const, [])
 
 const previewOpen = atom({ plugin: 'easy-compact', key: 'previewOpen' } as const, false)
 
@@ -755,37 +738,20 @@ const usageTab = atom({ plugin: 'easy-compact', key: 'usageTab' } as const, 'mai
 
 const tidyRawOpen = atom({ plugin: 'easy-compact', key: 'tidyRawOpen' } as const, false)
 
-// 처음 펼친 칸: 화면만(0.4.0 설정 정리 — 설계 확인, 2026-10-12). 나머지는 제목 줄에 지금 값
-/**
- * 설정 탭 칸 펼침의 처음 값 — 화면과 그 안 세부까지 펼침. 세부엔 모든 화면 공통(한도 줄 · 세션 금액 색)이 있어 접혀 있으면
- * 못 찾는다. 패널을 닫으면 이것으로 돌아간다
- */
-// S3(0.6.1 피드백 "다 펼쳐져 길다 — 큰 제목 기준 접기"): 칸마다 접는 카드(sec-<칸>), 처음엔 화면만 펼침 — 미리보기 · 그 화면이 정하는 칸이 거기
-const SETTINGS_OPEN_DEFAULT: Record<string, boolean> = { 'sec-screen': true }
 const settingsOpen = atom({ plugin: 'easy-compact', key: 'settingsOpen' } as const, SETTINGS_OPEN_DEFAULT)
 /** 설정 안 탭(S10, 0.8.1) — 패널을 닫았다 열면 처음(바)으로, 설정 펼침과 같이 */
 const settingsTab = atom({ plugin: 'easy-compact', key: 'settingsTab' } as const, 'bar' as SettingsTab)
 
-/** 0.9.1 U6: 진단 내용 카드(이 세션) — 처음엔 닫힘 · 질문 · 동작 글 빼기 켬 */
-const DIAG_CLOSED = { open: false, where: 'drawer' as 'drawer' | 'gen', redact: true, copiedLines: null as number | null, savedPath: null as string | null }
 const diagCard = atom({ plugin: 'easy-compact', key: 'diagCard' } as const, DIAG_CLOSED)
 
 /** 카드에 보인 덤프 사본 — 연 때 · 빼기를 바꿀 때 한 번 만든다(그리기마다 만들면 무겁고, 본 것과 복사한 것이 달라질 수 있다) */
 let diagSnap: { text: string; head: string; lines: number; turns: number; counts: DiagCounts; samples: string[] } | null = null
-
-/**
- * 사용량 패널을 열 때 카드 펼침: 이 세션 카드는 펼침, 질문별 비용은 접힘(질문이 쌓이면 길다 — 진행 중 값은 접힌 제목 줄에 보인다).
- * 접어 둔 채 닫으면 다음에 작게 열려 고장처럼 보였다(영태, 2026-10-13 — 사용자 답 "열 때 늘 이 꼴", fb A6). 닫을 때 이 값으로 되돌린다
- */
-const CARDS_OPEN_DEFAULT = { now: true, history: false, compact: true }
 
 const cardsOpen = atom({ plugin: 'easy-compact', key: 'cardsOpen' } as const, CARDS_OPEN_DEFAULT)
 
 const spend = atom({ plugin: 'easy-compact', key: 'spend' } as const, null)
 
 const spendFailed = atom({ plugin: 'easy-compact', key: 'spendFailed' } as const, false)
-
-const UPDATE_IDLE: UpdateState = { phase: 'idle', own: null, market: null, marketAt: null }
 
 const updateInfo = atom({ plugin: 'easy-compact', key: 'update' } as const, UPDATE_IDLE)
 
@@ -819,10 +785,14 @@ const ttlMeasured = atom({ plugin: 'easy-compact', key: 'ttlMeasured' } as const
 const ttlConfig = atom({ plugin: 'easy-compact', key: 'ttlConfig' } as const, null)
 
 const paneModeLocal = atom({ plugin: 'easy-compact', key: 'paneModeLocal' } as const, null)
-/** 현황 [간단|자세히] 로 고른 보기(모든 세션 · 다시 켜도) — 0.6.0 */
-const PANE_MODE_KEY = 'paneModeChoice'
 
 const autoDismissed = atom({ plugin: 'easy-compact', key: 'autoDismissed' } as const, null)
+
+/** 1.0 요약 카드(입력창 위 — 게이지 · 슬림 아래 버튼으로 엶)가 열려 있나 — 이 세션만 */
+const summaryCard = atom({ plugin: 'easy-compact', key: 'summaryCard' } as const, false)
+
+/** 이지 오토(이 세션 — auto.ts). null = 아직 안 읽음(session.start 의 loadAuto 가 채운다) */
+const auto = atom({ plugin: 'easy-compact', key: 'auto' } as const, null)
 
 /**
  * 진단 한 줄 — 엔진 디버그 로그에만(to: 'debug'). 기본(transcript)은 대화창에 시스템 안내 줄로 찍혀, 회사 PC 대화창에 "easy-compact:
@@ -859,6 +829,18 @@ async function lastActivity($: EngineInterface): Promise<number | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * 한도를 세션끼리 나눠 쓴다:
+ * 데이터 폴더 limits.json 과 견줘 더 최근 응답 것을 쓰고(state.ts freshestLimits — 리셋 지난 창은 뺌), 이 세션 것이 더 최근이면 파일에 쓴다.
+ * ownAt = 이 세션 한도를 준 응답 시각(모르면 null — 파일 쪽을 믿는다)
+ */
+async function shareLimits($: EngineInterface, own: Usage['rateLimits'], ownAt: number | null): Promise<Usage['rateLimits']> {
+  const file = `${await dataDir($)}/${LIMITS_FILE}`
+  const pick = freshestLimits(own, ownAt, parseSharedLimits(await readJsonFile($, file)), await $.clock.now())
+  if (pick.isOwn && ownAt !== null) await $.fs.write(file, `${JSON.stringify({ at: ownAt, rateLimits: own })}\n`).catch(() => {})
+  return pick.rateLimits
 }
 
 // ── 캐시 유지 시간: 기록에서 잰다(단정하지 않는다), 못 쟀을 때만 설정 · 문서 기본값 ──────────
@@ -929,25 +911,12 @@ async function readTtlConfig($: EngineInterface): Promise<TtlConfig> {
   return { source: 'auto', value: null }
 }
 
-/**
- * 못 쟀을 때의 짐작(분, 화면에 "추정"): 설정 · 환경 변수가 정했으면 그 값, 자동이면 60(0.3.x 까지 늘 쓰던 값). 한도 값이 없다고
- * API 키(5분)로 보지 않는다 — 구독 세션도 첫 응답 전엔 한도 값이 비어 있다(엔진: "empty when none has a reading"), 근거가 약한
- * 짐작은 단정과 같다. 첫 턴이 끝나면 기록에서 잰 값으로 바뀐다
- */
-function guessTtl(cfg: TtlConfig | null): number {
-  if (cfg?.value) return cfg.value === '5m' ? 5 : 60
-  return 60
-}
-
 
 // ── 컨텍스트 흐름: 기록 파일에서 한 번 읽고, 그 뒤엔 요청 · 컴팩트마다 잇는다 ──────────
 
 async function readFlow($: EngineInterface): Promise<Flow> {
   return { points: await read($, flowPoints), compactions: await read($, compactions), questions: await read($, flowQuestions), shared: await read($, flowShared) }
 }
-
-/** $.fs.read 는 4 MiB 넘는 파일을 거부한다 — 그보다 큰 기록은 tools/scan-transcript.mjs(node)로 뽑는다 */
-const READ_LIMIT = 4 * 1024 * 1024 - 64 * 1024
 
 // ── 질문별 비용 기록 파일(N3, 0.6.0) — 세션마다 <데이터>/turns/<세션>.json. 다시 연 세션에서 읽고, 없으면(이 판 전 세션)
 // 대화 기록에서 다시 만든다. 0.5.1 까지는 엔진 메모리에만 있어 앱을 다시 켜면 비었다
@@ -956,44 +925,107 @@ async function turnsFile($: EngineInterface): Promise<string> {
   return `${await dataDir($)}/turns/${await $.session.id()}.json`
 }
 
-/** 지금 질문 기록을 파일로(기다리지 않는다 — 쓰기가 실패해도 다음 바뀜에 다시) */
+/** 지금 질문 기록(+ 밀린 질문 합)을 파일로(기다리지 않는다 — 쓰기가 실패해도 다음 바뀜에 다시) */
 function saveTurns($: EngineInterface): void {
-  void (async () => $.fs.write(await turnsFile($), serializeTurns(await read($, turnSummaries))))().catch(() => {})
+  void (async () => $.fs.write(await turnsFile($), serializeTurns(await read($, turnSummaries), await read($, turnsOlder))))().catch(() => {})
 }
 
-/** 질문 기록을 바꾸고 파일에도 남긴다 */
+
+
+/** 질문 기록을 바꾸고 파일에도 남긴다 — 한도(TURNS_KEEP)를 넘은 앞 질문은 밀린 질문 합으로(모르던 합이면 지금 밀린 것부터) */
 async function updateTurns($: EngineInterface, fn: (list: TurnSummary[]) => TurnSummary[]): Promise<void> {
-  await update($, turnSummaries, fn)
+  let dropped: TurnSummary[] = []
+  await update($, turnSummaries, list => {
+    const next = fn(list)
+    const cut = Math.max(0, next.length - TURNS_KEEP)
+    dropped = next.slice(0, cut)
+    return next.slice(cut)
+  })
+  if (dropped.length > 0) await update($, turnsOlder, o => foldOlder(o ?? NO_OLDER, dropped))
   saveTurns($)
 }
 
+/** 밀린 질문 합을 모르는 1.0 전 기록(파일에 그 칸이 없는데 한도까지 참) — 켤 때 정하고 fillOlder 가 대화 기록에서 채운다 */
+let isOlderUnknown = false
+
+/** 이번에 켤 때 질문 목록을 대화 기록에서 새로 만들었다(자기 세션 줄만 — 갈라 온 세션도 바로잡을 게 없다, keepOwnTurns) */
+let isTurnsFresh = false
+
 /**
  * 세션 시작(다시 불러오기 포함): 이 프로세스에 기록이 있으면 파일만 맞추고, 없으면 파일에서 읽는다. 파일이 없거나 판이 다르면
- * 대화 기록에서 다시 만들어(rebuilt — "기록에서 다시 만듦") 파일로 남긴다. 기록 파일이 아직 없는 새 세션은 빈 목록
+ * 대화 기록에서 다시 만들어(rebuilt — "기록에서 다시 만듦") 파일로 남긴다(한도 밖은 밀린 질문 합으로). 기록 파일이 아직 없는 새 세션은 빈 목록
  */
 async function loadTurns($: EngineInterface): Promise<void> {
-  if ((await read($, turnSummaries)).length > 0) {
-    saveTurns($)
-    return
-  }
   let saved: TurnSummary[] | null = null
+  let fileOlder: TurnsOlder | null = null
   try {
-    saved = parseTurnsFile(await $.fs.read(await turnsFile($)))
+    const text = await $.fs.read(await turnsFile($))
+    saved = parseTurnsFile(text)
+    fileOlder = saved ? parseTurnsOlder(text) : null
   } catch {
     saved = null
   }
-  const list = saved ?? (await rebuildTurns($).catch(() => null))
-  if (!list) return
+  const inMemory = await read($, turnSummaries)
+  if (inMemory.length > 0) {
+    // mod 만 다시 불러옴 — 목록은 메모리 것, 밀린 질문 합은 메모리 → 파일 → 모름
+    if ((await read($, turnsOlder)) === null) await update($, turnsOlder, () => olderOf(fileOlder, inMemory))
+    isOlderUnknown = (await read($, turnsOlder)) === null
+    saveTurns($)
+    return
+  }
+  let list: TurnSummary[]
+  let older: TurnsOlder | null
+  if (saved) {
+    list = saved
+    older = olderOf(fileOlder, saved)
+  } else {
+    const all = await rebuildTurns($).catch(() => null)
+    if (!all) return
+    isTurnsFresh = true
+    list = all.slice(-TURNS_KEEP)
+    // 한도를 넘으면 밀린 합은 fillOlder 가 세션 누적과 견준 뒤 정한다(기록에서 다시 만든 어림이 누적을 넘으면 버린다)
+    older = all.length > TURNS_KEEP ? null : NO_OLDER
+  }
   // 그 사이 질문이 끝나 목록이 생겼으면 덮지 않는다
   if ((await read($, turnSummaries)).length > 0) return
   await update($, turnSummaries, () => list)
-  if (!saved) saveTurns($)
+  await update($, turnsOlder, () => older)
+  isOlderUnknown = older === null
+  if (!saved || (fileOlder === null && older !== null)) saveTurns($)
+  await syncCompactSteps($)
   $.ui.invalidate('ui.render')
 }
 
-/** 이 판 전 세션: 대화 기록(작으면 바로, 크면 scan-transcript.mjs) + 하위 에이전트 기록(4 MiB 아래 파일만)으로 질문별 비용을 다시 만든다 */
+/**
+ * 1.0 전 기록이 한도(60개)까지 찬 세션: 밀린 질문의 합을 몰라 질문 합계가 세션 누적보다 한참 작았다. 대화 기록에서 다시 만든 질문 중 남긴 목록 첫 줄 앞 것을 밀린 합으로 어림한다(rebuilt — 앱 자체 요청 · 컴팩트 값은 기록에
+ * 없어 빠진다). 어림이 세션 누적을 넘으면 버리고 밀린 것 없음으로(차이는 비용 요약의 "질문 밖" 줄이 말한다 — 1.0 전엔 갈라 온 세션 기록의 부모 줄까지
+ * 세어 넘었다: 2026-10-18 이 PC 기록 $633 · 누적 $340, 지금 rebuildTurns 는 자기 줄만). 세션 누적과 견주려고 세션 금액(loadCostBase) 뒤에 돈다
+ */
+async function fillOlder($: EngineInterface): Promise<void> {
+  if (!isOlderUnknown) return
+  isOlderUnknown = false
+  const all = await rebuildTurns($).catch(() => null)
+  const engine = await ledgerUsd($)
+  const kept = await read($, turnSummaries)
+  // 세션 누적을 못 재면 정하지 않는다(파일에 칸이 없으니 다음에 켤 때 다시)
+  if (engine === null) return
+  const est = all ? olderFromRebuilt(all, kept) : null
+  const cum = (costBase ?? 0) + engine
+  const keptUsd = kept.reduce((sum, t) => sum + t.cost.usd, 0)
+  // 요율 어긋남(기록은 날짜 · 판 요율, 엔진은 제 셈)만큼은 넘어도 받는다 — 3% · $0.50
+  const isFit = est !== null && keptUsd + est.usd <= cum + Math.max(0.5, cum * 0.03)
+  await update($, turnsOlder, o => (isFit ? est : (o ?? NO_OLDER)))
+  saveTurns($)
+  $.ui.invalidate('ui.render')
+}
+
+/**
+ * 이 판 전 세션: 대화 기록(작으면 바로, 크면 scan-transcript.mjs) + 하위 에이전트 기록(4 MiB 아래 파일만)으로 질문별 비용을 다시 만든다. 이 세션 줄만 —
+ * 갈라 온 세션 기록 앞부분 · 하위 에이전트 폴더의 부모 줄 복사본은 부모 몫
+ */
 async function rebuildTurns($: EngineInterface): Promise<TurnSummary[]> {
   const path = await transcriptPath($)
+  const own = await $.session.id()
   let size: number
   try {
     size = (await $.fs.stat(path)).size
@@ -1001,9 +1033,9 @@ async function rebuildTurns($: EngineInterface): Promise<TurnSummary[]> {
     return [] // 기록이 아직 없는 새 세션
   }
   let records: FlowRecord[]
-  if (size <= READ_LIMIT) records = recordsFromTranscript(await $.fs.read(path))
+  if (size <= READ_LIMIT) records = recordsFromTranscript(await $.fs.read(path), own)
   else {
-    const ran = await $.process.run(['node', `${$.plugin.root}/tools/scan-transcript.mjs`, path], { timeoutMs: 60_000 })
+    const ran = await $.process.run(['node', `${$.plugin.root}/tools/scan-transcript.mjs`, path, own], { timeoutMs: 60_000 })
     if (ran.exitCode !== 0) throw new Error(`scan-transcript exit ${ran.exitCode}`)
     records = recordsFromLines(ran.stdout)
   }
@@ -1018,7 +1050,7 @@ async function rebuildTurns($: EngineInterface): Promise<TurnSummary[]> {
   for (const e of entries) {
     if (e.kind !== 'file' || !e.name.endsWith('.jsonl') || e.size > READ_LIMIT) continue
     try {
-      const run = agentRunFromText(e.name.replace(/\.jsonl$/, ''), await $.fs.read(`${dir}/${e.name}`))
+      const run = agentRunFromText(e.name.replace(/\.jsonl$/, ''), await $.fs.read(`${dir}/${e.name}`), own)
       if (run) runs.push(run)
     } catch {
       // 못 읽은 갈래는 뺀다
@@ -1028,13 +1060,18 @@ async function rebuildTurns($: EngineInterface): Promise<TurnSummary[]> {
 }
 
 // ── 세션 금액(B3, 0.6.1 피드백 — 사용자 2026-10-15 "앱을 껐다 켜면 바의 세션 금액이 처음부터"): 엔진 세션 비용은 프로세스마다 0 부터라
-// 앞 프로세스까지 몫(base)을 세션 파일 <데이터>/cost/<세션>.json 에 {v, base, engine} 로 남기고, 바 · 패널 금액 = base + 지금 엔진 값
+// 앞 프로세스까지 몫(base)을 세션 파일 <데이터>/cost/<세션>.json 에 {v, base, engine} 로 남기고, 바 · 패널 금액 = base + 지금 엔진 값.
+// v2(1.0, 사용자 2026-10-18 "포크 세션은 자기 비용만 보이는 게 맞지 않아?") = 기록을 한 번 훑어 갈라 온 세션인지 본 파일 — 갈라 온 세션은 엔진
+// 장부에 든 부모 몫을 base 에서 뺀다(그래서 base 가 음수일 수 있다). 엔진이 세션을 열 때 기록의 비용 상태 줄로 되살린 몫도 다시 더하지 않는다
 
 /** 앞 프로세스까지의 세션 금액 — 켤 때 정한다(못 정했으면 null — 엔진 값만) */
 let costBase: number | null = null
 
 /** 마지막으로 파일에 남긴 엔진 값(같으면 다시 안 쓴다) */
 let costSavedEngine = -1
+
+/** 기록을 훑어 갈라 온 세션인지 봤다(파일 v2). 못 훑었으면(기록 없음 · node 없음) v1 로 남겨 다음에 켤 때 다시 */
+let isCostChecked = false
 
 async function costFile($: EngineInterface): Promise<string> {
   return `${await dataDir($)}/cost/${await $.session.id()}.json`
@@ -1044,28 +1081,78 @@ async function costFile($: EngineInterface): Promise<string> {
 function saveCost($: EngineInterface, engine: number): void {
   if (costBase === null || engine === costSavedEngine) return
   costSavedEngine = engine
-  const body = JSON.stringify({ v: 1, base: costBase, engine })
+  const body = JSON.stringify({ v: isCostChecked ? 2 : 1, base: costBase, engine })
   void (async () => $.fs.write(await costFile($), body))().catch(() => {
     costSavedEngine = -1
   })
 }
 
+/** 기록의 세션 금액 단서(flow.ts costScanOf — 큰 기록은 scan-transcript.mjs --costs). 기록이 아직 없거나 못 읽으면 null */
+async function costScan($: EngineInterface): Promise<CostScan | null> {
+  try {
+    const path = await transcriptPath($)
+    const own = await $.session.id()
+    if ((await $.fs.stat(path)).size <= READ_LIMIT) return costScanOf(await $.fs.read(path), own)
+    const ran = await $.process.run(['node', `${$.plugin.root}/tools/scan-transcript.mjs`, path, own, '--costs'], { timeoutMs: 60_000 })
+    return ran.exitCode === 0 ? costScanFromLines(ran.stdout) : null
+  } catch {
+    return null
+  }
+}
+
 /**
- * 켤 때(질문 기록을 읽은 뒤): 남긴 파일이 있으면 — 지금 엔진 값이 남긴 엔진 값보다 작으면 새 프로세스(앱을 다시 켬)라 앞 프로세스 몫까지
- * 이어 온 몫에 더하고, 같거나 크면 같은 프로세스(mod 만 다시 불러옴 · 엔진이 장부를 되살림)라 그대로. 파일이 없으면(이 판 전 세션) 질문별
- * 비용 합에서 이번 프로세스가 이미 센 몫(엔진 값)을 뺀 것 — 업데이트가 바로 적용돼 프로세스가 그대로일 때도 겹치지 않게
+ * 갈라 온 세션: 1.0 전엔 질문 목록을 기록에서 다시 만들며(rebuilt) 부모 줄까지 셌다 — 부모 질문이 다 들고, 갈라 올 때 돌던 부모 질문은 부모 요청까지
+ * 한 줄에 셌다(2026-10-18 이 PC 포크: 그 줄 $2.60 중 자기 몫 $0). 그 줄들이 덮던 때까지는 자기 줄로 다시 만든 것으로 바꾸고, 앱이 잰 줄(그 뒤 질문)은 둔다
+ */
+async function keepOwnTurns($: EngineInterface): Promise<void> {
+  const list = await read($, turnSummaries)
+  const old = list.filter(t => t.rebuilt)
+  if (old.length === 0) return
+  const until = Math.max(...old.map(t => t.atMs))
+  const own = await rebuildTurns($).catch(() => null)
+  if (!own) return
+  const all = [...own.filter(t => t.atMs <= until), ...list.filter(t => !t.rebuilt)].sort((a, b) => a.atMs - b.atMs)
+  const kept = all.slice(-TURNS_KEEP)
+  await update($, turnSummaries, () => kept)
+  await update($, turnsOlder, () => foldOlder(NO_OLDER, all.slice(0, all.length - kept.length)))
+  isOlderUnknown = false
+  saveTurns($)
+  $.ui.invalidate('ui.render')
+}
+
+/**
+ * 켤 때(질문 기록을 읽은 뒤): 남긴 파일이 있으면 — 지금 엔진 값이 남긴 엔진 값보다 작으면 새 프로세스(앱을 다시 켬)라 앞 프로세스 몫까지 이어 온
+ * 몫에 더하고(엔진이 기록의 비용 상태 줄로 되살린 몫은 지금 엔진 값에 이미 들었으니 뺀다 — 2026-10-18 이 세션 기록엔 10-15 의 $280.95 줄 하나라
+ * 다시 열 때마다 그 값부터 센다), 같거나 크면 같은 프로세스(mod 만 다시 불러옴 · 엔진이 마지막 장부를 되살림)라 그대로. 파일이 없으면(이 판 전 세션)
+ * 질문별 비용 합에서 이번 프로세스가 이미 센 몫(엔진 값)을 뺀 것 — 업데이트가 바로 적용돼 프로세스가 그대로일 때도 겹치지 않게. 갈라 온 세션은
+ * 처음 한 번(파일이 없거나 v1) 질문을 자기 것만 남기고 엔진 값에 든 부모 몫을 뺀다 — 세션 금액 = 자기 몫
  */
 async function loadCostBase($: EngineInterface): Promise<void> {
   const engine = (await ledgerUsd($)) ?? 0
-  let saved: { base: number; engine: number } | null = null
+  let saved: { v: number; base: number; engine: number } | null = null
   try {
     const j = JSON.parse(await $.fs.read(await costFile($))) as { v?: unknown; base?: unknown; engine?: unknown }
-    if (j.v === 1 && typeof j.base === 'number' && typeof j.engine === 'number') saved = { base: j.base, engine: j.engine }
+    if ((j.v === 1 || j.v === 2) && typeof j.base === 'number' && typeof j.engine === 'number') saved = { v: j.v, base: j.base, engine: j.engine }
   } catch {
     saved = null // 이 판 전 세션 · 새 세션
   }
-  if (saved) costBase = engine + 1e-9 < saved.engine ? saved.base + saved.engine : saved.base
-  else costBase = Math.max(0, (await read($, turnSummaries)).reduce((sum, t) => sum + t.cost.usd, 0) - engine)
+  const isNew = saved !== null && engine + 1e-9 < saved.engine
+  // 기록은 갈라 온 세션인지 아직 안 본 파일(없음 · v1)이거나, 새 프로세스의 엔진이 무언가 되살렸을 때(엔진 값이 0 이 아님)만 훑는다
+  const scan = saved?.v === 2 && !(isNew && engine > 1e-9) ? null : await costScan($)
+  isCostChecked = saved?.v === 2 || scan !== null
+  if (saved && (saved.v === 2 || !scan?.isFork)) costBase = isNew ? saved.base + saved.engine - restoredOf(scan?.states ?? [], engine) : saved.base
+  else {
+    let inherited = 0
+    if (scan?.isFork) {
+      if (!isTurnsFresh) await keepOwnTurns($)
+      // 그래프도 한 번 자기 줄로 다시 읽는다(1.0 전 판이 부모 대화까지 읽어 둔 흐름 파일 — 잰 컴팩트 값은 옮긴다)
+      void loadFlow($, { fromTranscript: true }).catch(() => {})
+      // 엔진 장부에 부모 몫이 들었나 — 갈라 온 뒤 첫 프로세스(되살린 값 = 부모 비용 상태)거나 그 값부터 센 자기 비용 상태를 되살렸다
+      if (restoredOf(scan.states, engine) >= scan.inherited - 1e-6) inherited = scan.inherited
+    }
+    const asked = (await read($, turnSummaries)).reduce((sum, t) => sum + t.cost.usd, 0) + ((await read($, turnsOlder))?.usd ?? 0)
+    costBase = Math.max(0, asked - (engine - inherited)) - inherited
+  }
   saveCost($, engine)
 }
 
@@ -1090,23 +1177,26 @@ async function writeFlow($: EngineInterface, flow: Flow): Promise<void> {
     .catch(() => {})
 }
 
-/** 기록 파일에서 흐름을 처음부터. 기록이 아직 없으면(첫 질문 전) 빈 흐름 */
+/**
+ * 기록 파일에서 흐름을 처음부터. 기록이 아직 없으면(첫 질문 전) 빈 흐름. 이 세션 줄만 — 갈라 온(포크) 세션 그래프는 자기 요청만 그린다
+ */
 async function importFlow($: EngineInterface): Promise<Flow> {
   const path = await transcriptPath($)
+  const own = await $.session.id()
   let size: number
   try {
     size = (await $.fs.stat(path)).size
   } catch {
     return { points: [], compactions: [] }
   }
-  if (size <= READ_LIMIT) return scanTranscript(await $.fs.read(path))
+  if (size <= READ_LIMIT) return scanTranscript(await $.fs.read(path), own)
   const mb = Math.round(size / 1048576)
   let ran: Awaited<ReturnType<EngineInterface['process']['run']>>
   try {
-    ran = await $.process.run(['node', `${$.plugin.root}/tools/scan-transcript.mjs`, path], { timeoutMs: 60_000 })
+    ran = await $.process.run(['node', `${$.plugin.root}/tools/scan-transcript.mjs`, path, own], { timeoutMs: 60_000 })
   } catch {
     // 띄우지도 못함 — 대개 node 가 없거나 앱이 못 찾는다(맥 앱을 Dock 에서 켜면 셸 프로필의 PATH 만 읽는다). 깔면 된다고 알린다
-    throw new Error(L(`기록이 ${mb}MB 라 node 가 있어야 앞 구간을 읽습니다 — Node.js 14.8 이상을 깔고 앱을 다시 켜세요`, `the transcript is ${mb}MB, so the earlier part needs Node.js 14.8+ — install it and restart the app`))
+    throw new Error(L(`기록이 ${mb}MB 라 node 가 있어야 앞 구간을 읽습니다. Node.js 14.8 이상을 깔고 앱을 다시 켜세요`, `the transcript is ${mb}MB, so the earlier part needs Node.js 14.8+. Install it and restart the app`))
   }
   if (ran.exitCode !== 0)
     throw new Error(L(`기록이 ${mb}MB 라 node 로 읽으려 했으나 실패(${ran.exitCode})`, `The transcript is ${mb}MB; reading it with node failed (${ran.exitCode})`))
@@ -1138,6 +1228,7 @@ async function loadFlow($: EngineInterface, opts: { fromTranscript: boolean } = 
     flow ??= await importFlow($)
     await writeFlow($, { points: flow.points, compactions: mergeMeasured(flow.compactions, [...old, ...saved]), questions: flow.questions ?? [], shared: flow.shared ?? {} })
     await update($, flowNote, () => null)
+    await syncCompactSteps($)
     // 캐시 유지 시간: 기록에서 읽은 마지막 점의 값(다시 연 세션도 첫 요청 전에 안다). 잰 점이 없으면 턴 끝에 잰다
     const lastTtl = [...flow.points].reverse().find(p => p.ttl === 5 || p.ttl === 60)?.ttl
     if (lastTtl !== undefined) await update($, ttlMeasured, () => lastTtl)
@@ -1181,10 +1272,11 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
     // 컨텍스트 크기는 우리가 잰 마지막 메인 요청 값(흐름의 마지막 점)이 기준 — 띠 · 패널 · 그래프 · 질문별 비용이
     // 같은 값을 보인다. 흐름이 비었으면(기록을 못 읽음 · 첫 요청 전) 엔진 값.
     // 컴팩트 직후 · 첫 요청 전엔 엔진 값이 마지막 응답 기준이라 컴팩트 전 크기 그대로다(띠가 "권장 54%" 를 띄웠다) —
-    // 그 동안은 엔진이 컴팩트 결과로 준 직후 크기(N2), 그게 없으면 추정값. 엔진 값이 이미 줄어 있으면(컴팩트 전의 8할 아래)
-    // 그것을 믿는다. 엔진 값이 0 이어도(다시 연 세션의 컴팩트 직후 — 띠가 "컨텍스트 0" 이었다) 추정값.
+    // 그 동안은 추정값(계산식 재료의 직후 크기 — 엔진이 준 남긴 대화 + 기본 적재, flow.ts afterGuess). 엔진 값이 이미 줄어 있으면(컴팩트
+    // 전의 8할 아래) 그것을 믿는다. 엔진 값이 0 이어도(다시 연 세션의 컴팩트 직후 — 띠가 "컨텍스트 0" 이었다) 추정값.
     // 0.6.1: 엔진이 직후 크기를 준 컴팩트는 pendingCompact 가 안 잡아, 이 동안 흐름의 마지막 점(컴팩트 전 크기)을 썼다 — 방금
-    // 저장하고 컴팩트했는데 띠가 "컨텍스트 255k · 컴팩트 늦어짐" 이었고 다음 요청에야 돌아왔다
+    // 저장하고 컴팩트했는데 띠가 "컨텍스트 255k · 컴팩트 늦어짐" 이었고 다음 요청에야 돌아왔다. 이제 직후는 첫
+    // 요청만 적어(2026-10-19) 그 컴팩트도 pendingCompact 가 잡는다 — since.after 는 그 전 판이 남긴 흐름 대비
     const flow = await readFlow($)
     const since = compactSince(flow)
     const pending = pendingCompact(flow)
@@ -1205,6 +1297,8 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
             : (lastCtx ?? engineTokens)
     const window = measured.context.window
     const percent = window > 0 ? (tokens / window) * 100 : (measured.context.percent ?? null)
+    // 엔진 자동 컴팩트 기준값(분해를 잴 때만) — 이지 오토 구간은 그보다 앞만 고른다
+    if (opts.categories && measured.context.breakdown) setEngineAuto(measured.context.breakdown.autoCompactThreshold, measured.context.breakdown.isAutoCompactEnabled)
     const categories = opts.categories
       ? (measured.context.breakdown?.categories ?? [])
           .filter(c => !c.isDeferred && c.kind !== 'deferred' && c.tokens > 0)
@@ -1220,6 +1314,7 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
     const cfg = (await read($, ttlConfig)) ?? (await readTtlConfig($))
     if ((await read($, ttlConfig)) === null) await update($, ttlConfig, () => cfg)
     const cacheTtlMin = measuredTtl ?? guessTtl(cfg)
+    const lastAt = await lastActivity($)
     const nowUsage: Usage = {
       model,
       contextTokens: tokens,
@@ -1229,13 +1324,16 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
       // 모델이 바뀐 상태는 followModel 이 정한다(턴 끝에 다시 재도 지우지 않는다)
       switchedFrom: prev?.switchedFrom ?? null,
       costUsd,
-      rateLimits: measured.rateLimits.map(r =>
-        r.resetsAt ? { kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt } : { kind: r.kind, percentUsed: r.percentUsed },
+      // 한도는 세션끼리 가장 최근 응답 값(shareLimits — 이 세션 마지막 요청 시각과 견줌)
+      rateLimits: await shareLimits(
+        $,
+        measured.rateLimits.map(r => (r.resetsAt ? { kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt } : { kind: r.kind, percentUsed: r.percentUsed })),
+        lastAt,
       ),
       categories,
       // 캐시 타이머는 컴팩트 뒤 첫 요청 전에도 컴팩트 시각부터 — 컴팩트 요청이 시스템 · 도구 앞부분 캐시를 읽어(실측 98.6%) 시간이
       // 새로 시작된다. 0.3.1 은 그 동안 "캐시 없음(다음 요청이 새로 씀)" 을 띄웠는데 뜻을 모르겠고 필요 없다 — 늘 남은 시간(얼리버드)
-      lastActivityMs: await lastActivity($),
+      lastActivityMs: lastAt,
       isAfterCompact: since !== null,
       history: opts.pushHistory ? [...(prev?.history ?? []), tokens].slice(-12) : (prev?.history ?? []),
       sharedTokens: sharedFor(flow, model),
@@ -1259,16 +1357,6 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
 // - 자동 열기(paneAutoOpen): 처음 보는 세션(PANE_AUTO_KEY 목록에 없는 세션 id)이면 시작할 때 연다. 그 뒤 닫으면 그대로
 // - 같이 여닫기(paneShared, 데스크톱만): 사람이 열거나 닫으면 그 일(PANE_EVENT_KEY)을 남기고, 이미 떠 있던 다른 데스크톱
 //   세션이 따라 한다. 새 세션은 시작 전 일을 따르지 않는다 — 처음 상태는 자동 열기가 정한다
-
-/** $.store 키: 같이 여닫기에서 마지막으로 사람이 열거나 닫은 일(PaneEvent) */
-const PANE_EVENT_KEY = 'paneEvent'
-
-/** $.store 키: 자동 열기를 한 번 한 세션 id 목록(최근 PANE_AUTO_KEEP 개) — mod 를 다시 불러와도 또 열지 않게 */
-const PANE_AUTO_KEY = 'paneAutoOpened'
-
-const PANE_AUTO_KEEP = 200
-
-type PaneEvent = { view: PaneView | null; at: number; from: string }
 
 /**
  * 터미널(CLI) 세션인가. 터미널 창은 저마다 따로 보여 같이 여닫을 까닭이 없다 — 같이 따르면 CLI 에서 열 때 앱의 모든 세션에
@@ -1297,10 +1385,6 @@ async function wantedView($: EngineInterface): Promise<PaneView | null> {
 let paneStartAt: number | null = null
 let paneEventAt = 0
 
-/** 사람이 열고 닫는 길(띠 버튼 · 명령 · 패널 닫기): 이 세션 값을 바꾸고, 같이 여닫기면 다른 세션에 알린다 */
-/** N4: 패널 여닫기 기록(최근 50 — 메모리만, 덤프에 실린다). 시각은 UTC 시:분:초.밀리초 */
-const paneLog: string[] = []
-
 async function notePane($: EngineInterface, what: string): Promise<void> {
   let at = ''
   try {
@@ -1315,7 +1399,11 @@ async function notePane($: EngineInterface, what: string): Promise<void> {
 async function setWantedView($: EngineInterface, view: PaneView | null): Promise<void> {
   const prev = await read($, localPane)
   await update($, localPane, () => view)
-  if (prev !== view) await notePane($, `want ${prev ?? '-'} → ${view ?? '-'}`)
+  if (prev !== view) {
+    await notePane($, `want ${prev ?? '-'} → ${view ?? '-'}`)
+    // 아래 버튼의 ▸(현황 패널 열림)가 따라오게 — 사람이 패널 ✕ 로 닫을 때도
+    $.ui.invalidate('ui.render')
+  }
   // 탭만 바꿀 땐(열린 채 같은 화면) 알리지 않는다 — 다른 세션 패널이 열리면 안 된다
   if (prev === view || !(await isPaneShared($))) return
   // 알리기가 안 돼도(저장소 · 세션 id 를 못 읽음) 이 세션의 여닫기는 그대로
@@ -1359,21 +1447,6 @@ async function checkEngine($: EngineInterface): Promise<void> {
     oldEngine = null
     engineNow = null
   }
-}
-
-/** 낮은 엔진 판 안내 — Button 없이 글 한 줄(낮은 판은 Button 안 글을 못 그린다) */
-function oldEngineNote(ui: Ui, at: string) {
-  const { Box, Text } = ui
-  return (
-    <Box key="old-engine">
-      <Text color="warning">
-        {L(
-          `이지 컴팩트는 Claude Code ${MIN_ENGINE} 이상이 필요합니다 — 이 세션은 ${at}. 업데이트한 뒤 새 세션을 여세요(앱: Check for Updates · 터미널: claude update).`,
-          `Easy Compact needs Claude Code ${MIN_ENGINE} or later — this session runs ${at}. Update, then start a new session (app: Check for Updates · terminal: claude update).`,
-        )}
-      </Text>
-    </Box>
-  )
 }
 
 /** 자동 열기: 켜져 있고 처음 보는 세션이면 연다(session.start — mod 를 다시 불러와도 오므로 본 세션은 목록으로 거른다) */
@@ -1448,6 +1521,8 @@ async function toggleView($: EngineInterface, view: PaneView): Promise<PaneView 
   const want = (await wantedView($)) === view ? null : view
   await setWantedView($, want)
   await syncPane($)
+  // 보기 자리 하나(1.0): 현황 패널을 열면 입력창 위 요약은 닫는다
+  if (want === 'usage' && (await read($, summaryCard))) await closeSummary($)
   return want
 }
 
@@ -1462,20 +1537,13 @@ async function setPaneOption($: EngineInterface, key: 'paneAutoOpen' | 'paneShar
 async function switchView($: EngineInterface, view: PaneView): Promise<void> {
   await setWantedView($, view)
   await syncPane($)
+  if (view === 'usage' && (await read($, summaryCard))) await closeSummary($)
 }
 
 // ── 설정: $.store 한 곳, 모든 세션이 타이머로 따라 읽는다 ─────────────────
 
 /** 마지막으로 반영한 설정(JSON). 같으면 다시 그리지 않는다 */
 let appliedSettings = ''
-
-/**
- * 0.3.x 까지의 처음 설치 구간. 0.4.0 에서 처음 설치 값을 20만 ~ 25만으로 내렸다(설정 기본값) — 설정은 사람이 무엇이든 한 번
- * 바꿀 때 통째로 저장돼, 한 번도 안 바꾼 사람은 저장값이 없어 업데이트하자마자 말없이 20만 ~ 25만으로 바뀔 뻔했다. 업데이트하는
- * 사람은 쓰던 구간 그대로 — 새 구간은 설정 탭 ★ 추천으로 알린다. 화면도 같은 까닭으로 업데이트면 보던
- * 그대로(자세히 — 칸 다 · 패널 자세히)
- */
-const OLD_DEFAULT_RANGE = { rangeStart: 250_000, rangeEnd: 300_000 }
 
 /** 이 PC 에서 이 mod 를 쓴 적이 있나: 이 PC 실측값 · 패널 기록이 저장소에 있거나, 다른 세션의 흐름 파일이 있다 */
 async function usedBefore($: EngineInterface): Promise<boolean> {
@@ -1493,14 +1561,6 @@ async function usedBefore($: EngineInterface): Promise<boolean> {
   }
 }
 
-/**
- * B5 안내: 패널 문이 ◔ 에서 게이지로 옮겨 간 것을 데스크톱에서 한 번만 알린다 — 모든 세션
- * 공통 표시(저장소). 토스트는 그 세션 대화 화면 오른쪽 위에 몇 초만 떠, 세션이 켜질 때(업데이트가 뒤에 숨은 세션들에도 한꺼번에
- * 올라간다)가 아니라 사람이 그 세션에서 질문을 보낼 때 띄운다. ◔ 를 쓰던 사람인지는 세션 시작 때 다른 저장값을 쓰기 전에 가린다
- * (새 설치도 곧 패널 기록이 생긴다). 터미널은 [패널 ▸] 그대로라 알리지 않는다
- */
-const GAUGE_NOTE_KEY = 'gaugeDoorNoted'
-const GAUGE_NOTE_MS = 12_000
 /** 이 프로세스에서 띄울 안내: false = 없음(이미 봄 · 터미널), isUpdate = ◔ 를 쓰던 사람 */
 let gaugeNote: { isUpdate: boolean } | false = false
 
@@ -1519,7 +1579,7 @@ async function showGaugeNote($: EngineInterface): Promise<void> {
   await $.store.set(GAUGE_NOTE_KEY, true)
   $.ui.toast(
     note.isUpdate
-      ? L('◔ 버튼이 없어졌습니다 — 바의 동그라미(게이지)를 누르면 이지 컴팩트 패널이 열립니다', 'The ◔ button is gone — click the ring (gauge) on the bar to open the Easy Compact pane')
+      ? L('◔ 버튼이 없어졌습니다. 바의 동그라미(게이지)를 누르면 이지 컴팩트 패널이 열립니다', 'The ◔ button is gone. Click the ring (gauge) on the bar to open the Easy Compact pane')
       : L('바의 동그라미(게이지)를 누르면 이지 컴팩트 패널이 열립니다', 'Click the ring (gauge) on the bar to open the Easy Compact pane'),
     { timeoutMs: GAUGE_NOTE_MS },
   )
@@ -1553,7 +1613,11 @@ async function loadSettings($: EngineInterface): Promise<void> {
   } catch {
     raw = undefined // 저장소를 못 읽으면 기본값 — 띠가 사라지면 안 된다
   }
-  const norm = normalizeSettings(raw)
+  let norm = normalizeSettings(raw)
+  // 이지 오토 구간을 처음 읽은 때 그때의 컴팩트 구간으로 적어 둔다 — 그 뒤 컴팩트 구간을 바꿔도 따라가지 않게(명세 "처음 값만")
+  if (typeof raw === 'object' && raw !== null && typeof (raw as Partial<Settings>).autoStart !== 'number') {
+    await $.store.set(SETTINGS_KEY, { ...raw, autoStart: norm.autoStart, autoEnd: norm.autoEnd }).catch(() => {})
+  }
   const text = JSON.stringify(norm)
   if (text === appliedSettings) return
   appliedSettings = text
@@ -1568,21 +1632,25 @@ async function loadSettings($: EngineInterface): Promise<void> {
 
 // ── 컴팩트 권장 크기: 계산식 최적(hooks/optimal.ts) — 지금 세션의 사실 → 이 PC 의 지난 컴팩트 → 가정 순 ─────────────────
 
-/** /context 분류에서 기본 적재(시스템 지시 · 도구 · 메모리 · 스킬 등) — 대화 · 요약 · 빈칸 · 버퍼는 뺀다. 모르면 null */
-function baseOfCategories(categories: Usage['categories']): number | null {
-  const sum = categories.filter(c => c.kind === 'used' && !/message|summary|compact/i.test(c.name)).reduce((s, c) => s + c.tokens, 0)
-  return sum > 0 ? sum : null
+/**
+ * 기본 적재: 엔진의 /context 분류(세션 시작 때 잼), 없으면 기록의 첫 요청(기록이 세션 처음부터일 때만 — 점이 MAX_POINTS 로 잘렸으면 첫
+ * 점은 세션 중간이다). 모르면 null
+ */
+async function baseLoad($: EngineInterface, flow: Flow): Promise<number | null> {
+  const first = (await read($, flowNote)) === null && flow.points.length < MAX_POINTS ? (flow.points[0] ?? null) : null
+  return baseOfCategories((await read($, usage))?.categories ?? []) ?? first?.ctx ?? null
 }
 
 /**
- * 계산식 재료를 잰다. 컴팩트 직후 크기 = 이 세션에서 잰 마지막 컴팩트 직후(지금 모델로 센 값), 아직 없으면 기본 적재 + 요약.
- * 기본 적재는 엔진의 /context 분류(세션 시작 때 · 패널을 열 때 잼), 없으면 기록의 첫 요청. 요약 · 출력 · 입력 몫은 이 PC 에서
- * 잰 마지막 컴팩트, 없으면 가정. 요청당 증가는 이 세션 이웃 요청에서(MIN_GROWTH_STEPS 쌍 전엔 가정). 지난 세션들의 기록은 쓰지 않는다
+ * 계산식 재료를 잰다. 컴팩트 직후 크기 = 방금 컴팩트(첫 요청 전)면 남긴 대화 + 기본 적재(flow.ts afterGuess), 아니면 이 세션에서 잰
+ * 마지막 컴팩트 직후(지금 모델로 센 값), 아직 없으면 기본 적재 + 이 PC 의 남긴 대화(없으면 요약). 기본 적재는 baseLoad. 요약 · 출력 ·
+ * 입력 몫은 이 PC 에서 잰 마지막 컴팩트, 없으면 가정. 요청당 증가는 이 세션 이웃 요청에서(MIN_GROWTH_STEPS 쌍 전엔 가정). 지난
+ * 세션들의 기록은 쓰지 않는다
  */
 async function measureOptimal($: EngineInterface, model: string): Promise<Optimal> {
   const flow = await readFlow($)
   const first = (await read($, flowNote)) === null ? (flow.points[0] ?? null) : null
-  const base = baseOfCategories((await read($, usage))?.categories ?? []) ?? first?.ctx ?? null
+  const base = await baseLoad($, flow)
   const measured = flow.compactions.filter(c => c.after !== null)
   const last = measured[measured.length - 1] ?? null
   const pcSummary = await storedCount($, SUMMARY_KEY)
@@ -1590,15 +1658,22 @@ async function measureOptimal($: EngineInterface, model: string): Promise<Optima
   const sessionSummary = last ? compactSummary(flow, last, first) : null
   const summary = sessionSummary ?? pcSummary ?? SUMMARY_GUESS
   const summarySrc: Source = sessionSummary !== null ? 'session' : pcSummary !== null ? 'pc' : 'guess'
+  const pending = pendingCompact(flow)
+  const guess = pending ? afterGuess(flow, pending, model, base) : null
   let after: number | null = null
   let afterSrc: Source = 'guess'
-  if (last && last.after !== null) {
+  if (guess !== null) {
+    after = guess
+    afterSrc = 'session'
+  } else if (last && last.after !== null) {
     after = afterInNowTokens(flow, last.after)
     afterSrc = 'session'
   } else if (base !== null) {
-    // 기본 적재(이 세션) + 요약 — 요약을 가정했으면 직후 크기도 가정으로 보인다
-    after = base + summary
-    afterSrc = summarySrc === 'session' ? 'session' : summarySrc
+    // 기본 적재(이 세션) + 남긴 대화(이 PC 에서 잰 마지막 컴팩트의 엔진 값). 그 값이 없으면 요약 — 요약을 가정했으면 직후 크기도
+    // 가정으로 보인다. 요약(새로 쓴 몫)은 메모리 · 새 질문 글까지 들어 남긴 대화보다 크다(이 PC 2026-10-18: 48k 대 18k)
+    const pcKept = await storedCount($, KEPT_KEY)
+    after = base + (pcKept ?? summary)
+    afterSrc = pcKept !== null ? 'pc' : summarySrc === 'session' ? 'session' : summarySrc
   } else {
     after = await storedCount($, AFTER_KEY)
     afterSrc = 'pc'
@@ -1637,9 +1712,6 @@ async function measureOptimal($: EngineInterface, model: string): Promise<Optima
   }
 }
 
-/** 질문 하나를 끝내는 데 쓰는 최근 질문 수 · 그만큼 모여야 질문 꼴을 낸다(9b) */
-const PER_Q_WINDOW = 10
-const PER_Q_MIN = 3
 
 /**
  * 질문 하나의 꼴(9b): 이 세션 최근 질문(요청이 있던 것)의 평균 요청 수와 요청마다 읽기 말고 드는 값. 질문이 PER_Q_MIN 개 안 됐거나
@@ -1696,7 +1768,7 @@ async function setPaneMode($: EngineInterface, mode: PaneMode): Promise<void> {
 /** 이 세션 패널 보기 — 패널 탭으로 바꿨으면 그 값, 아니면 화면 값 */
 async function paneModeNow($: EngineInterface): Promise<PaneMode> {
   const kept = await $.store.get(PANE_MODE_KEY).catch(() => undefined)
-  return (await read($, paneModeLocal)) ?? (kept === 'simple' || kept === 'detail' ? kept : paneModeOf(viewOf(await currentSettings($))))
+  return (await read($, paneModeLocal)) ?? (kept === 'simple' || kept === 'detail' ? kept : paneModeOf(await currentSettings($)))
 }
 
 async function saveSettings($: EngineInterface, next: Settings): Promise<void> {
@@ -1707,8 +1779,9 @@ async function saveSettings($: EngineInterface, next: Settings): Promise<void> {
   await loadSettings($)
   await syncStatusLine($)
   // 오늘 · 이번 달을 켰으면 바로 잰다(타이머를 기다리지 않게) — 방금 켠 때는 실패 뒤 쉬는 중이어도 바로(N6)
-  const turnedOn = (next.spendToday && !prev.spendToday) || (next.spendMonth && !prev.spendMonth)
-  if (next.spendToday || next.spendMonth) void refreshSpend($, 5_000, false, turnedOn).catch(() => {})
+  const [spNext, spPrev] = [spendOf(next), spendOf(prev)]
+  const turnedOn = (spNext.today && !spPrev.today) || (spNext.month && !spPrev.month)
+  if (spNext.today || spNext.month) void refreshSpend($, 5_000, false, turnedOn).catch(() => {})
 }
 
 /**
@@ -1717,19 +1790,24 @@ async function saveSettings($: EngineInterface, next: Settings): Promise<void> {
  */
 async function allSpendOf($: EngineInterface, s: Settings, mode: PaneMode): Promise<AllSpendLine | null> {
   const isDetail = mode === 'detail'
-  if (!isDetail && !s.spendToday && !s.spendMonth) return null
+  const sp = spendOf(s)
+  if (!isDetail && !sp.today && !sp.month) return null
   const got = await read($, spend)
   if (!got) return { today: null, month: null, state: (await read($, spendFailed)) ? 'failed' : 'measuring' }
-  const month = isDetail || s.spendMonth ? got.month : null
-  return { today: isDetail || s.spendToday ? got.today : null, month, retro: month !== null ? (got.retroMonth ?? null) : null, state: 'ok' }
+  const month = isDetail || sp.month ? got.month : null
+  const today = isDetail || sp.today ? got.today : null
+  return { today, month, ...spendColors(s, today, month), retro: month !== null ? (got.retroMonth ?? null) : null, state: 'ok' }
 }
 
 /** 바 · 미리보기에 보일 오늘 · 이번 달(켠 것만, 못 쟀으면 null — 그 칸을 안 그린다) */
 async function spendShownOf($: EngineInterface, s: Settings): Promise<SpendShown | null> {
-  if (!s.spendToday && !s.spendMonth) return null
+  const sp = spendOf(s)
+  if (!sp.today && !sp.month) return null
   const got = await read($, spend)
   if (!got) return null
-  return { today: s.spendToday ? got.today : null, month: s.spendMonth ? got.month : null }
+  const today = sp.today ? got.today : null
+  const month = sp.month ? got.month : null
+  return { today, month, ...spendColors(s, today, month) }
 }
 
 async function currentSettings($: EngineInterface): Promise<Settings> {
@@ -1795,8 +1873,6 @@ async function followModel($: EngineInterface): Promise<void> {
 
 /** 컴팩트가 끝났다 — 다음 메인 요청의 입력 토큰이 컴팩트 뒤 실제 컨텍스트다 */
 let measureAfterCompact = false
-/** N2: 엔진이 컴팩트 결과로 직후 크기(tokensAfter)를 줬다 — 다음 요청으로 직후를 다시 재지 않는다(요약 몫만) */
-let afterFromEngine = false
 /**
  * 0.9.1(회사 PC 0.9.0 — "컴팩트가 다 됐는데 컨텍스트가 컴팩트 전 크기 · 한 번 더 눌러야 맞음", 패널 "컴팩트 0회"): session.compact 훅이
  * 못 적은 컴팩트. 엔진은 우리 $ 호출 아래에서 일어난 이벤트엔 우리 훅을 안 부르고 .catch 만 부른다(재진입 — HookFailure 're-entry',
@@ -1822,13 +1898,48 @@ type CompactResultLike = { tokensBefore?: number; tokensAfter?: number; usage?: 
 let gaugeShrink: { from: number; to: number; at: number } | null = null
 /** 현황 컴팩트 시점의 직접 입력이 못 받은 까닭(0.6.0) — 저장 안 하고 그 줄 아래 한 줄 */
 let timingErr: string | null = null
-const GAUGE_SHRINK_MS = 1800
 
 /** 지금 줄어드는 중인가 — 타이머를 못 걸어도(시험 · 엔진 거절) 시각으로 끝난다 */
 async function shrinkNow($: EngineInterface): Promise<{ from: number; to: number } | null> {
   if (gaugeShrink === null) return null
   return (await $.clock.now()) - gaugeShrink.at < GAUGE_SHRINK_MS ? gaugeShrink : null
 }
+
+/**
+ * 1.0 값 강조 시계: 칸(0.3초)마다 flash.ts 칸을 넘기고(바가 그린 칸만 — 그리기가 밀려도 건너뛰거나 몰지 않는다) 강조 수를 올려 바만
+ * 다시 그린다. 강조할 값이 없으면 멈춘다. 강조가 새로 설 때마다 새로 건다 — 앞 시계가 소리 없이 끝났어도(엔진은 거절된 주기에서 시계를
+ * 끝낸다) 이어진다. 엔진은 다시 그리기를 초당 10번까지로 접는다
+ */
+let flashTimer: { cancel: () => void } | null = null
+function startFlashTicker($: EngineInterface): void {
+  flashTimer?.cancel()
+  flashTimer = null
+  try {
+    const timer = $.clock.every(FLASH_STEP_MS, () => {
+      const isMore = stepFlash()
+      // 이 수를 읽는 바만 다시 그린다 — 예전엔 칸마다 앱의 모든 칸(대화의 답변 칩 전부까지)을 다시 그려, 작업 중 화면이 간헐적으로 깜빡였다
+      void update($, flashTick, (k: number) => k + 1).catch(() => {})
+      if (!isMore) {
+        timer.cancel()
+        if (flashTimer === timer) flashTimer = null
+      }
+    })
+    flashTimer = timer
+  } catch {
+    // 시계를 못 걸면 강조 없이 — 켜진 칸이 그대로 남지 않게
+    endFlash()
+  }
+}
+
+/** 강조를 멈춘다(세션에서 나감) — 시계 · 칸 · 시작을 기다리던 값 모두 */
+function stopFlashTicker(): void {
+  flashTimer?.cancel()
+  flashTimer = null
+  endFlash()
+}
+
+/** 세션에 들어온 뒤 자리 잡으면 바를 한 번 다시 그리는 시계(flash.ts takeArrival) — 들어오고 나갈 때마다 앞 것을 지운다 */
+let arriveTimer: { cancel: () => void } | null = null
 
 /**
  * 메인 요청 하나가 끝났다: 진행 중 질문에 더하고 흐름 그래프에 점 하나. model = 이 요청에 실제로 답한 모델,
@@ -1876,37 +1987,7 @@ async function recordStep(
       ...(switchedFrom && !base.switchedFrom ? { switchedFrom } : {}),
     }
   })
-  // 데스크톱 패널은 상태 쓰기만으론 안 다시 그려질 때가 있다 — 질문별 비용의 진행 중 줄이 요청마다 늘게
-  $.ui.invalidate('ui.render')
-}
-
-/**
- * 하위 에이전트: 작업 이름과 띄운 질문(메인 턴) — 처음 본 요청 때 정한다(agentLabel). tries = 엔진 목록에서 이름을 못 찾은 횟수(몇 번 더 묻는다).
- * mod 를 다시 불러오면 비지만, 그땐 지금 질문에 더한다
- */
-const agentInfo = new Map<string, { label: string; turnId: string | null; tries?: number }>()
-
-/**
- * 동작 목록에 에이전트 몫 더하기 — 에이전트마다 한 줄, 요청이 끝날 때마다 값 · 요청 수가 는다. 읽기 · 쓰기 · 출력 · 입력도
- * 따로 모은다(질문별 비용의 메인 / 🤖 분해). 이름은 더 나은 것이 오면 바꾼다(처음엔 "하위 에이전트" 였다가 목록에서 찾음)
- */
-function withAgentStep(details: readonly StepDetail[], agentId: string, label: string, cost: CostParts, model: string, atMs: number): StepDetail[] {
-  const i = details.findIndex(d => d.agent === agentId)
-  if (i < 0) return [...details, { label, usd: cost.usd, write: cost.write, read: cost.read, output: cost.output, input: cost.input, agent: agentId, steps: 1, model, done: false, at: atMs }]
-  const d = details[i]!
-  const merged = {
-    ...d,
-    label,
-    usd: d.usd + cost.usd,
-    write: (d.write ?? 0) + cost.write,
-    read: (d.read ?? 0) + cost.read,
-    output: (d.output ?? 0) + cost.output,
-    input: (d.input ?? 0) + cost.input,
-    steps: (d.steps ?? 0) + 1,
-    model,
-    at: atMs,
-  }
-  return [...details.slice(0, i), merged, ...details.slice(i + 1)]
+  // 다시 그리기는 위 상태(live 등)를 읽는 칸만(패널 진행 중 줄 · 바 · 작업 중 줄) — 예전엔 여기서 요청마다 앱의 모든 칸(대화의 답변 칩 전부까지)을 다시 그려, 작업 중 화면이 간헐적으로 깜빡였다
 }
 
 /** 에이전트 줄에 "끝남" 을 적는다(진행 중 질문 · 끝난 질문 어디에 있든). 바뀐 게 없으면 false */
@@ -1920,18 +2001,9 @@ async function markAgentsDone($: EngineInterface, isDone: (agentId: string) => b
     })
   await update($, live, prev => (prev ? { ...prev, details: mark(prev.details) } : prev))
   await updateTurns($, list => list.map(s => (s.details?.some(d => d.agent && d.done === false) ? { ...s, details: mark(s.details) } : s)))
-  if (changed) $.ui.invalidate('ui.render')
+  // 다시 그리기는 이 상태를 읽는 칸만(recordStep 과 같은 까닭)
   return changed
 }
-
-/** 엔진 목록에서 한 번이라도 본 에이전트 — 목록에 없는 갈래(워크플로우 · 엔진 자체)를 "끝남" 으로 잘못 치지 않게 */
-const listedAgents = new Set<string>()
-
-/**
- * 목록에 한 번도 없던 갈래(워크플로우 에이전트 · 엔진 자체 갈래 — 엔진 문서: 목록에 없다)는 turn.complete 가 안 오면 끝남을 알
- * 길이 없다 — 마지막 요청 뒤 이만큼 조용하면 끝남으로 친다. 안 그러면 "도는 중" 이 세션 끝까지 남고 목록을 1.5초마다 물었다(리뷰)
- */
-const AGENT_QUIET_MS = 2 * 60_000
 
 /**
  * 아직 "도는 중" 인 에이전트가 있으면 엔진 목록과 맞춘다 — 끝난 걸 못 들은 때(mod 를 다시 불러옴 등) "도는 중" 이 남지 않게.
@@ -1986,9 +2058,6 @@ async function agentLabel($: EngineInterface, agentId: string): Promise<string> 
   return label
 }
 
-/** 엔진 목록에서 에이전트 이름을 몇 번까지 다시 찾나(처음 본 요청부터) */
-const AGENT_LIST_TRIES = 3
-
 /**
  * 하위 에이전트 요청 하나: 띄운 질문의 값에 더한다(작업 중에도 바로 — 전엔 메인 요청만 세어 에이전트 값이 안 보였다).
  * 컨텍스트 · 흐름 그래프엔 넣지 않는다(에이전트 대화는 따로라 메인 컨텍스트와 무관). 질문이 끝난 뒤에도 도는
@@ -2020,7 +2089,7 @@ async function recordAgentStep($: EngineInterface, agentId: string, cost: CostPa
       return [...list.slice(0, i), added, ...list.slice(i + 1)]
     })
   }
-  $.ui.invalidate('ui.render')
+  // 다시 그리기는 이 상태를 읽는 칸만(recordStep 과 같은 까닭 — 에이전트 요청마다였다)
 }
 
 // ── 앱 자체 요청 · 컴팩트: 질문별 비용에 따로 한 줄 ─────────────────────────
@@ -2053,8 +2122,18 @@ let orphanAgent: { agentId: string; label: string; cost: CostParts; model: strin
 /** 기준을 둔 뒤 엔진이 다음 질문 제안을 띄웠다(prompt.suggest) — 그러면 그 이름을 붙인다 */
 let suggestedSinceMark = false
 
-/** 답이 끝나고 앞 질문 값을 고정하는 때(ms) — 다음 질문 제안 · 메모리 정리는 답 뒤 몇 초 안에 돈다 */
-const APP_FIX_MS = 30_000
+/**
+ * 바로 앞에 보낸 질문(prompt.submit) — 그 질문이 시작될 때(turn.start) 쓰고 비운다. 그림 · 파일(attachments)은 글에 없어 이름 앞에 붙이고,
+ * 엔진이 글 없이 턴을 시작하면(앞 답 직후 보내 앱이 줄에 넣었다 넘긴 질문 등) 보낼 때 받은 글을 이름으로. isIdle = 쉬는 동안 보낸 질문
+ */
+let pendingSubmit: { text: string; counts: AttachCounts | null; isIdle: boolean; atMs: number } | null = null
+
+/**
+ * 이 질문(메인 대화)에서 마지막으로 글이 있던 요청의 답 — 앱이 마무리 도구(다음 단계 칸 · 할 일 목록)로 턴을 끝내면 마지막 응답 글이 비어, 답변
+ * 칩이 붙을 답을 못 찾았다. 턴 끝 답이
+ * 비면 이 글로 칩 자리(tail)를 잡는다
+ */
+let lastStepAnswer = ''
 
 async function ledgerUsd($: EngineInterface): Promise<number | null> {
   try {
@@ -2120,16 +2199,6 @@ async function appCarryAtStart($: EngineInterface): Promise<number> {
   const got = await appExtraSince($, mark)
   return got && got.extra >= APP_MIN_USD ? got.extra : 0
 }
-
-/** 앱 자체 요청 줄(이름마다 한 줄, 같은 이름이면 더한다) */
-function withAppStep(details: readonly StepDetail[], label: string, usd: number): StepDetail[] {
-  const i = details.findIndex(d => d.app && d.label === label)
-  if (i < 0) return [...details, { label, usd, app: true }]
-  return details.map((d, j) => (j === i ? { ...d, usd: d.usd + usd } : d))
-}
-
-/** 장부에 남기는 잰 컴팩트 수 상한(M2 — 세션 하나가 이만큼 컴팩트하는 일은 드물다) */
-const LEDGER_COMPACTS_MAX = 300
 
 /**
  * M1(0.7.0 피드백 "이번 달 금액이 Claude 화면보다 작음"): 대화 기록에 없는 요청(컴팩트 요청 · 앱 자체 요청)의 값을 세션 장부
@@ -2197,7 +2266,7 @@ async function addAppCost($: EngineInterface, usd: number, label: string): Promi
       return s ? [...list.slice(0, -1), add(s, s.details ?? [])] : list
     })
   }
-  $.ui.invalidate('ui.render')
+  // 다시 그리기는 이 상태를 읽는 칸만(recordStep 과 같은 까닭)
 }
 
 /**
@@ -2241,11 +2310,15 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
   const parts = result.usage && before0 ? costOf(result.usage, before0.model, undefined, null, engineNow) : null
   const measured = parts?.usd ?? null
   const before = result.tokensBefore ?? before0?.contextTokens ?? flow.points[flow.points.length - 1]?.ctx ?? 0
-  // N2: 직후 크기는 엔진이 준 tokensAfter(요약 + 남긴 메시지) — 없을 때만 다음 요청이 채운다
-  const after = typeof result.tokensAfter === 'number' && result.tokensAfter > 0 ? result.tokensAfter : null
-  afterFromEngine = after !== null
-  if (after !== null) await $.store.set(AFTER_KEY, after)
-  // 엔진이 컴팩트를 끝낸 이 순간 게이지가 줄어든다(직후 크기를 엔진이 줬을 때만 — 모르면 다음 요청까지 그대로)
+  // 엔진이 준 tokensAfter 는 남긴 대화(요약 + 다시 붙인 파일)뿐 — 시스템 지시 · 도구 · 메모리가 빠진다(엔진 2.1.299: postTokens = 경계 ·
+  // 요약 · 첨부 · 훅 결과의 토큰 수). 0.6.0(N2) ~ 1.0 은 이 값을 직후 크기로 적어 상주가 "18k = 기본 적재 0 + 요약 18k" 였다. 이제 kept 로 두고, 직후는 첫 요청이 채운다 — 그 전엔
+  // kept + 기본 적재로 어림(afterGuess)
+  const kept = typeof result.tokensAfter === 'number' && result.tokensAfter > 0 ? result.tokensAfter : null
+  if (kept !== null) await $.store.set(KEPT_KEY, kept)
+  const event: CompactEvent = { atMs: await $.clock.now(), trigger, before, after: null, costUsd: measured, index: flow.points.length, ...(kept !== null ? { kept } : {}) }
+  const withEvent: Flow = { points: flow.points, compactions: [...flow.compactions, event] }
+  const after = afterGuess(withEvent, event, before0?.model ?? '', await baseLoad($, flow))
+  // 엔진이 컴팩트를 끝낸 이 순간 게이지가 줄어든다(직후 어림을 낼 수 있을 때만 — 모르면 다음 요청까지 그대로)
   if (after !== null && before > after) {
     gaugeShrink = { from: before, to: after, at: await $.clock.now() }
     $.ui.invalidate('ui.render')
@@ -2258,15 +2331,13 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
       // 타이머를 못 걸면 다음 그리기에서 시각으로 끝난다(shrinkNow)
     }
   }
-  const event = { atMs: await $.clock.now(), trigger, before, after, costUsd: measured, index: flow.points.length }
-  await writeFlow($, { points: flow.points, compactions: [...flow.compactions, event] })
+  await writeFlow($, withEvent)
   if (mark) mark.isRecorded = true
   // 저절로 펴진 바를 ✕ 로 접어 둔 것은 컴팩트로 끝난다 — 다음 컴팩트 때는 다시 펴진다
   await update($, autoDismissed, () => null)
-  // 질문별 비용에도 한 줄(앱 자체 요청으로 세지 않게 우리가 본 값에 넣는다)
+  // 질문별 비용에도 한 줄(앱 자체 요청으로 세지 않게 우리가 본 값에 넣는다) — 직후 크기는 다음 요청이 채운다(fillCompactAfter)
   if (parts) trackedUsd += parts.usd
   await addCompactStep($, parts, before)
-  if (after !== null) await fillCompactAfter($, after)
 }
 
 /**
@@ -2313,6 +2384,26 @@ async function watchCompact($: EngineInterface): Promise<void> {
   await refreshUsage($, { categories: false, pushHistory: false })
 }
 
+/**
+ * 질문별 비용의 컴팩트 줄을 흐름의 직후 크기에 맞춘다(flow.ts syncCompactAfter — 0.6.0 ~ 1.0 이 적은 "933k → 18k"). 흐름 · 질문 기록은
+ * 따로 읽혀 둘 다 읽은 쪽 끝에서 부른다
+ */
+async function syncCompactSteps($: EngineInterface): Promise<void> {
+  const list = await read($, compactions)
+  if (list.length === 0) return
+  const turns = await read($, turnSummaries)
+  const next = turns.map(t => {
+    const details = t.details ? syncCompactAfter(t.details, list) : undefined
+    return details === t.details ? t : { ...t, details }
+  })
+  if (next.some((t, i) => t !== turns[i])) await updateTurns($, () => next)
+  await update($, live, prev => {
+    if (!prev) return prev
+    const details = syncCompactAfter(prev.details, list)
+    return details === prev.details ? prev : { ...prev, details }
+  })
+}
+
 /** 컴팩트 뒤 첫 메인 요청이 잰 직후 크기를 아직 비어 있는 컴팩트 줄에(진행 중 질문 · 끝난 질문) */
 async function fillCompactAfter($: EngineInterface, after: number): Promise<void> {
   const fill = (details: readonly StepDetail[]) =>
@@ -2349,7 +2440,8 @@ async function closeTurn($: EngineInterface, text: string, isAborted = false): P
     turnId: now.turnId,
     ...(isAborted ? { aborted: true as const } : {}),
   }
-  await updateTurns($, list => [...list, summary].slice(-60))
+  // 한도(TURNS_KEEP)를 넘으면 맨 앞 질문은 updateTurns 가 밀린 질문 합으로
+  await updateTurns($, list => [...list, summary])
 }
 
 async function startCompacting($: EngineInterface, kind: string): Promise<void> {
@@ -2361,12 +2453,14 @@ async function startCompacting($: EngineInterface, kind: string): Promise<void> 
  * /compact 명령을 사용자가 친 것처럼 돌린다. 데스크톱(SDK) 세션은 $.session.compact 를,
  * prompt.submit 은 / 로 시작하는 글을 막는다 — 엔진이 안내한 길이 $.command.run 이다.
  */
-async function compactNow($: EngineInterface, args = ''): Promise<void> {
+async function compactNow($: EngineInterface, args = '', kind?: string): Promise<boolean> {
   await update($, isConfirmingCompact, () => false)
-  await startCompacting($, args === compactKeep(await currentSettings($)) ? kindTidy() : kindDirect())
+  await startCompacting($, kind ?? (args === compactKeep(await currentSettings($)) ? kindTidy() : kindDirect()))
+  let isDone = true
   try {
     await $.command.run(args ? { command: 'compact', args } : { command: 'compact' })
   } catch (err) {
+    isDone = false
     $.ui.toast(L(`컴팩트 실패: ${String(err)}`, `Compact failed: ${String(err)}`))
   } finally {
     await update($, compactPhase, () => 'idle')
@@ -2374,24 +2468,28 @@ async function compactNow($: EngineInterface, args = ''): Promise<void> {
   // 0.9.1: 우리가 돌린 /compact 는 우리 $ 호출 아래라 엔진이 session.compact 훅을 안 부를 수 있다(재진입) — 끝나면 바로 다시 재
   // 훅이 못 본 컴팩트를 적는다(회사 PC: 컴팩트가 끝났는데 바가 컴팩트 전 크기, 패널 "컴팩트 0회")
   await refreshUsage($, { categories: false, pushHistory: false }).catch(() => {})
+  return isDone
 }
 
 /**
- * 확인 카드 [클리어](0.8.1 B9): /clear 를 사용자가 친 것처럼 — /compact 와 같은 길($.command.run, prompt.submit 은 / 글을 막는다).
- * 대화를 비우고 새로 시작(요약 없음). 엔진이 못 받으면 직접 치라고 알린다
+ * 클리어 경고 카드 [지우기](0.8.1 B9 · 2026-10-19 경고 한 번): /clear 를 사용자가 친 것처럼 — /compact 와 같은 길($.command.run,
+ * prompt.submit 은 / 글을 막는다). 대화를 비우고 새로 시작(요약 없음). 엔진이 못 받으면 직접 치라고 알린다
  */
 async function clearNow($: EngineInterface): Promise<void> {
   await update($, isConfirmingCompact, () => false)
+  await update($, isAskingClear, () => false)
   try {
     await $.command.run({ command: 'clear' })
   } catch (err) {
-    $.ui.toast(L(`클리어 실패: ${String(err)} — 입력창에 /clear 를 직접 치세요`, `Clear failed: ${String(err)} — type /clear in the prompt`))
+    $.ui.toast(L(`클리어하지 못했습니다(${String(err)}). 입력창에 /clear 를 직접 치세요`, `Clear failed (${String(err)}). Type /clear in the prompt`))
   }
 }
 
 /** "정리 후 컴팩트": 정리 프롬프트를 보내고, 그 턴이 [컴팩트 진행] 으로 끝나면 turn.complete 에서 /compact 를 돌린다 */
 async function tidyThenCompact($: EngineInterface): Promise<void> {
   await update($, isConfirmingCompact, () => false)
+  // 이름은 비운다 — 앞 이지 오토 저장의 이름(kindAutoSave)이 남아 "이지 오토 · 저장 중" 으로 보이지 않게
+  await update($, compactKind, () => '')
   await update($, compactPhase, () => 'tidying')
   try {
     await $.prompt.submit({ text: tidyPrompt(tidyBody(await currentSettings($))) })
@@ -2401,60 +2499,253 @@ async function tidyThenCompact($: EngineInterface): Promise<void> {
   }
 }
 
-// ── 그리기 ───────────────────────────────────────────────────────
+// ── 이지 오토(2026-10-19 — 정본 D:/Claude/easy-compact-auto.md §5): 세션 켬/끔 · 사슬. 판단 · 화면 글은 auto.ts, 보내는 글은 tidy.ts ──
 
-/** 펼친 질문을 바꾸고 다시 그리게 한다 — 데스크톱 패널은 상태 쓰기만으론 안 다시 그려졌다 */
-async function toggleExpanded($: EngineInterface, id: number): Promise<void> {
-  await update($, expandedTurn, now => (now === id ? null : id))
-  $.ui.invalidate('ui.render')
+/** plugin 아닌 출처(사람 · 다른 세션 · 알림)의 보내기를 마지막으로 받은 시각 — 답 끝 기다림 · 이어가기 판정 */
+let otherAt = 0
+/** 이 프로세스가 돌리는 오토 컴팩트(사슬 atMs) — 다시 불림 · 재시작으로 남은 컴팩트 단계만 autoWatch 가 정리 */
+let autoCompacting: number | null = null
+/** 우리 요약 턴 id — 그 턴이 끝날 때 사슬이 없으면(저장 중 [취소]) 답 끝 길을 다시 걸지 않는다 */
+let autoSaveTurn: string | null = null
+
+async function autoNow($: EngineInterface): Promise<AutoState> {
+  return (await read($, auto)) ?? freshAuto(false, await $.clock.now())
 }
 
+/** 상태를 바꾸고 저장소에도 적는다(앱을 다시 켜도 이어받게). fn 이 받은 값을 그대로 돌려주면 안 바꾼다 — 바꿨으면 true */
+async function setAuto($: EngineInterface, fn: (a: AutoState) => AutoState): Promise<boolean> {
+  const nowMs = await $.clock.now()
+  const box: { next: AutoState | null } = { next: null }
+  await update($, auto, prev => {
+    const cur = prev ?? freshAuto(false, nowMs)
+    const out = fn(cur)
+    if (out === cur) return prev
+    box.next = { ...out, atMs: nowMs }
+    return box.next
+  })
+  const saved = box.next
+  if (saved === null) return false
+  void (async () => $.store.set(autoKey(await $.session.id()), saved))().catch(() => {})
+  return true
+}
+
+/** 세션 시작: 다시 불림이면 그대로, 앱 재시작이면 저장소에서, 새 세션이면 마지막으로 직접 고른 켬/끔 */
+async function loadAuto($: EngineInterface): Promise<void> {
+  if ((await read($, auto)) !== null) return
+  const nowMs = await $.clock.now()
+  const stored = autoFromStore(await $.store.get(autoKey(await $.session.id())).catch(() => undefined), nowMs)
+  let isLast = (await $.store.get(AUTO_LAST_KEY).catch(() => undefined)) === true
+  await update($, auto, prev => prev ?? stored ?? freshAuto(isLast, nowMs))
+}
+
+
 /**
- * 설정 화면 칸 미리보기의 "질문 비용 — 답변 끝" 견본 — 이 세션 마지막 질문을 칩 그대로. 처음엔 접힘, 정보량 전부면 [▸ 자세히] 를 눌러 견본 안에서 펼쳐 본다. 펼침은 이 세션만(previewOpen) — 패널을 닫으면 접힌다
+ * 켜고 끄기([컴팩트] 팝업 "이지 오토" 줄 · 멈춤 안내 [다시 켜기]): 멈춤이면 다시 켬. 고른 값은 새 세션의 처음 값으로 남긴다. 끌 때 도는
+ * 저장 턴 · 컴팩트는 그 단계까지만(그 뒤로 안 간다), 기다림 · 이어가기는 바로 놓는다
  */
-function answerPreview($: EngineInterface, ui: Ui, summary: TurnSummary, isSample: boolean, isFull: boolean, surface: string, isOpen: boolean, isHover: boolean, isTipOpen = false) {
-  const { Box, Button, Text } = ui
-  const line = answerLine(ui, summary, isFull, surface)
-  const canFold = isFull && surface !== 'terminal'
-  // 질문 강조가 켜져 있으면 견본 칩도 마우스를 올리면 회색. 지난 질문 값으로 그린
-  // 견본은 그 질문과 한 묶음 — 올리면 채팅창의 그 답변 · 칩 · 패널 줄도 함께. 예시 값은 묶을 답변이 없어 견본만
-  const hover = isHover && surface !== 'terminal' ? { hover: { ...(isSample ? {} : { scope: questionScope(summary.atMs) }), backgroundColor: 'promptBorder' } } : {}
-  // S13(0.9.1): 견본 틀 = 미리보기 칩 + 옅은 바탕(바 견본과 같은 꼴) — 예전 제목 줄 "답변 끝 칩 — 질문 비용" 은 카드 제목과 겹쳐 칩으로 옮겼다.
-  // 칩은 질문마다 붙고, 견본만 지난 질문 값(없으면 예시 값)으로 그린다. 설명은 "?"(데스크톱 마우스 올림 · 누르면 펼침)
-  const tip =
-    L(
-      '이 세션 채팅창에서 Claude 의 답변이 끝날 때마다 그 답변 바로 아래에 붙습니다 — 보낸 질문 하나에 든 금액과 요청 수.',
-      "Appears right below each finished Claude answer in this session's chat — what that question cost and how many requests it took.",
-    ) +
-    (isSample ? L(' 견본은 예시 값 — 첫 답변이 끝나면 이 세션 값.', ' Example values until the first answer ends.') : L(' 견본은 이 세션 지난 질문 값.', " The sample uses this session's last question.")) +
-    (isHover && surface !== 'terminal' ? L(' 칩에 마우스를 올리면 그 답변이 회색으로 강조됩니다(질문 강조).', ' Hover the chip and its answer turns gray (Highlight).') : '')
-  const label = hoverTip(ui, 'pv-answer-tip', previewChip(ui, 'pv-answer-chip', L('미리보기 · 답변 아래', 'Preview · below each answer')), tip, { isOpen: isTipOpen, onToggle: () => void toggleFold($, 'desc-pv-answer-tip') })
-  return previewFrame(
-    ui,
-    'pv-answer',
-    label,
-    <Box key="pv-answer-body" flexDirection="column">
-      {surface === 'terminal' ? (
-        line
-      ) : (
-        <Box key="pv-chip" alignSelf="flex-start" flexDirection="column" borderStyle="round" borderColor={BRAND_HEX} paddingX={1} {...hover}>
-          <Box key="pv-head" columnGap={2} alignItems="center">
-            {line}
-            {canFold ? (
-              <Box key="pv-fold-box" flexShrink={0}>
-                <Button key="pv-fold" plain onPress={() => void togglePreview($)}>
-                  <Text color={BRAND_HEX} dimColor>
-                    {isOpen ? L('▾ 접기', '▾ Hide') : L('▸ 자세히', '▸ Details')}
-                  </Text>
-                </Button>
-              </Box>
-            ) : null}
-          </Box>
-          {canFold && isOpen ? answerDetail(ui, summary) : null}
-        </Box>
-      )}
-    </Box>,
+async function toggleAuto($: EngineInterface): Promise<void> {
+  const isOn = !isAutoActive(await read($, auto))
+  await $.store.set(AUTO_LAST_KEY, isOn).catch(() => {})
+  await setAuto($, a => ({ ...a, on: isOn, stop: null, note: null, since: null, chain: isOn || a.chain?.stage === 'saving' || a.chain?.stage === 'compacting' ? a.chain : null }))
+  const s = await currentSettings($)
+  const u = await read($, usage)
+  $.ui.toast(autoToggleNote(isOn, s, u?.window))
+  // 켤 때 답이 끝나 쉬는 중이고 이미 앞쪽을 넘었으면 바로 시작(답 끝 길과 같다 — 0.5초 기다림부터)
+  if (!isOn || (await read($, live)) || (await autoNow($)).chain || !u || u.contextTokens < s.autoStart || !(await autoMayStart($, u))) return
+  const at = await $.clock.now()
+  await setAuto($, x => ({ ...x, chain: { path: 'end', stage: 'wait', atMs: at, turnId: null, before: u.contextTokens } }))
+  $.clock.after(AUTO_WAIT_MS, () => void autoBegin($, at))
+}
+
+/** 캐시 만료 · 모델 바뀜: 이 세션은 끈다(안내 한 줄 — 마지막으로 고른 값은 그대로라 새 세션엔 안 번진다) */
+async function autoOff($: EngineInterface, why: 'cold' | 'model'): Promise<void> {
+  await setAuto($, a => ({ ...a, on: false, stop: null, note: why, chain: null, since: null }))
+}
+
+/** 자동 멈춤(이 세션) — 안내 한 줄 [다시 켜기] */
+async function autoHalt($: EngineInterface, why: 'stuck' | 'again'): Promise<void> {
+  await setAuto($, a => ({ ...a, stop: why, note: why, chain: null, since: null }))
+}
+
+/** 사슬을 놓는다(이번엔 쉼) — 이지 오토 저장 중 표시도 거둔다 */
+async function autoEnd($: EngineInterface): Promise<void> {
+  await setAuto($, a => (a.chain ? { ...a, chain: null } : a))
+  if ((await read($, compactPhase)) === 'tidying' && isAutoSaveKind(await read($, compactKind))) await update($, compactPhase, () => 'idle')
+}
+
+/** 사슬을 걸어도 되나: 다른 컴팩트가 안 돎 · 식은 캐시면 끔 · 자동 멈춤 ② · 손해면 이번만 쉼(안내 없음) */
+async function autoMayStart($: EngineInterface, u: Usage): Promise<boolean> {
+  const phase = await read($, compactPhase)
+  if (phase === 'tidying' || phase === 'compacting') return false
+  const why = autoLossOf(u, (await read($, optimal))?.inputs ?? null, await read($, turnSummaries), await $.clock.now())
+  if (why === 'cold' || why === 'model') {
+    await autoOff($, why)
+    return false
+  }
+  if (isTooSoon(await autoNow($))) {
+    await autoHalt($, 'again')
+    return false
+  }
+  return why !== 'loss'
+}
+
+/** 메인 턴 끝: 우리 요약 턴이면 컴팩트로, 이어가기 턴이면 끝, 사슬이 없으면 답 끝 길(앞쪽을 넘었나) */
+async function autoAtTurnEnd($: EngineInterface, e: { turnId: string; reason: string; answer: string }, turnNow: LiveTurn | null): Promise<void> {
+  const a = await autoNow($)
+  const c = a.chain
+  if (c?.stage === 'saving' && c.turnId === e.turnId) {
+    // 답에 [컴팩트 진행] 이 없으면(사람 글이 겹쳐 다른 답 · 중단) 이번 사슬은 쉼. 끈 뒤면 저장까지만
+    if (!a.on || tidyVerdict(e.reason, e.answer) !== 'go') return autoEnd($)
+    // 저장 턴 몫도 이 PC 실측으로(이지 컴팩트 저장 턴과 같은 셈 — 컴팩트 손익 재료)
+    if (turnNow) await recordSaveTurn($, turnNow)
+    const at = await $.clock.now()
+    autoCompacting = at
+    await setAuto($, x => ({ ...x, chain: { ...c, stage: 'compacting', atMs: at, turnId: null } }))
+    await startCompacting($, kindAuto())
+    // 훅 안에서 명령을 돌리면 이 턴을 기다린다 — 턴이 끝난 뒤로(이지 컴팩트와 같다)
+    $.clock.after(300, () => void autoCompact($, at))
+    return
+  }
+  if (c?.stage === 'continuing' && c.turnId === e.turnId) await setAuto($, x => ({ ...x, chain: null }))
+  else if (c || e.turnId === autoSaveTurn) return
+  if (!isAutoActive(a) || e.reason !== 'answer') return
+  const u = await read($, usage)
+  if (!u || u.contextTokens < (await currentSettings($)).autoStart || !(await autoMayStart($, u))) return
+  const at = await $.clock.now()
+  await setAuto($, x => ({ ...x, chain: { path: 'end', stage: 'wait', atMs: at, turnId: null, before: u.contextTokens } }))
+  $.clock.after(AUTO_WAIT_MS, () => void autoBegin($, at))
+}
+
+/** 답 끝 0.5초 뒤: 그사이 사람 · 다른 세션 글이 왔으면 쉼(다음 답 끝에 다시 봄), 아니면 요약 글 */
+async function autoBegin($: EngineInterface, at: number): Promise<void> {
+  const a = await autoNow($)
+  if (a.chain?.stage !== 'wait' || a.chain.atMs !== at) return
+  if (!isAutoActive(a) || otherAt >= at) return autoEnd($)
+  await autoSave($, 'end')
+}
+
+/** 요약 글을 보낸다 — 바 · 진행 칸은 이지 컴팩트 저장 중과 같은 꼴(이름만 이지 오토) */
+async function autoSave($: EngineInterface, path: 'end' | 'mid'): Promise<void> {
+  const s = await currentSettings($)
+  const u = await read($, usage)
+  const at = await $.clock.now()
+  await setAuto($, a => ({ ...a, chain: { path, stage: 'saving', atMs: at, turnId: null, before: u?.contextTokens ?? 0 } }))
+  await update($, isConfirmingCompact, () => false)
+  await update($, summaryCard, () => false)
+  await update($, compactKind, () => kindAutoSave())
+  await update($, compactPhase, () => 'tidying')
+  try {
+    await $.prompt.submit({ text: autoSavePrompt(path, fmtTokens(path === 'mid' ? s.autoEnd : s.autoStart)) })
+  } catch (err) {
+    log($, `auto save failed — ${String(err)}`)
+    await autoEnd($)
+  }
+}
+
+/** 긴 일 길: 메인 요청 직전 컨텍스트가 뒤쪽 이상이면 끊고 요약(시험 B — 훅 밖 시계에서 끊고 바로 보냄, 이 요청은 그대로 간다) */
+async function autoAtStep($: EngineInterface, turnId: string): Promise<void> {
+  const a = await read($, auto)
+  // 우리 컴팩트 뒤 첫 요청 전엔 컨텍스트가 어림이다 — 그 요청이 재면(멈춤 ①이 본다) 다음 요청부터
+  if (!a || !isAutoActive(a) || (a.chain && a.chain.stage !== 'continuing') || a.since?.requests === 0) return
+  const u = await read($, usage)
+  if (!u || u.contextTokens < (await currentSettings($)).autoEnd || !(await autoMayStart($, u))) return
+  const at = await $.clock.now()
+  await setAuto($, x => ({ ...x, chain: { path: 'mid', stage: 'saving', atMs: at, turnId: null, before: u.contextTokens } }))
+  $.clock.after(0, () =>
+    void (async () => {
+      await $.turn.abort({ turnId }).catch(err => log($, `auto abort failed — ${String(err)}`))
+      await autoSave($, 'mid')
+    })(),
   )
+}
+
+/** 우리 컴팩트 뒤 메인 요청 수(자동 멈춤 ②) — 첫 요청이 여전히 앞쪽 이상이면 멈춤 ① */
+async function autoAfterStep($: EngineInterface, ctx: number): Promise<void> {
+  const a = await read($, auto)
+  if (!a?.since) return
+  const n = a.since.requests + 1
+  if (n === 1 && isAutoActive(a) && ctx >= (await currentSettings($)).autoStart) return autoHalt($, 'stuck')
+  await setAuto($, x => (x.since ? { ...x, since: n > AUTO_AGAIN_REQUESTS ? null : { ...x.since, requests: n } } : x))
+}
+
+/** 요약 턴이 [컴팩트 진행] 으로 끝났다 — /compact(이지 오토 지시) 뒤 이어 간다 */
+async function autoCompact($: EngineInterface, at: number): Promise<void> {
+  try {
+    if ((await autoNow($)).chain?.stage !== 'compacting') return
+    if (!(await compactNow($, autoCompactKeep(), kindAuto()))) return autoEnd($)
+    await autoAfterCompact($)
+  } finally {
+    if (autoCompacting === at) autoCompacting = null
+  }
+}
+
+/** 컴팩트 끝: 자동 멈춤 셈을 새로, 긴 일 길이면 이어가기(그사이 사람 · 다른 세션 글이 왔으면 안 보냄). 여러 길에서 불려도 한 번만 */
+async function autoAfterCompact($: EngineInterface): Promise<void> {
+  const nowMs = await $.clock.now()
+  const go = { next: false }
+  const did = await setAuto($, a => {
+    const c = a.chain
+    if (c?.stage !== 'compacting') return a
+    go.next = c.path === 'mid' && a.on && c.isInterrupted !== true && otherAt < c.atMs
+    return { ...a, since: { atMs: nowMs, requests: 0 }, chain: go.next ? { ...c, stage: 'continuing', atMs: nowMs, turnId: null } : null }
+  })
+  if (!did || !go.next) return
+  try {
+    await $.prompt.submit({ text: autoContinuePrompt() })
+  } catch (err) {
+    log($, `auto continue failed — ${String(err)}`)
+    await autoEnd($)
+  }
+}
+
+/** plugin 아닌 출처의 보내기: 답 끝 기다림은 쉬고, 컴팩트 뒤 이어가기는 안 보낸다 */
+async function autoOnOther($: EngineInterface): Promise<void> {
+  otherAt = await $.clock.now()
+  const c = (await read($, auto))?.chain
+  if (c && (c.stage === 'compacting' || (c.stage === 'continuing' && c.turnId === null))) await setAuto($, a => (a.chain ? { ...a, chain: { ...a.chain, isInterrupted: true } } : a))
+}
+
+/** 메인 턴 시작: 우리 요약 · 이어가기 턴을 알아 두고(글 머리표 — 우리 훅은 우리 보내기를 못 본다), 사슬 도중 다른 턴이 끼면 기다림은 쉬고 이어가기는 안 보낸다 */
+async function autoOnTurnStart($: EngineInterface, turnId: string, text: string): Promise<void> {
+  const kind = autoTurnOf(text.replace(PLUGIN_SENT, ''))
+  if (kind === 'save') autoSaveTurn = turnId
+  const c = (await read($, auto))?.chain
+  if (!c) return
+  if (((kind === 'save' && c.stage === 'saving') || (kind === 'continue' && c.stage === 'continuing')) && c.turnId === null) {
+    await setAuto($, a => (a.chain ? { ...a, chain: { ...a.chain, turnId } } : a))
+    return
+  }
+  if (kind !== null) return
+  if (c.stage === 'wait') return autoEnd($)
+  if (c.stage === 'compacting' || (c.stage === 'continuing' && c.turnId === null)) await setAuto($, a => (a.chain ? { ...a, chain: { ...a.chain, isInterrupted: true } } : a))
+}
+
+/** 1.5초마다: 멈춘 사슬 정리(시계 · 턴이 다시 불림 · 재시작으로 사라짐) · 이 프로세스가 안 돌리는 컴팩트 단계 이어 가기 · 식은 캐시면 끔 */
+async function autoWatch($: EngineInterface): Promise<void> {
+  const a = await read($, auto)
+  if (!a) return
+  const nowMs = await $.clock.now()
+  const c = a.chain
+  if (c?.stage === 'compacting' && autoCompacting !== c.atMs && (await read($, compactPhase)) !== 'compacting' && (await read($, flowLoaded))) {
+    if ((await read($, compactions)).some(x => x.atMs >= c.atMs)) return autoAfterCompact($)
+    return autoEnd($)
+  }
+  if (c) {
+    if (isChainStuck(c, nowMs)) await autoEnd($)
+    return
+  }
+  const u = isAutoActive(a) ? await read($, usage) : null
+  const est = u ? estimateFor(u, nowMs) : null
+  if (est?.kind === 'cold') await autoOff($, est.reason === 'model' ? 'model' : 'cold')
+}
+
+// ── 그리기 ───────────────────────────────────────────────────────
+
+/**
+ * 펼친 질문을 바꾼다 — 패널(이 상태를 읽는 칸)만 다시 그린다. 예전(2026-10-11 엔진)엔 상태 쓰기만으론 데스크톱 패널이 안 다시 그려져 앱 전체 다시 그리기를 불렀는데, 앱 전체 다시 그리기를 부르면 대화의 답변 칩 · 질문 강조 덮개까지 다시 그려, 질문 강조가 켜진 채 누르면 채팅 쪽 강조가 깜빡였다. 지금 엔진은 그리는 동안 읽은 상태를 바꾸면 그 칸만 다시 그린다(엔진 문서 $.state)
+ */
+async function toggleExpanded($: EngineInterface, id: number): Promise<void> {
+  await update($, expandedTurn, now => (now === id ? null : id))
 }
 
 /**
@@ -2482,6 +2773,7 @@ async function dumpObject($: EngineInterface): Promise<Record<string, unknown>> 
     usage: await read($, usage),
     live: await read($, live),
     turnSummaries: await read($, turnSummaries),
+    turnsOlder: await read($, turnsOlder),
     // N4: 패널 상태 · 여닫기 기록
     paneView: await read($, paneView),
     cardsOpen: await read($, cardsOpen),
@@ -2493,16 +2785,8 @@ async function dumpObject($: EngineInterface): Promise<Record<string, unknown>> 
     // B3: 앞 프로세스까지 이어 온 세션 금액(바 · 패널 금액 = 이것 + 엔진 값)
     costBase,
     trackedUsd,
-    questionsUsd: (await read($, turnSummaries)).reduce((sum, t) => sum + t.cost.usd, 0) + ((await read($, live))?.cost.usd ?? 0),
+    questionsUsd: (await read($, turnSummaries)).reduce((sum, t) => sum + t.cost.usd, 0) + ((await read($, turnsOlder))?.usd ?? 0) + ((await read($, live))?.cost.usd ?? 0),
   }
-}
-
-/** 덤프 글 + 짝 없는 서로게이트 · 제어 문자 수(데스크톱이 그리기를 통째로 거부하는 글 후보) */
-function dumpText(state: Record<string, unknown>): { text: string; lone: number; ctrl: number } {
-  const text = JSON.stringify(state, null, 2)
-  const lone = (text.match(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g) ?? []).length
-  const ctrl = (text.match(/\u00[01][0-9a-f]/gi) ?? []).length
-  return { text, lone, ctrl }
 }
 
 async function dumpPath($: EngineInterface): Promise<string> {
@@ -2531,7 +2815,7 @@ async function openDiag($: EngineInterface, where: 'drawer' | 'gen'): Promise<vo
   try {
     await buildDiagSnap($, cur.redact)
   } catch (err) {
-    $.ui.toast(L(`진단 내용을 못 만들었습니다 — ${String(err)}`, `Couldn't build the diagnostics — ${String(err)}`))
+    $.ui.toast(L(`진단 내용을 만들지 못했습니다: ${String(err)}`, `Couldn't build the diagnostics: ${String(err)}`))
     return
   }
   await update($, diagCard, prev => ({ ...prev, open: true, where, copiedLines: null, savedPath: null }))
@@ -2570,9 +2854,9 @@ async function copyDiag($: EngineInterface, surface?: string): Promise<void> {
   }
   if (isCopied) {
     await update($, diagCard, prev => ({ ...prev, copiedLines: snap.lines }))
-    $.ui.toast(L('복사했습니다 — 제보 글에 붙여 넣으세요', 'Copied — paste it into your report'))
+    $.ui.toast(L('복사했습니다. 제보 글에 붙여 넣으세요', 'Copied. Paste it into your report'))
   } else {
-    $.ui.toast(L('복사하지 못했습니다 — [파일로 저장] 으로 파일을 붙여 주세요', "Couldn't copy — use [Save as file] and attach the file"))
+    $.ui.toast(L('복사하지 못했습니다. [파일로 저장] 으로 만든 파일을 붙여 주세요', "Couldn't copy. Use [Save as file] and attach the file"))
   }
   $.ui.invalidate('ui.render')
 }
@@ -2584,9 +2868,9 @@ async function saveDiag($: EngineInterface): Promise<void> {
     const path = await dumpPath($)
     await $.fs.write(path, `${snap.text}\n`)
     await update($, diagCard, prev => ({ ...prev, savedPath: path }))
-    $.ui.toast(L(`진단 파일을 만들었습니다: ${path} — 제보할 때 붙여 주세요`, `Saved a diagnostics file: ${path} — attach it to your report`), { timeoutMs: HIDDEN_NOTE_MS })
+    $.ui.toast(L(`진단 파일을 만들었습니다: ${path}. 제보할 때 붙여 주세요`, `Saved a diagnostics file: ${path}. Attach it to your report`), { timeoutMs: HIDDEN_NOTE_MS })
   } catch (err) {
-    $.ui.toast(L(`진단 파일을 못 만들었습니다 — ${String(err)}`, `Couldn't save the diagnostics file — ${String(err)}`))
+    $.ui.toast(L(`진단 파일을 만들지 못했습니다: ${String(err)}`, `Couldn't save the diagnostics file: ${String(err)}`))
   }
   $.ui.invalidate('ui.render')
 }
@@ -2601,6 +2885,12 @@ async function togglePreview($: EngineInterface): Promise<void> {
 async function toggleAnswer($: EngineInterface, id: number): Promise<void> {
   await update($, answerOpen, now => (now.includes(id) ? now.filter(x => x !== id) : [...now, id].slice(-50)))
   $.ui.invalidate('ui.render')
+}
+
+/** 질문별 비용 [글 다 보기] — 그 질문의 잘린 동작 줄을 모두 그 자리에서 줄 바꿈(1.0 시안 1017o 안 3, 사용자 "질문마다 하나") */
+async function toggleStepsFull($: EngineInterface, id: number | 'live'): Promise<void> {
+  // 패널(이 상태를 읽는 칸)만 다시 그린다 — toggleExpanded 와 같은 까닭
+  await update($, stepsFull, now => (now.includes(id) ? now.filter(x => x !== id) : [...now, id].slice(-50)))
 }
 
 /** 최근 · 전체 전환. 펼침과 같은 까닭으로 다시 그리기도 부른다 */
@@ -2723,9 +3013,6 @@ async function toggleTidyRaw($: EngineInterface): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
-/** 컴팩트가 얼마나 급한가: 없음 · 노랑 · 빨강 · 식은 캐시(바로 컴팩트 권장) — 접힌 바를 저절로 펼지 */
-type Urgency = 'ok' | 'warn' | 'cut' | 'cold'
-const URGENCY_RANK: Record<string, number> = { ok: 0, warn: 1, cut: 2, cold: 3 }
 
 async function urgencyNow($: EngineInterface): Promise<Urgency> {
   const u = await read($, usage)
@@ -2745,11 +3032,13 @@ async function urgencyNow($: EngineInterface): Promise<Urgency> {
 async function isBandTucked($: EngineInterface): Promise<boolean> {
   const mode = bandShowMode(await currentSettings($))
   if (mode === 'always') return false
-  if (mode === 'never') return true
+  // 0.10.0: 꺼 둔 바도 확인 카드를 열면 편다 — 바 밖(명령 등)에서 카드를 열 수 있다
+  if (mode === 'never') return !(await read($, isConfirmingCompact))
   const phase = await read($, compactPhase)
   if (phase === 'tidying' || phase === 'compacting' || (await read($, isConfirmingCompact))) return false
   const urgency = await urgencyNow($)
-  if (urgency === 'ok') return true
+  // 이지 오토가 일하는 중이면 컴팩트할 때 · 늦어짐으로는 안 편다 — 알림은 오토에 맡긴다(명세 ③, 식은 캐시는 오토가 꺼지니 그대로 편다)
+  if (urgency === 'ok' || (urgency !== 'cold' && isAutoActive(await read($, auto)))) return true
   const dismissed = await read($, autoDismissed)
   return dismissed !== null && URGENCY_RANK[urgency]! <= (URGENCY_RANK[dismissed] ?? 0)
 }
@@ -2758,14 +3047,21 @@ async function isBandTucked($: EngineInterface): Promise<boolean> {
  * 접힌 바를 펴는 버튼 — 데스크톱은 입력창 아래 모드 줄(SessionMode), 터미널은 바 자리 한 줄(0.9.0). 0.8.1 B7: 네모 색 = 지금 크기
  * 단계(설정을 읽은 뒤라 levelOf 의 기준이 맞다) — 닫아도 색은 그대로, 닫힘은 글로
  */
-async function revealButton($: EngineInterface, ui: Ui) {
-  const isClosed = bandShowMode(await currentSettings($)) === 'never'
+/** 접힌 바 버튼 글 — 0.10.0 접힘 C: 단계 색 네모 + 지금 컨텍스트(설정 숫자 꼴), 모르면 이름. 알림 · 칩도 같은 글 */
+async function revealLabelOf($: EngineInterface, s: Settings): Promise<string> {
   const u = await read($, usage)
   const level = u && u.contextTokens > 0 ? levelOf(u.contextTokens) : null
+  const value = u && u.contextTokens > 0 ? `${u.contextEstimated ? '~' : ''}${ctxNumText(u.contextTokens, u.window, s.ctxUnit)}` : null
+  return revealLabel(bandShowMode(s) === 'never', level, value)
+}
+
+async function revealButton($: EngineInterface, ui: Ui) {
+  const sNow = await currentSettings($)
+  const isClosed = bandShowMode(sNow) === 'never'
   return (
     <ui.Button
       key="band-reveal"
-      label={revealLabel(isClosed, level)}
+      label={await revealLabelOf($, sNow)}
       {...(isClosed ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
       onPress={async () => {
         await update($, autoDismissed, () => null)
@@ -2790,7 +3086,101 @@ async function foldBand($: EngineInterface): Promise<void> {
   }
   const folded = setFolded(s, true)
   await saveSettings($, folded)
-  $.ui.toast(hiddenNote(folded), { timeoutMs: HIDDEN_NOTE_MS })
+  $.ui.toast(hiddenNote(folded, await revealLabelOf($, folded)), { timeoutMs: HIDDEN_NOTE_MS })
+}
+
+/**
+ * 1.0 슬림 요약 줄 열고 닫기(아래 버튼 · 요약 줄 ✕). 닫으면 그 줄에 붙은 확인 카드도 닫는다
+ */
+async function toggleSummary($: EngineInterface): Promise<void> {
+  const wasOpen = await read($, summaryCard)
+  // 이동 흐름 A: 현황 패널이 열려 있으면(아래
+  // 버튼 ▸) 누르면 패널만 닫는다 — 위는 그대로. 한 번 더 누르면 요약. 보기 자리 하나(요약 ↔ 현황 패널, 시안 1017l)는 그대로라 요약이 열린
+  // 채 패널이 열리지 않는다(패널을 열면 요약을 닫는다 — toggleView · switchView)
+  if (!wasOpen && (await wantedView($)) === 'usage') {
+    await setWantedView($, null)
+    await syncPane($)
+    $.ui.invalidate('ui.render')
+    return
+  }
+  await update($, summaryCard, () => !wasOpen)
+  if (wasOpen) await update($, isConfirmingCompact, () => false)
+  $.ui.invalidate('ui.render')
+}
+
+/** 요약 카드 ✕ — 바(보통 화면) · 아래 버튼(슬림)만 남는다 */
+async function closeSummary($: EngineInterface): Promise<void> {
+  await update($, summaryCard, () => false)
+  await update($, isConfirmingCompact, () => false)
+  $.ui.invalidate('ui.render')
+}
+
+/** 슬림 알림 ✕ — 지금 급한 정도까지는 다시 안 띄운다(더 급해지면 다시 · 컴팩트하면 풀림 — 접힌 바 자동 펴기와 같은 규칙) */
+async function dismissSlim($: EngineInterface): Promise<void> {
+  const urgency = await urgencyNow($)
+  await update($, isConfirmingCompact, () => false)
+  await update($, autoDismissed, () => urgency)
+  $.ui.invalidate('ui.render')
+}
+
+/** 슬림 알림을 닫아 둔 급한 정도를 아직 안 넘었나 */
+async function isSlimDismissedNow($: EngineInterface): Promise<boolean> {
+  const dismissed = await read($, autoDismissed)
+  if (dismissed === null) return false
+  return URGENCY_RANK[await urgencyNow($)]! <= (URGENCY_RANK[dismissed] ?? 0)
+}
+
+/**
+ * 1.0 슬림 아래 버튼(데스크톱 SessionMode — 시안 2판 "아래에서 시작"): 단계 색 네모 + 컨텍스트 + 보일 칸 두 개까지(slimButtonText). 누르면
+ * 요약 카드(입력창 위) 열고 닫기 — 보통 화면 게이지와 같은 손짓. 컴팩트할 때부터는 강조 버튼
+ */
+async function slimButton($: EngineInterface, ui: Ui, s: Settings) {
+  const u = await read($, usage)
+  const view = slimViewOf(s)
+  const parts = u ? slimParts(ui, u, await $.clock.now(), view, s.sessionColors, await spendShownOf($, s)) : []
+  const isOpen = await read($, summaryCard)
+  // 보기 자리 하나(1.0): 요약이 위에 열렸으면 ▴, 현황이 옆 패널에 열렸으면 ▸ — 누르면 그 둘이 바뀐다
+  const isSide = !isOpen && (await wantedView($)) === 'usage'
+  const level = u && u.contextTokens > 0 ? levelOf(u.contextTokens) : 'ok'
+  return (
+    <ui.Button
+      key="slim-open"
+      label={slimButtonText(u, parts, view, s.ctxUnit, isOpen ? true : isSide ? 'side' : false)}
+      {...(level === 'ok' ? { variant: 'secondary' as const } : { variant: 'primary' as const })}
+      onPress={() => void toggleSummary($)}
+    />
+  )
+}
+
+/**
+ * 이지 오토 상태 칩: 바가 접혔거나 슬림일 때만 입력창 아래 툴바(터미널은 접힌 바
+ * 줄)에, 켜 둔 동안만(멈춤 포함). 앱이 이 줄 버튼을 다 같은 색으로 그려 상태는 글이 말한다. 누르면 [컴팩트] 팝업(바가 펴진다)
+ */
+async function autoChip($: EngineInterface, ui: Ui, s: Settings, surface: string) {
+  const a = await read($, auto)
+  if (!a?.on) return null
+  const u = await read($, usage)
+  // 데스크톱 툴바는 버튼 글색 · 그림을 앱이 지운다 — 제 색이 남는 그림 글자 🔄 로 파랑을 낸다(시안 1019e ③, 접힌 바 버튼 🟦 과 같은 수)
+  const text = autoChipText(a, s, u?.contextTokens ?? null, u?.window)
+  return <ui.Button key="auto-chip" label={surface === 'terminal' ? text : `🔄 ${text}`} variant="secondary" {...(a.stop ? { dimColor: true } : {})} onPress={() => void barActs($).openConfirm()} />
+}
+
+/** 바에 넘길 이지 오토 몫: 켜졌나(켬 · 안 멈춤) · 버튼 글 · 칩(구간 — 사용자 "구간은 칩으로 확인") */
+async function autoBarOf($: EngineInterface, s: Settings, u: Usage | null): Promise<NonNullable<BarData['auto']>> {
+  const a = await read($, auto)
+  const range = autoRangeText(s, u?.window)
+  return { isOn: isAutoActive(a), label: autoChipText(a, s, u?.contextTokens ?? null, u?.window), tip: L(`이지 오토 구간 ${range}`, `Easy Auto range ${range}`) }
+}
+
+/** 입력창 위 안내 한 줄(멈춤 · 저절로 꺼짐) — ✕ 로 닫는다, 멈춤이면 [다시 켜기] */
+async function autoNoteOf($: EngineInterface, ui: Ui, s: Settings) {
+  const note = (await read($, auto))?.note ?? null
+  if (note === null) return null
+  const isStop = note === 'stuck' || note === 'again'
+  return drawAutoNote(ui, autoNoteText(note, s, (await read($, usage))?.window), {
+    resume: isStop ? () => void toggleAuto($) : null,
+    dismiss: () => void setAuto($, a => ({ ...a, note: null })),
+  })
 }
 
 /** 설정 탭 칸 펼치기 · 접기(컴팩트 시점 · 문구 · 바 · 그 안 상세 조정 · 캐시 경고 · 언어) */
@@ -2813,7 +3203,7 @@ async function saveFromSettings($: EngineInterface, chosen: Settings): Promise<v
   const wasFolded = (await currentSettings($)).bandFolded
   await saveSettings($, chosen)
   if (!chosen.bandFolded) await update($, autoDismissed, () => null)
-  if (chosen.bandFolded && !wasFolded) $.ui.toast(hiddenNote(chosen), { timeoutMs: HIDDEN_NOTE_MS })
+  if (chosen.bandFolded && !wasFolded) $.ui.toast(hiddenNote(chosen, await revealLabelOf($, chosen)), { timeoutMs: HIDDEN_NOTE_MS })
 }
 
 /** 설정 화면 버튼 동작 묶음 — $ 를 쓰는 동작은 이 파일에 있어야 한다(엔진은 $ 를 import 너머로 따라가지 않아 모듈을 안 띄운다) */
@@ -2840,6 +3230,28 @@ function settingsActs($: EngineInterface): SettingsActions {
     diagCopy: surface => void copyDiag($, surface),
     diagSave: () => void saveDiag($),
     openOverview: () => void openUsageTab($, 'main'),
+    sizeError: msg => {
+      timingErr = msg
+      $.ui.invalidate('ui.render')
+    },
+  }
+}
+
+/** 패널 현황 본문 버튼 동작 묶음(ui-pane drawPaneMain) — barActs 와 같은 까닭으로 여기서 묶는다 */
+function paneMainActs($: EngineInterface): PaneMainActions {
+  return {
+    toggleFull: id => void toggleStepsFull($, id),
+    setEffectsAll: isAll => void setEffectsAll($, isAll),
+    setFlowAll: isAll => void setFlowAll($, isAll),
+    toggleCard: which => void toggleCard($, which),
+    setHistoryAll: isAll => void setHistoryAll($, isAll),
+    toggleExpanded: id => void toggleExpanded($, id),
+    save: chosen => void saveFromSettings($, chosen),
+    sizeError: msg => {
+      timingErr = msg
+      $.ui.invalidate('ui.render')
+    },
+    toggleFold: key => void toggleFold($, key),
   }
 }
 
@@ -2847,12 +3259,38 @@ function settingsActs($: EngineInterface): SettingsActions {
 function barActs($: EngineInterface): BarActions {
   return {
     toggleView: view => toggleView($, view),
-    openConfirm: () => update($, isConfirmingCompact, () => true),
+    openConfirm: async () => {
+      await update($, isAskingClear, () => false)
+      return update($, isConfirmingCompact, () => true)
+    },
     closeConfirm: () => update($, isConfirmingCompact, () => false),
-    cancelTidy: () => update($, compactPhase, () => 'idle'),
-    tidyThenCompact: () => tidyThenCompact($),
-    compactNow: keep => compactNow($, keep),
-    clearNow: () => clearNow($),
+    askClear: () => update($, isAskingClear, () => true),
+    backFromClear: () => update($, isAskingClear, () => false),
+    // 이지 오토 저장 중 [취소]면 그 사슬도 놓는다(이번엔 쉼)
+    cancelTidy: async () => {
+      await autoEnd($)
+      return update($, compactPhase, () => 'idle')
+    },
+    // 팝업 버튼 줄 왼쪽 끝 [오토 켜기 | 오토 끄기] — 누르면 팝업을 닫고 켠다
+    toggleAuto: async () => {
+      await update($, isConfirmingCompact, () => false)
+      return toggleAuto($)
+    },
+    // 1.0: 컴팩트 · 클리어가 시작되면 요약 카드를 닫는다(그 자리에 진행 줄). 직접 쓰기 두 칸에 친 글(초안)은 먼저 저장하고 그 글로 보낸다
+    tidyThenCompact: async () => {
+      await update($, summaryCard, () => false)
+      await flushTidyDrafts($)
+      return tidyThenCompact($)
+    },
+    compactNow: async keep => {
+      await update($, summaryCard, () => false)
+      const isCustom = await flushTidyDrafts($)
+      return compactNow($, isCustom ? directKeep(await currentSettings($)) : keep)
+    },
+    clearNow: async () => {
+      await update($, summaryCard, () => false)
+      return clearNow($)
+    },
     // 누른 때의 설정 위에 — 그린 뒤 다른 세션이 바꿨을 수 있다
     pickTidy: async id => {
       const s0 = await currentSettings($)
@@ -2863,7 +3301,22 @@ function barActs($: EngineInterface): BarActions {
       await saveSettings($, { ...(await currentSettings($)), band })
     },
     foldBand: () => foldBand($),
+    toggleSummary: () => toggleSummary($),
+    dismissSlim: () => dismissSlim($),
+    typeTidy: text => update($, tidyDraft, () => text),
+    typeCompact: text => update($, compactDraft, () => text),
+    saveTidy: text => saveTidyCustom($, text),
+    saveCompact: text => saveCompactCustom($, text),
   }
+}
+
+/** 확인 팝업 직접 쓰기 두 칸의 초안을 저장한다(누른 때의 설정 위에). 직접 쓰기를 골랐으면 참 */
+async function flushTidyDrafts($: EngineInterface): Promise<boolean> {
+  const pre = await read($, tidyDraft)
+  const post = await read($, compactDraft)
+  if (pre !== null) await saveTidyCustom($, pre)
+  if (post !== null) await saveCompactCustom($, post)
+  return (await currentSettings($)).tidy === 'custom'
 }
 
 export const register: Register = on => {
@@ -2875,6 +3328,7 @@ export const register: Register = on => {
     // 재로드도 session.start 다 — 여기서 턴 비용을 세면 턴이 아닌 구간이 섞인다
     await refreshUsage($, { categories: false, pushHistory: false })
     await loadSettings($)
+    await loadAuto($).catch(() => {})
     await syncStatusLine($).catch(() => {})
     // 사용량 패널: 이 세션이 시작한 때(같이 열고 닫기는 그 뒤 일만 따른다), 새 세션이면 자동으로 열기
     paneStartAt = await $.clock.now()
@@ -2884,10 +3338,13 @@ export const register: Register = on => {
     // 기본 적재(/context 분류)도 이때 한 번 잰다 — 계산식 최적의 재료
     // 질문별 비용 기록(N3): 파일에서 읽거나, 없으면 대화 기록에서 다시 만든다 — 기다리지 않는다
     // 세션 금액(B3)은 질문 기록을 읽은 뒤 정한다 — 옛 세션은 질문별 비용 합에서 시작
+    // 1.0 전 기록이 한도까지 찼으면 밀린 질문 합을 대화 기록에서 채운다(fillOlder — 세션 누적과 견주니 맨 뒤)
     void loadTurns($)
       .catch(() => {})
       .then(() => loadCostBase($))
       .then(() => refreshUsage($, { categories: false, pushHistory: false }))
+      .catch(() => {})
+      .then(() => fillOlder($))
       .catch(() => {})
     void loadFlow($)
       .then(() => refreshUsage($, { categories: true, pushHistory: false }))
@@ -2906,6 +3363,8 @@ export const register: Register = on => {
       void syncStatusLine($).catch(() => {})
       // 0.9.1: 훅이 못 본 컴팩트(사람 /compact · 앱이 돌린 것 포함) — 컴팩트 뒤 다음 요청까지 컴팩트 전 크기가 남지 않게
       void watchCompact($).catch(() => {})
+      // 이지 오토: 멈춘 사슬 정리 · 식은 캐시면 끔
+      void autoWatch($).catch(() => {})
     })
     // 캐시 남은 분을 갱신한다 — 그리기만 다시, 모델 호출 없음. 오늘 · 이번 달 사용량을 켰으면 5분마다 다시 잰다(다른 세션 몫 · 날짜 넘김)
     $.clock.every(60000, () => {
@@ -2916,12 +3375,58 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // 세션에 들어옴(1.0 — 사용자 "세션 변경해서 들어갔을 때 깜빡이는 거 1회 · 빠르게 전환할 때 버그 안 생기게"): 데스크톱이 이 세션에
+  // 붙으면 화면이 자리 잡은 뒤(flash.ts ARRIVE_SETTLE_MS — 세션을 바꾸는 동안은 앱이 대화를 그리느라 바 그리기가 밀려 깜빡임이 몰렸다,
+  // 사용자 "급하게 밀리듯이") 바를 다시 그려 그때 급한 값을 한 번 강조(takeArrival). 나가면 기다리던 들어옴 · 도는 강조를 지운다.
+  // 개발자 모드면 붙고 떨어지는 때를 적는다 — 앱이 세션을 바꿀 때 이 신호를 주는지 실물 확인용
+  on('session.attach', async ($, e, next) => {
+    const r = await next(e)
+    try {
+      if (e.surface === 'desktop') {
+        markArrival(await $.clock.now())
+        // 들어온 순간 한 번 다시 그린다 — 자리 잡기 · 글자 깜빡 동안 게이지를 가만히(ui-bar isFlashBusy)
+        void update($, flashTick, (k: number) => k + 1).catch(() => {})
+        arriveTimer?.cancel()
+        // 자리 잡는 때를 조금 넘겨(시계가 일찍 와도 기다림에 걸리지 않게) 바만 다시 그린다
+        arriveTimer = $.clock.after(ARRIVE_SETTLE_MS + 50, () => void update($, flashTick, (k: number) => k + 1).catch(() => {}))
+        // 오래 쉰 세션에 들어오면 한도를 다른 세션의 더 최근 값으로(shareLimits) — 쉬는 동안 이 세션은 한도를 새로 못 받는다
+        const u0 = await read($, usage)
+        if (u0) {
+          const rateLimits = await shareLimits($, u0.rateLimits, u0.lastActivityMs)
+          if (JSON.stringify(rateLimits) !== JSON.stringify(u0.rateLimits)) await update($, usage, prev => (prev ? { ...prev, rateLimits } : prev))
+        }
+      }
+    } catch {
+      // 보기만 — 세션 붙기를 막지 않는다
+    }
+    return r
+  })
+  on('session.detach', async ($, e, next) => {
+    const r = await next(e)
+    try {
+      if (e.surface === 'desktop') {
+        clearArrival()
+        arriveTimer?.cancel()
+        arriveTimer = null
+        stopFlashTicker()
+        // 켜진 칸으로 그려 둔 바가 돌아왔을 때 그대로 보이지 않게 한 번 다시 그린다
+        void update($, flashTick, (k: number) => k + 1).catch(() => {})
+      }
+    } catch {
+      // 보기만
+    }
+    return r
+  })
+
   // 한도(5시간 · 7일)는 응답마다 바뀐다 — 턴 끝에만 다시 읽으니 긴 턴 동안 띠가 앱의 사용량 창보다 낮았다(띠 12% ·
   // 앱 13%). 엔진이 한도가 1포인트 넘게 움직일 때 알려 주는 대로 그 줄만 바꾼다
   on('session.measure', async ($, e, next) => {
     if (e.changed.includes('rateLimits')) {
-      const rateLimits = e.rateLimits.map(r =>
-        r.resetsAt ? { kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt } : { kind: r.kind, percentUsed: r.percentUsed },
+      // 방금 받은 응답 값이라 이 세션 것이 가장 최근 — 다른 세션도 쓰게 파일에(shareLimits)
+      const rateLimits = await shareLimits(
+        $,
+        e.rateLimits.map(r => (r.resetsAt ? { kind: r.kind, percentUsed: r.percentUsed, resetsAt: r.resetsAt } : { kind: r.kind, percentUsed: r.percentUsed })),
+        await $.clock.now(),
       )
       await update($, usage, prev => (prev ? { ...prev, rateLimits } : prev))
     }
@@ -2954,15 +3459,20 @@ export const register: Register = on => {
           await addAppCost($, got.extra, e.isAborted ? L('중단 · 도중 끊긴 요청 등', 'stopped · interrupted requests, etc.') : L('질문 도중 · 앱 자체 요청', 'during the question · app requests'))
         }
       }
-      await closeTurn($, e.answer, e.isAborted)
+      // 마지막 응답 글이 비면(마무리 도구로 끝난 턴) 글이 있던 마지막 요청의 답으로 칩 자리를 잡는다
+      await closeTurn($, e.answer.trim() !== '' ? e.answer : lastStepAnswer, e.isAborted)
+      lastStepAnswer = ''
       // 여기부터 다음 질문까지 엔진 집계가 는 만큼(우리가 본 요청을 빼고)이 앱 자체 요청
       await markIdle($)
       // 오늘 · 이번 달 사용량(켰을 때만) — 답이 끝날 때 기록이 늘었다. 기다리지 않는다
       void refreshSpend($).catch(() => {})
+      // 이지 오토: 요약 턴 → 컴팩트, 이어가기 끝, 답 끝 길
+      await autoAtTurnEnd($, e, turnNow).catch(err => log($, `auto turn end failed — ${String(err)}`))
     }
     // "정리 후 컴팩트": 정리 턴이 [컴팩트 진행] 으로 끝났을 때만 컴팩트. 세션이 보류했거나
-    // 중단 · 오류 · 판정 없음이면 하지 않고 알린다. 훅 안에서 명령을 돌리면 이 턴을 기다리게 되니 턴이 끝난 뒤로 미룬다
-    if (isMain && (await read($, compactPhase)) === 'tidying') {
+    // 중단 · 오류 · 판정 없음이면 하지 않고 알린다. 훅 안에서 명령을 돌리면 이 턴을 기다리게 되니 턴이 끝난 뒤로 미룬다.
+    // 이지 오토 저장 중은 위에서(autoAtTurnEnd)
+    if (isMain && (await read($, compactPhase)) === 'tidying' && !isAutoSaveKind(await read($, compactKind))) {
       const verdict = tidyVerdict(e.reason, e.answer)
       if (verdict === 'go') {
         if (turnNow) await recordSaveTurn($, turnNow)
@@ -2972,7 +3482,7 @@ export const register: Register = on => {
         await update($, compactPhase, () => (verdict === 'hold' ? 'held' : 'idle'))
         $.ui.toast(
           verdict === 'hold'
-            ? L('세션이 지금은 컴팩트하지 않는 게 맞다고 답했습니다 — 답에 이유가 있습니다', 'The session answered that it should not compact now — the reason is in the answer')
+            ? L('세션이 지금은 컴팩트하지 않는 게 맞다고 답했습니다. 이유는 답에 있습니다', 'The session answered that it should not compact now. The reason is in the answer')
             : verdict === 'stopped'
               ? L('저장이 끝나지 않아 컴팩트를 하지 않았습니다', 'Did not compact — the save did not finish')
               : L(`답에 ${markGo()} 표시가 없어 컴팩트를 하지 않았습니다`, `Did not compact — the answer has no ${markGo()} mark`),
@@ -2985,6 +3495,8 @@ export const register: Register = on => {
   // ③ 작업 중 표시: 메인 턴이 시작되면 누적을 비운다
   on('turn.start', async ($, e, next) => {
     await ensureLang($)
+    // 1.0 요약은 엿보기 — 사람이 다음 질문을 보내면 저절로 닫힘(시안 preview-1017d ★ · 사용자 "나머진 추천방향으로")
+    if (e.agentId === undefined && (await read($, summaryCard))) await update($, summaryCard, () => false)
     // B5 안내 — 사람이 이 세션 화면에서 질문을 보낸 때 한 번
     if (gaugeNote && (e as { agentId?: string }).agentId === undefined) void showGaugeNote($).catch(() => {})
     // 보류 표시는 다음 질문까지만
@@ -2994,11 +3506,22 @@ export const register: Register = on => {
     const appCarry = await appCarryAtStart($)
     // 흐름 그래프의 [최근 질문 40] 경계 — 메인 대화의 질문만(타입엔 agentId 가 없지만 하위 에이전트 턴이 오면 뺀다)
     if ((e as { agentId?: string }).agentId === undefined) await writeFlow($, withQuestion(await readFlow($), await $.clock.now()))
+    // 이 질문 이름(메인 대화만): 바로 앞에 보낸 질문(prompt.submit, 1분 안)의 그림 · 파일 수, 엔진이 글 없이 시작했으면 그때 받은 글.
+    // 사용자(2026-10-17 "(이어서 진행) 이건 뭔지 모르겠음"): 빈 글 질문은 실제로 그림만 보낸 질문 · 앞 답 직후 보내 줄에 들어갔던 질문이었다
+    const submitAt = await $.clock.now()
+    if (e.agentId === undefined) await autoOnTurnStart($, e.turnId, e.text).catch(() => {})
+    if (e.agentId === undefined) lastStepAnswer = ''
+    const sent = e.agentId === undefined && pendingSubmit && submitAt - pendingSubmit.atMs < 60_000 ? pendingSubmit : null
+    if (e.agentId === undefined) pendingSubmit = null
+    const ownHead = promptHead(e.text)
+    const head = ownHead || (sent ? promptHead(sent.text) : '')
+    const attach = sent && (sent.isIdle || !ownHead) ? sent.counts : null
     await update($, live, () => ({
       turnId: e.turnId,
       steps: 0,
       cost: ZERO_COST,
-      prompt: promptHead(e.text),
+      // 그래도 글도 그림도 없으면(엔진의 이어 가기) 그 이름으로 — 빈 글이면 질문별 비용에서 무엇인지 몰랐다
+      prompt: attachHead(head, attach) || (e.agentId === undefined ? continuedName() : ''),
       contextTokens: 0,
       outputTokens: 0,
       details: [],
@@ -3018,6 +3541,25 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
+  // 보낸 질문을 다음 질문 이름에 쓴다(위 pendingSubmit): 그림 · 파일은 글에 없어(엔진이 따로 준다) "🖼 그림 N장" — 그림만 보낸 질문이
+  // "(글 없음)" 이었다. 엔진이 글 없이 턴을 시작하면 이 글이 이름. 도는 턴 안으로 들어간 글(turnId 있음)의 그림은
+  // 그 뒤 질문이 글 없이 시작할 때만 붙인다
+  on('prompt.submit', async ($, e, next) => {
+    // 이지 오토: 사람 · 다른 세션 · 알림(plugin 아닌 출처)이 보냈다 — 우리 보내기는 이 훅에 안 온다
+    if (e.origin?.kind !== 'plugin') await autoOnOther($).catch(() => {})
+    const r = await next(e)
+    try {
+      if (r.drop === undefined) {
+        const files = e.attachments ?? []
+        const image = files.filter(a => a.type === 'image').length
+        pendingSubmit = { text: e.text, counts: files.length > 0 ? { image, other: files.length - image } : null, isIdle: e.turnId === undefined, atMs: await $.clock.now() }
+      }
+    } catch {
+      // 이름 붙이기는 보기만 — 질문 보내기를 막거나 두 번 보내지 않게 여기서 삼킨다
+    }
+    return r
+  }).catch(($, e, next) => next(e))
+
   // 엔진이 다음 질문 제안을 만들어 띄운다 — 답 뒤 앱 자체 요청에 그 이름을 붙인다(보기만)
   on('prompt.suggest', async ($, e, next) => {
     if (e.origin.kind === 'suggestion') suggestedSinceMark = true
@@ -3027,7 +3569,11 @@ export const register: Register = on => {
   // 요청 하나가 끝날 때마다 API 가 보고한 토큰으로 값을 더한다. 하위 에이전트 요청은 값만(컨텍스트 · 흐름엔 안 넣는다)
   on('turn.step', async function* ($, e, next) {
     await ensureLang($)
+    // 이지 오토 긴 일 길: 요청 직전 뒤쪽을 넘었으면 끊는다(시계로 — 이 요청은 그대로 보낸다)
+    if (e.agentId === undefined) await autoAtStep($, e.turnId).catch(() => {})
     const result = yield* next(e)
+    // 글이 있던 메인 요청의 답을 기억한다(위 lastStepAnswer — 마무리 도구로 끝난 턴의 칩 자리)
+    if (e.agentId === undefined && typeof result.answer === 'string' && result.answer.trim() !== '') lastStepAnswer = result.answer
     if (e.agentId !== undefined && result.usage) {
       try {
         const cost = costOf(result.usage, result.usage.model, 5, null, engineNow)
@@ -3046,15 +3592,12 @@ export const register: Register = on => {
         const t = result.usage
         const ctxNow = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
         if (measureAfterCompact) {
-          // 컴팩트 직후 크기와 그중 요약(= 이 요청이 캐시에서 못 읽고 새로 낸 몫, 흐름의 c.summary 와 같은 셈) — 이 PC 의 다음
-          // 계산식 재료(이 세션에서 컴팩트하기 전 세션들이 쓴다). 예전엔 직후 − 기본 적재라 첫 질문 · 분류 차이만큼 작았다(3.5k).
-          // 엔진이 tokensAfter 를 줬으면 직후는 이미 적었다(N2) — 이 요청은 새 질문 글 · 도구 결과까지 들어 커서 안 쓴다
+          // 컴팩트 직후 크기(이 요청 — 기본 적재 + 남긴 대화 + 새 질문 글)와 그중 요약(= 이 요청이 캐시에서 못 읽고 새로 낸 몫, 흐름의
+          // c.summary 와 같은 셈) — 이 PC 의 다음 계산식 재료(이 세션에서 컴팩트하기 전 세션들이 쓴다). 예전엔 직후 − 기본 적재라 첫
+          // 질문 · 분류 차이만큼 작았다(3.5k). 0.6.0(N2) ~ 1.0 은 엔진 tokensAfter 가 있으면 이 요청을 안 썼다 — 그 값은 남긴 대화뿐이었다
           measureAfterCompact = false
-          if (!afterFromEngine) {
-            await $.store.set(AFTER_KEY, ctxNow)
-            await fillCompactAfter($, ctxNow)
-          }
-          afterFromEngine = false
+          await $.store.set(AFTER_KEY, ctxNow)
+          await fillCompactAfter($, ctxNow)
           // 흐름이 이 요청으로 적은 값(캐시가 식은 뒤의 첫 요청이면 전부 다시 써 안 적는다 — flow.ts addPoint)
           const summary = (await read($, compactions)).at(-1)?.summary
           if (typeof summary === 'number' && summary > 0) await $.store.set(SUMMARY_KEY, summary)
@@ -3081,6 +3624,8 @@ export const register: Register = on => {
         )
         // 최적(요청당 증가 · 직후 크기)도 요청마다 — 띠가 작업 중에도 게이지와 같이 바뀐다
         await applyThresholds($)
+        // 이지 오토: 우리 컴팩트 뒤 요청 수 · 첫 요청이 여전히 앞쪽 이상이면 멈춤
+        await autoAfterStep($, ctxNow)
       } catch {
         // 기록 실패가 턴을 멈추면 안 된다
       }
@@ -3094,27 +3639,24 @@ export const register: Register = on => {
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     await ensureLang($)
     setSurface(e.surface)
+    // 1.0 데스크톱은 앱 작업 줄을 앱 그대로 — 이 질문 값은 입력창 바로 위 진행 칸(ui-answer liveStrip)에.
+    // 예전엔 앱 글 칸에 금액을 붙여 썼는데, 도구 묶음이 돌기 시작하면 턴 표시가 앱의 도구 묶음 상태 줄(LiveGroupStatus)로 옮겨 가고 그 줄은 글
+    // 고쳐 쓰기만 받고 그림은 버려(파란 점을 붙이자 금액째 사라짐 — 앱 코드 확인) "처음엔 보이다 꺼짐" 이었다. 터미널은 작업 줄 그대로
+    if (e.surface !== 'terminal') return next(e)
     const now = await read($, live)
-    if (!now || now.steps === 0) return next(e)
-    const theirs = await next(e)
-    const { Box, Text } = $.ui.resolve(e)
+    if (!now || now.steps === 0) {
+      return next(e)
+    }
+    // 1.0 칸 "진행 중 질문 칸"(spin — 터미널은 이 작업 줄 금액) — 끔이면 엔진 그대로(어느 화면이든)
+    const sSpin = await currentSettings($)
+    if (slimViewOf(sSpin).spin === 'off') {
+      return next(e)
+    }
     // 이 질문 값 · 그중 에이전트 몫 · 컨텍스트. 출력 토큰은 뺐다 — 판단에 안 쓰였다, 그 자리에 🤖.
     // 에이전트는 간단이면 개수만, 그 밖엔 "$ 포함"(답변 아래 · 패널과 같은 꼴)
-    const agents = agentPart(now.details, viewOf(await currentSettings($)).info === 'full')
-    // B4(0.6.1 피드백): 데스크톱은 🤖 대신 도트 캐릭터 — 이 질문 에이전트가 도는 동안 걷는다(그림은 글 안에 못 넣어 줄을 칸으로)
-    if (agents && agents.startsWith('🤖 ') && e.surface === 'desktop') {
-      return (
-        <Box columnGap={1} alignItems="center">
-          {theirs}
-          <Box flexDirection="row" alignItems="center">
-            <Text bold>{fmtUsd(now.cost.usd)}</Text>
-            {agentText($.ui.resolve(e), 'sp-agents', agents, agentSum(now.details)?.running === true, {}, ' · ')}
-            <Text dimColor>{L(' · 컨텍스트 ', ' · context ')}</Text>
-            <Text color={LEVEL_TEXT[levelOf(now.contextTokens)]}>{fmtTokens(now.contextTokens)}</Text>
-          </Box>
-        </Box>
-      )
-    }
+    const agents = agentPart(now.details, viewOf(sSpin).info === 'full')
+    const theirs = await next(e)
+    const { Box, Text } = $.ui.resolve(e)
     return (
       <Box columnGap={1} alignItems="center">
         {theirs}
@@ -3141,6 +3683,9 @@ export const register: Register = on => {
     const theirs = await next(e)
     const { Box, Text } = $.ui.resolve(e)
     const settings = await currentSettings($)
+    // 1.0 슬림: "답변 끝 칩" 끔이면 앱 답변 그대로, 켜도 한 줄(자세히 펼침 없음 — 정말 최소)
+    // 1.0 칸 "답변 끝 칩" — 끔이면 칩 없음(어느 화면이든), [▸ 자세히] 펼침은 정보량 전부일 때(슬림은 정보량 최소라 한 줄)
+    if (slimViewOf(settings).chip === 'off') return theirs
     const isFull = viewOf(settings).info === 'full'
     const line = answerLine($.ui.resolve(e), summary, isFull, e.surface)
     // 정보량 전부면 패널 "자세히" 의 펼친 질문처럼 상세(메인 · 에이전트 · 앱 자체 요청 분해 줄과 동작별 값)를 붙이되 처음엔 접힘 —
@@ -3276,21 +3821,23 @@ export const register: Register = on => {
         isOn = !(await read($, diagCard)).redact
         await setDiagRedact($, isOn)
         break
-      // S1(0.6.1 피드백): 움직임 스위치 — 켬 = system(OS 동작 줄이기는 따름), 끔 = reduce
+      // S1(0.6.1 피드백): 애니메이션 스위치(옛 이름 움직임) — 켬 = system(OS 동작 줄이기는 따름), 끔 = reduce
       case 'motion':
         isOn = s.motion === 'reduce'
         await saveFromSettings($, { ...s, motion: isOn ? 'system' : 'reduce' })
         break
       // 0.6.0 바에 보일 칸 스위치 줄(✓ 칩 대신): 한도 전체 · 모든 세션 오늘 · 이번 달 · 답변 칩 자세히 · 칸 하나씩
       case 'limits':
-        isOn = !(s.limitShow.fiveHour || s.limitShow.sevenDay)
+        isOn = viewOf(s).parts.lim5 === 'off' && viewOf(s).parts.lim7 === 'off'
         await saveFromSettings($, setLimits(s, isOn))
         break
       case 'spendToday':
-      case 'spendMonth':
-        isOn = !s[id]
-        await saveFromSettings($, { ...s, [id]: isOn })
+      case 'spendMonth': {
+        const k = id === 'spendToday' ? 'today' : 'month'
+        isOn = viewOf(s).parts[k] === 'off'
+        await saveFromSettings($, setPart(s, k, isOn ? 'on' : 'off'))
         break
+      }
       case 'chipDetail': {
         // 간단 · 자세히 화면이면 그 화면 값 — 못 바꾼다(스위치는 흐림)
         if (s.screen !== 'custom') return { props: { on: viewOf(s).info === 'full', disabled: true } }
@@ -3306,11 +3853,10 @@ export const register: Register = on => {
           await saveFromSettings($, setBandPart(s, part.key, isOn))
           break
         }
-        // 비용 줄 · 질문 줄 칸은 커스텀 화면에서만(간단 · 자세히는 그 화면 값 — 흐린 스위치)
-        const k = part.key as keyof CostShow
-        if (s.screen !== 'custom') return { props: { on: viewOf(s).bandShow[k], disabled: true } }
-        isOn = !viewOf(s).bandShow[k]
-        await saveFromSettings($, editView(s, v => ({ ...v, bandShow: { ...v.bandShow, [k]: isOn } })))
+        // 비용 줄 · 질문 줄 칸은 커스텀 화면에서만(정해 둔 화면은 그 화면 값 — 흐린 스위치)
+        if (s.screen !== 'custom') return { props: { on: bandShowOf(s)[part.key], disabled: true } }
+        isOn = !bandShowOf(s)[part.key]
+        await saveFromSettings($, setBandPart(s, part.key, isOn))
       }
     }
     return { props: { on: isOn, disabled: false } }
@@ -3343,10 +3889,6 @@ export const register: Register = on => {
     const updInst = await installNow($)
     const updNow = await read($, updateInfo)
     const upd: UpdateState = !updInst ? { ...updNow, phase: 'dev' } : updInst.marketplace === 'synced' ? { ...updNow, phase: 'synced' } : updNow
-    // 탭: 고르기 버튼(pickButton — 고른 쪽 채움, 데스크톱은 ✓ 없이 · 터미널은 ✓). 흐림 차이만으론 지금 보는 쪽이 안 읽혔고,
-    // ✓ 를 붙이니 고른 탭만 넓어져 옆 탭이 밀렸다(fb A4)
-    // 탭 · 보기 = 묶음 버튼(고른 쪽 칩 · 나머지 plain 흐린 글 — 앱 탭 · 묶음 꼴)
-    const tab = (key: string, label: string, isOn: boolean, onPress: () => void) => segButton(ui, `pane-${key}`, label, isOn, onPress)
     // 오른쪽 여백: 터미널은 한 칸(마지막 칸에 쓰면 줄이 넘어가는 터미널이 있다), 데스크톱은 두 칸. 예전 데스크톱 1할(넓은 패널이면
     // 8칸 넘게)은 글 폭 어림이 실제보다 넓던 때의 땜질 — 렌더러 보정(1칸 = 1ch = CH_PX, 2026-10-14)으로 어림을 맞추고 줄였다(fb A1 오른쪽 빔)
     const isTerminal = e.surface === 'terminal'
@@ -3381,66 +3923,18 @@ export const register: Register = on => {
       const pvModel = u?.model ?? ((await $.session.model().catch(() => '')) || 'claude-opus-5-5')
       const pvTurn = lastSum ?? sampleTurn(nowMs, pvModel)
       setBandOrder(sSet.bandOrder)
-      // 견본 바 안쪽 폭 = 패널 − 설정 카드(테두리 · 여백) − 견본 바 타일(테두리 · 여백): 터미널 10칸 · 데스크톱 약 7칸(테두리 1px)
-      const pvBoxW = cols - (isTerminal ? 10 : 7)
       const setTab = await read($, settingsTab)
-      // S10 · S11(0.8.1): 미리보기는 탭에 맞는 것만 그린다 — 바 탭 = 바 전체 + 줄마다(한도 · 비용 · 질문), 답변 칩 탭 = 칩 견본
       const pvU = u ?? sampleUsage(nowMs, pvModel)
-      const pvBand = (part: 'all' | 'limits' | 'cost' | 'turn', extra: BandPreviewExtra = {}) =>
-        drawBandPreview(ui, e.surface, pvU, nowMs, inputsNow, bandShowOf(sSet), sSet.sessionColors, pvTurn, sSet.screen === 'simple', spendSet, pvBoxW, part, extra)
-      // S14(0.9.1 uxi 점검 — 옵션을 바꿔도 견본이 그대로였다): 바 크기 한 줄 · 접어 두기 · 입력창 아래 한 줄도 바 전체 견본에
-      const pvLevel = pvU.contextTokens > 0 ? levelOf(pvU.contextTokens) : null
-      const pvStatus =
-        setTab === 'bar' && sSet.statusLine
-          ? statusLineText({
-              tokens: pvU.contextTokens > 0 ? pvU.contextTokens : null,
-              window: pvU.window,
-              level: pvLevel,
-              thr: thresholds(),
-              unit: sSet.ctxUnit,
-              costUsd: pvU.costUsd ?? null,
-              phase: await read($, compactPhase),
-            })
-          : null
+      // 견본 짜기는 ui-pane settingsPreviews — 여기선 읽기만(떼어 내기 전 순서 그대로: 단계는 입력창 아래 한 줄 견본이 있을 때만)
+      const pvPhase = setTab === 'bar' && sSet.statusLine && !isSlim(sSet) ? await read($, compactPhase) : null
       const spendSet = setTab === 'bar' ? await spendShownOf($, sSet) : null
-      // 미리보기 제목 "?" 도 누르면 아래에 풀이(S5 — 모든 "?" 같은 동작, 터미널은 [ ? ])
       const openSet = await read($, settingsOpen)
-      const previews =
-        setTab === 'bar'
-          ? {
-              // S13(0.9.1): "바 — 입력창 위" 제목 줄 → 견본 틀 안 "미리보기 · 입력창 위" 칩(+ "?"), 견본은 입력창 모형 위 무대(데스크톱)
-              bar: (
-                <Box key="pv" flexDirection="column">
-                  {pvBand('all', {
-                    label: hoverTip(
-                      ui,
-                      'pv-bar-tip',
-                      previewChip(ui, 'pv-bar-chip', L('미리보기 · 입력창 위', 'Preview · above the input')),
-                      L('채팅 입력창 바로 위에 늘 떠 있는 줄 — 세션 금액 · 컨텍스트 · 캐시와 컴팩트 버튼. 아래 카드마다 그 줄만 다시 보입니다. 견본의 버튼은 눌러지지 않습니다.', 'Always shown right above the chat input — session cost, context, cache and the Compact button. Each card below shows its own row again. The sample’s buttons do not press.') +
-                        (u ? L(' 견본은 이 세션 값.', ' The sample uses this session.') : L(' 견본은 예시 값 — 첫 질문이 끝나면 이 세션 값.', ' Example values until the first question ends.')),
-                      { isOpen: openSet['desc-pv-bar-tip'] === true, onToggle: () => void toggleFold($, 'desc-pv-bar-tip') },
-                    ),
-                    stage: true,
-                    band: sSet.band,
-                    foldedLabel: sSet.bandFolded ? revealLabel(false, pvLevel) : null,
-                    statusLine: pvStatus,
-                  })}
-                </Box>
-              ),
-              limits: pvBand('limits'),
-              cost: pvBand('cost'),
-              turn: pvBand('turn'),
-              chip: null,
-            }
-          : setTab === 'chip'
-            ? {
-                bar: null,
-                limits: null,
-                cost: null,
-                turn: null,
-                chip: answerPreview($, ui, pvTurn, lastSum === null, viewOf(sSet).info === 'full', e.surface, await read($, previewOpen), sSet.questionHover, openSet['desc-pv-answer-tip'] === true),
-              }
-            : null
+      const previews = settingsPreviews(
+        ui,
+        e.surface,
+        { setTab, s: sSet, u, pvU, pvTurn, isSample: lastSum === null, nowMs, inputs: inputsNow, spend: spendSet, cols, phase: pvPhase, open: openSet, isPreviewOpen: setTab === 'chip' ? await read($, previewOpen) : false },
+        { toggleFold: key => void toggleFold($, key), togglePreview: () => void togglePreview($) },
+      )
       body = drawSettingsView(
         settingsActs($),
         ui,
@@ -3470,140 +3964,61 @@ export const register: Register = on => {
         await read($, compactDraft),
         setTab,
         await diagViewOf($, 'gen'),
+        timingErr,
       )
     } else {
       const nowTurn = await read($, live)
       const phase = await read($, compactPhase)
       const kind = await read($, compactKind)
-      // O4: 현황 막대 둘(컨텍스트 · 컴팩트 시점)의 움직임 — 컴팩트 중 숨쉬기 · 끝에 옛 크기에서 줄어듦(설정 "움직임" 끔이면 글만)
+      // O4: 현황 막대 둘(컨텍스트 · 컴팩트 시점)의 움직임 — 컴팩트 중 숨쉬기 · 끝에 옛 크기에서 줄어듦(설정 "애니메이션" 끔이면 글만)
       setPaneBarMotion({ compacting: phase === 'compacting', shrink: await shrinkNow($), on: sNowPane.motion !== 'reduce' })
       // 질문 내역은 패널 보기를 따른다: 간략이면 펼친 질문 · 진행 중 질문에 동작별 줄 없이 "요청 N회 · 총 $" 한 줄, 질문 글도
       // 줄여서
       const qDetail = (await paneModeNow($)) === 'simple' ? 'summary' : 'steps'
-      // 진행 중 질문은 보내자마자(첫 요청이 끝나기 전에도) — 첫 요청이 끝나야 보이면 도구 없이 한 번에 끝나는 질문은
-      // 끝날 때까지 안 보였다(2026-10-11 CLI)
-      const liveEl =
-        nowTurn
-          ? liveBlock(ui, nowTurn, allSums[allSums.length - 1], cols - CARD_INSET, g, e.surface, phase, kind, qDetail)
-          : phase === 'compacting'
-            ? compactingBlock(ui, g, e.surface, kind)
-            : null
-      const flowParts = drawFlow(ui, e.surface, flowNow, await read($, flowLoaded), await read($, flowNote), u, widthPx, await read($, effectsAll), isAll => void setEffectsAll($, isAll), nowMs, opt, await read($, flowAll), isAll => void setFlowAll($, isAll), flowNow.questions ?? [])
-      // 판단 한 줄은 컴팩트 카드 안 타일(c-decide) 안 — 폭 = 패널 − 카드 − 타일
-      const effEl = u && inputsNow ? drawEfficiency(ui, u, allSums, nowMs, perm ? { ...inputsNow, after: perm.tokens } : inputsNow, cols - CARD_INSET * 2) : null
-      // 카드 접기(간략 보기): 접으면 제목 줄의 요약만. 세션마다 따로 기억
+      // 질문 합계(1.0): 한도 밖으로 밀린 질문 합 · 도는 질문 · 세션 누적 — 비용 요약 · 질문별 비용 머리가 같은 값("질문 밖" 은 화면마다 한 곳)
+      const tally: Tally = { older: await read($, turnsOlder), liveUsd: nowTurn?.cost.usd ?? 0, costUsd: u?.costUsd ?? null }
+      // 짜기는 ui-pane drawPaneMain — 여기선 읽기만(떼어 내기 전 순서 그대로)
+      const fullIds = await read($, stepsFull)
+      const flowLoadedNow = await read($, flowLoaded)
+      const flowNoteNow = await read($, flowNote)
+      const effectsAllNow = await read($, effectsAll)
+      const flowAllNow = await read($, flowAll)
       const open = await read($, cardsOpen)
-      const foldOf = (which: 'now' | 'history' | 'compact'): Fold => ({ isOpen: open[which], onToggle: () => void toggleCard($, which) })
-      const liveNote =
-        nowTurn
-          ? L(`진행 중 ${fmtUsd(nowTurn.cost.usd)}`, `running ${fmtUsd(nowTurn.cost.usd)}`)
-          : phase === 'compacting'
-            ? L('컴팩트 중', 'compacting')
-            : null
-      const history = drawHistory({ setAll: isAll => void setHistoryAll($, isAll), toggle: id => void toggleExpanded($, id) }, ui, allSums, nowMs, await read($, expandedTurn), await read($, historyAll), liveEl, cols - CARD_INSET, g, foldOf('history'), liveNote, qDetail, !isTerminal && sNowPane.questionHover)
-      // 같은 질문들을 다른 모델 요율로(9c) — 간략은 비용 요약 안, 자세히는 컨텍스트 · 비용 카드 안
-      const modelLine = u ? modelCompareText(allSums, u.model, ttlOf(u)) : null
-      // 세션 금액 색 기준은 화면 값(바와 같은 색)
-      const sPane = sNowPane
-      const colors = sPane.sessionColors
-      // 컴팩트 시점(0.6.0 — 설정 탭에서 옮김, 사용자 "현황에 넣는 정보가 맞아 보임"): 간단 = 드롭다운 한 줄, 자세히 = 풀이 · 전체 구간 표
-      const timingAct = {
-        save: (chosen: Settings) => void saveFromSettings($, chosen),
-        sizeError: (msg: string | null) => {
-          timingErr = msg
-          $.ui.invalidate('ui.render')
-        },
-        // O1(0.6.1 피드백): 현황 "?" 도 누르면 줄 아래 풀이 — 펼침 값은 설정 탭과 같은 곳(패널을 닫으면 처음대로)
-        toggle: (key: string) => void toggleFold($, key),
-      }
+      const expanded = await read($, expandedTurn)
+      const historyAllNow = await read($, historyAll)
       const openNow = await read($, settingsOpen)
-      const timingEl = (mode: 'simple' | 'detail') =>
-        drawCompactTiming(timingAct, ui, sPane, opt, u?.contextTokens ?? null, e.surface, cols - CARD_INSET, { ttl: ttlOf(u), measured: u?.cacheTtlMeasured === true, config: null }, mode, timingErr, openNow)
-      // 간단(12): 이 세션 카드(누적 · 질문 · 메인/🤖/⚙ · "지금" 결정 줄 하나) + 질문별 비용. 자세히: 지금까지의 패널 전부.
-      // "지금" 은 결정 줄 하나(상태 + 숫자 하나 + 할 일) — 예전엔 바 비용 줄을 옮긴 줄과 컴팩트 판단 줄이 따로라 같은 판단을 두 번
-      // 읽었다(2026-10-14 uxi D6). 간단엔 모델 견줌 줄을 안 붙인다(정보 최소), 자세히의 이 세션 카드에
-      // 업데이트 알림 카드 둘(업데이트 뒤 첫 실행 · 새 판)은 뺐다 — 탭 줄 업데이트 버튼 · 서랍이 맡는다(U4, 0.6.1 피드백 "늘 내용이 보이면 불편")
+      // 이지 오토가 일하는 중이면 크기별 비용 표 그 구간 줄에 "오토"
+      const autoBand = isAutoActive(await read($, auto)) ? { start: sNowPane.autoStart, end: sNowPane.autoEnd } : null
       // 맨 위 "모든 세션" 줄(0.5.1): 자세히 = 늘 오늘 · 이번 달, 간단 = 설정에서 켠 것만 — 바로 아래 "이 세션 · 누적 $" 와 짝.
       // 아직 아무도 안 쟀으면(모듈 다시 불러옴 등) 지금 잰다 — 도는 중이면 refreshSpend 가 건너뛴다
       const shownMode = await paneModeNow($)
-      const allLine = await allSpendOf($, sPane, shownMode)
+      const allLine = await allSpendOf($, sNowPane, shownMode)
       if (allLine?.state === 'measuring') void refreshSpend($, 5_000, true).catch(() => {})
-      const allEl = drawAllSpend(ui, allLine)
       // 패널 맨 아래 요율 줄의 "이 PC 는 10월 16일"(0.9.3) — 이번 달을 잰 값에서
       const rateSince = (await read($, spend))?.engineSince ?? null
-      body =
-        shownMode === 'simple' ? (
-          <Box flexDirection="column">
-            {allEl}
-            {drawSummary(ui, u, allSums, u ? decisionLine(ui, u, allSums, nowMs, inputsNow) : null, timingEl('simple'), null, foldOf('now'), colors, cols)}
-            {history}
-          </Box>
-        ) : (
-          <Box flexDirection="column">
-            {allEl}
-            {drawNow(ui, e.surface, u, nowMs, widthPx, perm, inputsNow, foldOf('now'), modelLine, colors)}
-            {history}
-            {drawCompactCard(ui, flowParts, effEl, foldOf('compact'), timingEl('detail'))}
-            {drawReference(ui, u, allSums.length > 0 ? allSums[allSums.length - 1]! : null, nowMs, rateSince)}
-          </Box>
-        )
+      body = drawPaneMain(
+        ui,
+        e.surface,
+        { u, sums: allSums, nowMs, now: nowTurn, phase, kind, detail: qDetail, tally, fullIds, flow: flowNow, flowLoaded: flowLoadedNow, flowNote: flowNoteNow, widthPx, effectsAll: effectsAllNow, flowAll: flowAllNow, opt, inputs: inputsNow, perm, cardsOpen: open, expanded, historyAll: historyAllNow, s: sNowPane, cols, g, timingErr, open: openNow, autoBand, mode: shownMode, allLine, rateSince },
+        paneMainActs($),
+      )
     }
     const paneMode = await paneModeNow($)
     const isDrawerOpen = await read($, updDrawer)
-    const paneMotion = sNowPane.motion !== 'reduce'
     const paneShrink = await shrinkNow($)
-    // B11(0.9.1): 패널 머리 게이지도 컴팩트 · 저장 중엔 진행 파랑으로 움직인다(그림 설명에 "컴팩트 중")
     const headPhase = await read($, compactPhase)
-    const headBusy = headPhase === 'compacting' || headPhase === 'tidying'
     return (
       // 폭을 못 박는다 — 데스크톱은 줄을 안 바꾸는 글(버튼 이름 등)이 길면 안쪽 틀이 그만큼 넓어져 다른 글이
       // 넓어진 틀에서 줄을 바꾸고 패널 밖으로 잘렸다(화면 크기와 상관없이)
       <Box flexDirection="column" width={cols}>
         {/* 탭: 사용량 · 설정. 설정은 자주 안 열어 탭으로 — 자주 보는 건 사용량 한 줄기에 둔다(예전에 질문별
             비용을 따로 열었더니 오가기 불편했다) */}
-        <Box key="pane-tabs" columnGap={2} rowGap={1} flexWrap="wrap" alignItems="center">
-          {/* 0.5 묶음 2: 탭 줄 머리에 게이지(고리 18px — 패널 이름 "이지 컴팩트" 의 상징, 데스크톱만. 0.6.0 실물: 앱 컨텍스트 고리 꼴, 바늘 뺌). 첫 탭 이름 "사용량" → "현황"
-              (N13 — 담긴 것이 이 세션 · 질문별 비용 · 컴팩트 시점 · 흐름 · 효과라 사용량보다 넓다), 탭은 이모지 없이 붙은 두 칸(앱 탭 꼴 — N20) */}
-          <Box key="pane-tab-group" columnGap={1} flexShrink={0} alignItems="center">
-            {(() => {
-              // 컴팩트 끝 줄어듦은 바 게이지와 같이 — 그동안 뒤 크기로 고정
-              const shrink = paneShrink
-              const moving = paneMotion
-              const busy = headBusy && !shrink
-              return gaugeEl(ui, e.surface, shrink ? shrink.to : (u?.contextTokens ?? 0), {
-                key: 'pane-head-gauge',
-                alt: u
-                  ? busy
-                    ? L(`컨텍스트 ${fmtTokens(u.contextTokens)} · ${headPhase === 'tidying' ? '저장 중' : '컴팩트 중'}`, `Context ${fmtTokens(u.contextTokens)} · ${headPhase === 'tidying' ? 'saving' : 'compacting'}`)
-                    : L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`)
-                  : L('컨텍스트 아직 모름', 'Context not known yet'),
-                px: 18,
-                motion: moving,
-                live: moving,
-                busy,
-                ...(shrink ? { fromCtx: shrink.from } : {}),
-              })
-            })()}
-            {segGroup(ui, 'pane-tab-pair', [
-              tab('usage', L('현황', 'Overview'), !isSettings, () => void openUsageTab($, 'main')),
-              tab('settings', L('설정', 'Settings'), isSettings, () => void openUsageTab($, 'settings')),
-            ])}
-          </Box>
-          {/* 사용량 탭에서 바로 간단 ⇄ 자세히 — 이 세션 보기만(기본은 설정 탭 "화면" 값, 프리셋은 세부를 못 바꾼다).
-              상위 탭과 한 단계 아래로 보이게 "보기" 이름 + 붙은 두 칸, 탭 줄 오른쪽 끝 — 좁으면 아래 줄 오른쪽(2026-10-14 uxi 안 A).
-              둥근 테두리 묶음은 데스크톱에서 위아래 한 줄씩 더 먹어(바 창 버튼에서 겪음) 테두리 없이 간격 0 */}
-          {/* 오른쪽 끝: [보기 간단|자세히](현황) · 버전 버튼(U4 — 0.9.1 U5 부터 개발본도 늘) */}
-          <Box key="pane-mode" columnGap={1} alignItems="center" flexGrow={1} justifyContent="flex-end" flexWrap="wrap">
-            {isSettings ? null : <ui.Text dimColor>{L('보기', 'View')}</ui.Text>}
-            {isSettings
-              ? null
-              : segGroup(ui, 'pane-mode-pair', [
-                  tab('simple', paneModeName('simple'), paneMode === 'simple', () => void setPaneMode($, 'simple')),
-                  tab('detail', paneModeName('detail'), paneMode === 'detail', () => void setPaneMode($, 'detail')),
-                ])}
-            {updateButton(ui, upd, isDrawerOpen, () => void toggleUpdateDrawer($))}
-          </Box>
-        </Box>
+        {drawPaneHead(
+          ui,
+          e.surface,
+          { u, isSettings, paneMode, upd, isDrawerOpen, motion: sNowPane.motion !== 'reduce', shrink: paneShrink, phase: headPhase },
+          { openTab: which => void openUsageTab($, which), setMode: mode => void setPaneMode($, mode), toggleDrawer: () => void toggleUpdateDrawer($) },
+        )}
         {/* 업데이트 서랍(U4): 버전 · 상태 · [업데이트 확인]/[업데이트] · 문제 제보 · 버전별 바뀐 것(U1) — 탭을 바꾸거나 패널을 닫으면 닫힌다(U3) */}
         {isDrawerOpen ? drawUpdateDrawer(settingsActs($), ui, upd, await $.clock.now(), e.surface, await diagViewOf($, 'drawer')) : null}
         {/* 세로 상자라 본문이 패널 폭을 꽉 채운다 — 가로 상자(예전)면 본문이 내용 폭이라 카드 끝선이 탭 · 보기마다 달랐다(fb A3) */}
@@ -3617,7 +4032,7 @@ export const register: Register = on => {
       const { Box, Text } = $.ui.resolve(e)
       return (
         <Box key="pane-error" flexDirection="column">
-          <Text color="error" wrap="wrap">{L('easy-compact 패널을 그리다 오류가 났습니다 — 이 글을 알려 주세요', 'easy-compact failed to draw this pane — please report this text')}</Text>
+          <Text color="error" wrap="wrap">{L('easy-compact 패널을 그리다 오류가 났습니다. 이 글을 알려 주세요', 'easy-compact failed to draw this pane. Please report this text')}</Text>
           <Text dimColor wrap="wrap">{String((err as Error)?.stack ?? err).slice(0, 1500)}</Text>
         </Box>
       )
@@ -3637,7 +4052,8 @@ export const register: Register = on => {
     const inner = await next(e)
     // 0.9.0: 터미널은 이 줄에 키보드 초점이 안 가서(엔진 초점 고리는 바 · 패널만) 바 자리 한 줄(AbovePrompt)이 펴는 버튼을 맡는다
     if (e.surface === 'terminal') return inner
-    const isTucked = await isBandTucked($)
+    const sMode = await currentSettings($)
+    const isTucked = !isSlim(sMode) && (await isBandTucked($))
     await ensureLang($)
     setSurface(e.surface)
     const { Box } = $.ui.resolve(e)
@@ -3646,7 +4062,8 @@ export const register: Register = on => {
     return (
       <Box key="ec-mode" columnGap={1} alignItems="center">
         {inner}
-        {isTucked ? await revealButton($, $.ui.resolve(e)) : null}
+        {isSlim(sMode) ? await slimButton($, $.ui.resolve(e), sMode) : isTucked ? await revealButton($, $.ui.resolve(e)) : null}
+        {isSlim(sMode) || isTucked ? await autoChip($, $.ui.resolve(e), sMode, e.surface) : null}
       </Box>
     )
   })
@@ -3658,24 +4075,31 @@ export const register: Register = on => {
     const sNow = await currentSettings($)
     setBandOrder(sNow.bandOrder)
     // 엔진 설문(빈 입력창에서 숫자로 답하는 "1: Yes" 줄)이 띠 자리를 쓰는 동안도 비켜 준다
-    if (e.props.hasSurvey || (await isBandTucked($))) {
+    if (e.props.hasSurvey || (!isSlim(sNow) && (await isBandTucked($)))) {
       // 데스크톱은 접혀도 펴져도 · 설문이 떠도 같은 뿌리(ec-band) — 엔진 몫(next)을 그 안에, 펴짐 = 바. 뿌리가 엔진 그대로 ↔ 바로 바뀌면
-      // 앱이 입력창 위 자리를 통째로 새로 만들어 입력창이 깜빡였다. 터미널은 그대로
+      // 앱이 입력창 위 자리를 통째로 새로 만들어 입력창이 깜빡였다. 터미널은 그대로. 1.0 진행 칸은 바를 접어도 대답하는 동안 보인다(설문 땐 비킴)
       if (e.surface !== 'terminal') {
-        const { Box } = $.ui.resolve(e)
+        const ui = $.ui.resolve(e)
+        const live0 = !e.props.hasSurvey && e.props.isWorking && slimViewOf(sNow).spin !== 'off' ? await read($, live) : null
         return (
-          <Box key="ec-band" flexDirection="column">
+          <ui.Box key="ec-band" flexDirection="column">
             {await next(e)}
-          </Box>
+            {e.props.hasSurvey ? null : await autoNoteOf($, ui, sNow)}
+            {live0 ? liveStrip(ui, live0, viewOf(sNow).info === 'full', e.surface, { isAlone: true }) : null}
+          </ui.Box>
         )
       }
       if (e.props.hasSurvey) return next(e)
       // 0.9.0 터미널: 펴는 버튼을 바 자리에 한 줄로(ctrl+x tab 으로 닿는다) — 입력창 아래 모드 줄엔 키보드 초점이 안 가고, 마켓 판엔 단축
-      // 명령도 없어 접은 바를 되살릴 길이 없었다(실제 CLI 로 확인). 데스크톱은 자리를 엔진에 돌려준다(모드 줄 버튼은 눌린다)
+      // 명령도 없어 접은 바를 되살릴 길이 없었다(실제 CLI 로 확인). 데스크톱은 자리를 엔진에 돌려준다(모드 줄 버튼은 눌린다). 이지 오토 칩도 이 줄
       const ui = $.ui.resolve(e)
       return (
-        <ui.Box key="band-folded" justifyContent="flex-end">
-          {await revealButton($, ui)}
+        <ui.Box key="band-folded-t" flexDirection="column">
+          {await autoNoteOf($, ui, sNow)}
+          <ui.Box key="band-folded" justifyContent="flex-end" columnGap={1}>
+            {await autoChip($, ui, sNow, e.surface)}
+            {await revealButton($, ui)}
+          </ui.Box>
         </ui.Box>
       )
     }
@@ -3687,6 +4111,26 @@ export const register: Register = on => {
     const view = await read($, paneView)
     const isConfirming = !e.props.isWorking && (await read($, isConfirmingCompact))
     const nowMs = u ? await $.clock.now() : 0
+    // 1.0 값 강조(flash.ts): 컨텍스트 · 세션 금액 · 캐시 색 단계가 오르면 값 글자 바탕 3번 깜빡 — 그리기마다 단계를 견주고(처음 본 값 ·
+    // 내려감은 조용히), 오르면 0.3초 시계를 건다. 칸은 아래 drawingBar 가 그린 칸만 넘어간다
+    // 이지 오토가 일하는 중이면 컨텍스트 값 깜빡임은 쉰다 — 사람을 부르는 알림은 오토에 맡긴다(명세 ③)
+    const autoBar = await autoBarOf($, sNow, u)
+    if (u) {
+      const isMotion = sNow.motion !== 'reduce'
+      const ranks = {
+        ctx: autoBar.isOn ? 0 : CTX_RANK[levelOf(u.contextTokens)],
+        sess: u.costUsd !== null ? sessRankOf(sessionColorOf(u.costUsd, sNow.sessionColors)) : 0,
+        cache: cacheRankOf(u, nowMs),
+      }
+      const isCtxUp = noteRank('ctx', ranks.ctx, isMotion)
+      const isSessUp = u.costUsd !== null && noteRank('sess', ranks.sess, isMotion)
+      const isCacheUp = noteRank('cache', ranks.cache, isMotion)
+      // 세션에 들어와 자리 잡은 뒤 첫 그리기면(session.attach) 그때 오른 값이 아니어도 급한 값을 한 번(flash.ts takeArrival)
+      const isArrive = takeArrival(nowMs, ranks, isMotion)
+      if (isCtxUp || isSessUp || isCacheUp || isArrive) startFlashTicker($)
+    }
+    // 값 강조 시계가 올리는 수를 읽어 둔다 — 강조 동안 이 칸만 다시 그린다
+    await read($, flashTick)
     const sums = await read($, turnSummaries)
     const now = e.props.isWorking ? await read($, live) : null
     const inputs = (await read($, optimal))?.inputs ?? null
@@ -3695,11 +4139,45 @@ export const register: Register = on => {
     const just = u?.isAfterCompact ? ((await read($, compactions)).at(-1) ?? null) : null
     const shrink = await shrinkNow($)
     const spendNow = await spendShownOf($, sNow)
-    const bar = drawBar(ui, e, { sNow, u, view, isConfirming, nowMs, sums, now, inputs, phase, kind, just, shrink, spendNow }, barActs($))
-    if (e.surface === 'terminal') return bar
+    // 1.0 슬림 요약 한 줄(슬림 알림 자리 — 사용자 "슬림도 한 줄 볼 수 있어야"): 아래 버튼으로 연다. 저장 · 컴팩트 중엔 닫는다(진행 줄).
+    // 보통 화면엔 요약이 없다 — 이동 흐름 A: 바가 곧 짧은 판, 게이지 = 사이드 패널 문(한 걸음)
+    const isBusy = phase === 'compacting' || phase === 'tidying'
+    const isSumOpen = e.surface !== 'terminal' && !isBusy && (await read($, summaryCard))
+    const isSlimSummary = isSumOpen && isSlim(sNow)
+    const isSlimDismissed = isSlim(sNow) ? await isSlimDismissedNow($) : false
+    const drafts = { tidyDraft: await read($, tidyDraft), compactDraft: await read($, compactDraft) }
+    // 클리어 경고 카드: 무엇을 잃는지 — 이 세션 질문 수(밀린 질문 포함, 밀린 수를 모르면 null)
+    const older = isConfirming && (await read($, isAskingClear)) ? await read($, turnsOlder) : undefined
+    const clearAsk = older === undefined ? null : { questions: older === null ? null : sums.length + older.count }
+    // 1.0 진행 칸(데스크톱 · 칸 "진행 중 질문 칸" 켬): 이 질문 값은 바 아래 진행 칸에. 바 질문 줄(칸 "지난 질문 줄")은 진행 칸과 상관없이 늘 지난
+    // 질문만 — 두 칸은 서로 독립, 처음 값은 예전 칸(작업 중 금액 ·
+    // 지난 · 진행 중 질문) 값을 잇는다
+    const isStrip = e.surface !== 'terminal' && slimViewOf(sNow).spin !== 'off'
+    // 값 강조는 바를 그리는 동안만 읽힌다(flash.ts drawingBar — 그린 칸을 적어 두면 시계가 다음 칸으로)
+    const bar = drawingBar(nowMs, () => drawBar(ui, e, { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, ...drafts, clearAsk, auto: autoBar }, barActs($)))
+    const noteEl = await autoNoteOf($, ui, sNow)
+    // 1.0 다른 플러그인 몫: 입력창 위 자리는 하나라 우리가 바만 돌려주면 체인에서 우리 아래 플러그인의 그림이 사라졌다(공식 code-modernization 도
+    // 터미널에서 이 자리를 씀 — 사용자 2026-10-18 "나중에 다른 플러그인 왔을 때 간섭 고려해줘") — 그 몫(next)을 우리 바 위에 같이 그린다(진행 칸이
+    // 입력창 바로 위에 붙게). 슬림이 위에 그릴 게 없으면(평소) 그 몫만 — 같은 뿌리(ec-band) 안에(접힌 바와 같은 까닭 — 입력창 깜빡임)
+    // 아래 몫이 실패해도(그 플러그인 오류 · 아래에 답할 것이 없는 시험 세계) 우리 바는 그린다
+    const others = await next(e).catch(() => null)
+    if (e.surface === 'terminal') {
+      return bar || noteEl ? (
+        <ui.Box key="ec-band-t" flexDirection="column">
+          {others}
+          {noteEl}
+          {bar}
+        </ui.Box>
+      ) : (
+        others
+      )
+    }
     return (
       <ui.Box key="ec-band" flexDirection="column">
+        {others}
+        {noteEl}
         {bar}
+        {isStrip && now ? liveStrip(ui, now, viewOf(sNow).info === 'full', e.surface, { isAlone: !bar }) : null}
       </ui.Box>
     )
   })

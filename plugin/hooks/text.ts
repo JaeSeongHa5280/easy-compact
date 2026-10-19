@@ -1,8 +1,8 @@
 import type { CostParts, StepDetail } from '../types'
-import { fmtTokens, fmtUsd, modelKey, modelName, otherModelOf, repriceTurns } from './cost'
+import { approxUsd, fmtTokens, fmtUsd, modelKey, modelName, otherModelOf, repriceTurns } from './cost'
 import { L, plural } from './i18n'
 import { onTerminal, withIcon } from './glyph'
-import { isTidyPrompt } from './tidy'
+import { autoTurnName, autoTurnOf, isTidyPrompt } from './tidy'
 
 // 사용량 = 지금(컨텍스트 · 비용) · 컴팩트 · 질문별 비용, 설정은 패널 안 탭(예전 이름 '비용' 은 내용보다 좁았다)
 // 0.5 묶음 2(N13): 패널 이름 "이지 컴팩트" — 사용량뿐 아니라 컴팩트 판단 · 시점 · 효과까지 담은 mod 의 상세 본체.
@@ -24,19 +24,102 @@ export const PLUGIN_SENT = /^The [\w.-]+ plugin sent a message:\s*/
 export const PROMPT_KEEP = 1000
 
 export function promptHead(text: string): string {
+  // 알림으로 시작한 질문(사람이 친 글이 아님)은 기계 글 대신 이름
+  const notice = noticeName(text)
+  if (notice !== null) return notice
+  // 사람이 못 보는 덩어리는 통째로 빼고, 슬래시 명령 · ! 명령은 친 꼴로, 글 속 그림 자리 표시는 [그림]
+  let s = text
+  for (const tag of HIDDEN_TAGS) s = s.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?(?:</${tag}>|$)`, 'g'), ' ')
+  s = s
+    .replace(/<command-name>\s*([^<]*?)\s*<\/command-name>/g, ' $1 ')
+    .replace(/<command-args>([^<]*)<\/command-args>/g, ' $1 ')
+    .replace(/<bash-input>([^<]*)<\/bash-input>/g, ' ! $1 ')
+    .replace(/\[Image #(\d+)\]/g, (_m, n: string) => L(`[그림 ${n}]`, `[image ${n}]`))
+    .replace(/\[Image: source: [^\]]*\]/g, () => L('[그림]', '[image]'))
   // 붙여넣은 글은 앱이 <pasted_content id="…"> 로 감싸 보낸다 — 태그째 보였다. 태그만 지우고 원문 그대로
   // (📋 를 붙였더니 원문이 아닌 것처럼 보였다)
-  const one = text
+  const one = s
     .replace(/<pasted_content\b[^>]*>/g, ' ')
     .replace(/<\/pasted_content\b[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(PLUGIN_SENT, '')
   if (isTidyPrompt(one)) return withIcon('🗜', L(...TIDY_TURN))
+  // 이지 오토 요약 · 이어가기 턴은 글 머리표만(시안 1019a 진행 칸 "[이지 오토 · 요약]") — 기록한 머리표도 그릴 때 지금 언어로
+  const auto = autoTurnOf(one)
+  if (auto !== null) return autoTurnName(auto)
   // 저장 턴 이름은 기록할 때 그 언어 글로 남는다 — 그릴 때 지금 언어로(L1). 질문 글은 그대로
   const bare = one.replace(/^🗜\s*/, '')
   if (bare === TIDY_TURN[0] || bare === TIDY_TURN[1]) return withIcon('🗜', L(...TIDY_TURN))
+  const bareC = one.replace(/^↪\s*/, '')
+  if (bareC === CONTINUED[0] || bareC === CONTINUED[1]) return continuedName()
+  // 알림 이름 · 그림 이름도(기록할 때 그 언어 글로 남는다) 지금 언어로
+  const plain = one.replace(/^(?:⚙|💬)\s*/, '')
+  for (const [, icon, ko, en] of NOTICE_TURNS) {
+    const label = plain.startsWith(ko) ? ko : plain.startsWith(en) ? en : null
+    if (label !== null) return withIcon(icon, L(ko, en)) + plain.slice(label.length)
+  }
+  const at = ATTACH_HEAD.exec(one)
+  if (at) {
+    const image = Number(at[1] ?? at[2] ?? 0)
+    const other = Number(at[3] ?? at[4] ?? 0)
+    return attachHead(promptHead(one.slice(at[0].length)), image > 0 ? { image, other: 0 } : { image: 0, other })
+  }
   return clipText(one, PROMPT_KEEP)
+}
+
+/**
+ * 엔진 · 앱이 질문 글에 함께 넣는, 사람이 화면에서 못 보는 덩어리(여는 태그 ~ 닫는 태그) — 질문 이름에서 통째로 뺀다. 닫는 태그가
+ * 없으면(1000자에서 잘린 옛 기록) 끝까지. 사용자(2026-10-17): 질문별 비용에 질문 대신 "<system-reminder> The session …" 이 보였다 —
+ * "사람이 알아보기 힘든 태그 말고 · 사람이 볼 수 없는 내용으로 길게 나와 봤자 도움 안 됨". 사람이 친 글의 꺾쇠는 그대로(아는 태그만)
+ */
+const HIDDEN_TAGS = ['system-reminder', 'user-prompt-submit-hook', 'local-command-caveat', 'local-command-stdout', 'local-command-stderr', 'bash-stdout', 'bash-stderr', 'command-message']
+
+/** 사람이 친 글이 아니라 알림으로 시작한 질문 — 내용(기계 글) 대신 이름. [알아보는 글, 아이콘, 한국어, 영어] */
+const NOTICE_TURNS: readonly (readonly [RegExp, string, string, string])[] = [
+  [/^\s*\[SYSTEM NOTIFICATION\b|<task-notification>/, '⚙', '백그라운드 작업 알림', 'Background task notice'],
+  [/^\s*<side-sessions-event>/, '⚙', '다른 세션 소식', 'Other sessions update'],
+  [/^\s*<ci-monitor-event>/, '⚙', 'PR 소식', 'PR update'],
+]
+
+function noticeName(text: string): string | null {
+  for (const [re, icon, ko, en] of NOTICE_TURNS) {
+    if (!re.test(text)) continue
+    // 백그라운드 작업 알림이면 그 작업 이름(작업을 띄울 때 적은 설명 — 요약 줄의 "…" 안)
+    const name = /<summary>[^<"]*"([^"<]{1,120})"/.exec(text)?.[1]
+    return withIcon(icon, L(ko, en)) + (name ? ` — ${name}` : '')
+  }
+  return null
+}
+
+/** 질문에 붙인 그림 · 파일 수 — 엔진이 글과 따로 준다(prompt.submit 의 attachments) */
+export type AttachCounts = { readonly image: number; readonly other: number }
+
+/** 기록한 질문 이름 앞의 그림 · 첨부 이름(언어를 바꿔 다시 그릴 때 알아본다) */
+const ATTACH_HEAD = /^(?:🖼\s+|📎\s+)?(?:그림 (\d+)장|(\d+) images?|첨부 (\d+)개|(\d+) attachments?)(?: · |$)/
+
+/**
+ * 질문 이름 앞에 붙인 것: 그림뿐이면 "🖼 그림 N장", 다른 파일이 섞이면 "📎 첨부 N개", 글이 없으면 이름만. 사용자(2026-10-17): 그림만 보낸
+ * 질문이 "(글 없음)" — "그림 · 스크린샷 첨부처럼". 글 속 어디에 있었는지는 엔진이 안 준다(글에 자리 표시가 있으면 그 자리에 [그림 N])
+ */
+export function attachHead(head: string, a: AttachCounts | null): string {
+  const total = a ? a.image + a.other : 0
+  if (!a || total === 0) return head
+  const label =
+    a.other === 0
+      ? withIcon('🖼', L(`그림 ${a.image}장`, `${a.image} image${a.image === 1 ? '' : 's'}`))
+      : withIcon('📎', L(`첨부 ${total}개`, `${total} attachment${total === 1 ? '' : 's'}`))
+  return head ? `${label} · ${head}` : label
+}
+
+/**
+ * 글도 그림도 없이 시작한 메인 질문(엔진의 이어 가기 — turn.start 글 "") 이름 — 기록할 때 붙이고 그릴 때 지금 언어로. 빈 글은 예전에
+ * "(이어서 진행)" 으로 짐작해 그렸는데 실제로는 그림만 보낸 질문이었다
+ */
+const CONTINUED = ['새 질문 없이 이어서 한 작업', 'Continued without a new question'] as const
+
+export function continuedName(): string {
+  return withIcon('↪', L(...CONTINUED))
 }
 
 /** 저장 턴 질문 이름(한국어 · 영어) */
@@ -157,7 +240,8 @@ export function agoText(atMs: number, nowMs: number): string {
  * read · output · input 은 0.4.0 부터 적어(그 전 기록엔 usd · write 만) hasParts 로 가른다. running = 아직 안 끝난(done false)
  * 에이전트가 있다
  */
-export type AgentSum = { usd: number; steps: number; count: number; running: boolean; read: number; write: number; output: number; input: number; hasParts: boolean }
+/** runningCount = 지금 도는 에이전트 수(1.0 — 캐릭터를 도는 수만큼 줄지어 그린다) */
+export type AgentSum = { usd: number; steps: number; count: number; running: boolean; runningCount: number; read: number; write: number; output: number; input: number; hasParts: boolean }
 
 export function agentSum(details: readonly StepDetail[] | undefined): AgentSum | null {
   const agents = (details ?? []).filter(d => d.agent)
@@ -168,6 +252,7 @@ export function agentSum(details: readonly StepDetail[] | undefined): AgentSum |
     steps: sum(d => d.steps ?? 1),
     count: agents.length,
     running: agents.some(d => d.done === false),
+    runningCount: agents.filter(d => d.done === false).length,
     read: sum(d => d.read),
     write: sum(d => d.write),
     output: sum(d => d.output),
@@ -187,8 +272,8 @@ export function modelCompareText(turns: readonly { cost: CostParts; appUsd?: num
   // 질문들이 다 지금 모델이면 "지금 Opus 5.5 $Y", 모델을 바꿔 가며 했으면 "실제 $Y"(지금 모델 이름을 붙이면 틀린 말)
   const isAllNow = r.models.length === 1 && r.models[0] === modelKey(model)
   return L(
-    `같은 질문 ${r.count}개를 ${modelName(other)} 로 ~${fmtUsd(r.other)} · ${isAllNow ? `지금 ${modelName(model)}` : '실제'} ${fmtUsd(r.now)}`,
-    `The same ${plural(r.count, 'question')} on ${modelName(other)} ~${fmtUsd(r.other)} · ${isAllNow ? `now ${modelName(model)}` : 'actual'} ${fmtUsd(r.now)}`,
+    `같은 질문 ${r.count}개를 ${modelName(other)} 로 ${approxUsd(r.other)} · ${isAllNow ? `지금 ${modelName(model)}` : '실제'} ${fmtUsd(r.now)}`,
+    `The same ${plural(r.count, 'question')} on ${modelName(other)} ${approxUsd(r.other)} · ${isAllNow ? `now ${modelName(model)}` : 'actual'} ${fmtUsd(r.now)}`,
   )
 }
 
@@ -283,18 +368,19 @@ export function callsOf(steps: number, details?: readonly StepDetail[]): number 
 
 /**
  * 질문 줄의 에이전트: 간략 = "🤖 에이전트 1개", 자세히 = "🤖 에이전트 1개 $3.56 포함" — 질문 값에 이미 들어 있다는 말을 붙인다.
- * 값 옆에 "🤖 $3.56" 만 있으니 $16.43 과의 관계가 헷갈렸다. 도는 중이면 그 말도. 없으면 null
+ * 값 옆에 "🤖 $3.56" 만 있으니 $16.43 과의 관계가 헷갈렸다. 도는 중이면 그 말도. 1.0: 다 끝났으면 "에이전트 1개 완료
+ * · $3.56 포함". 없으면 null
  */
 export function agentPart(details: readonly StepDetail[] | undefined, withUsd: boolean): string | null {
   const a = agentSum(details)
   if (!a) return null
-  const run = a.running ? L(' · 도는 중', ' · running') : ''
-  return withIcon(
-    '🤖',
-    withUsd
-      ? L(`에이전트 ${a.count}개 ${fmtUsd(a.usd)} 포함${run}`, `${plural(a.count, 'agent')} ${fmtUsd(a.usd)} included${run}`)
-      : L(`에이전트 ${a.count}개${run}`, `${plural(a.count, 'agent')}${run}`),
-  )
+  const head = L(`에이전트 ${a.count}개`, plural(a.count, 'agent'))
+  if (!a.running) {
+    const done = L(`${head} 완료`, `${head} done`)
+    return withIcon('🤖', withUsd ? L(`${done} · ${fmtUsd(a.usd)} 포함`, `${done} · ${fmtUsd(a.usd)} included`) : done)
+  }
+  const run = L(' · 도는 중', ' · running')
+  return withIcon('🤖', withUsd ? L(`${head} ${fmtUsd(a.usd)} 포함${run}`, `${head} ${fmtUsd(a.usd)} included${run}`) : `${head}${run}`)
 }
 
 /** 질문별 비용 동작 줄의 컴팩트 글: "🗜 컴팩트 530k → 84k" */
@@ -354,6 +440,70 @@ export function switchText(from: string | null | undefined, to: string): string 
   return from ? `${modelName(from)} → ${modelName(to)}` : modelName(to)
 }
 
+/**
+ * 도구 종류(1.0 시안 1017n ③ — 사용자 "명령어(Claude 가 쓰는) 부분은 색, 동작마다 다른 색" → 종류별 다섯 색): 읽기 · 고치기 · 명령 · 에이전트 ·
+ * 앱 도구(MCP 등 그 밖)
+ */
+export type ToolKind = 'read' | 'edit' | 'cmd' | 'agent' | 'app'
+
+const TOOL_KINDS: Readonly<Record<string, ToolKind>> = {
+  Read: 'read', Grep: 'read', Glob: 'read', LS: 'read', WebFetch: 'read', WebSearch: 'read', NotebookRead: 'read',
+  Edit: 'edit', Write: 'edit', MultiEdit: 'edit', NotebookEdit: 'edit',
+  Bash: 'cmd', PowerShell: 'cmd', BashOutput: 'cmd', KillShell: 'cmd', Monitor: 'cmd',
+  Agent: 'agent', Task: 'agent', Workflow: 'agent',
+}
+
+/** 앱 · 연결 도구 중 아는 것의 쉬운 이름 [한국어, 영어] — 안에서 쓰는 이름(update_plan 등)은 사람이 못 알아봤다(시안 1017n 점검 표). 모르는 도구는 이름 그대로 */
+const TOOL_NAMES: Readonly<Record<string, readonly [string, string]>> = {
+  update_plan: ['할 일 목록', 'Task list'],
+  TodoWrite: ['할 일 목록', 'Task list'],
+  wrap_up: ['마무리', 'Wrap-up'],
+  SendUserFile: ['파일 보내기', 'Send file'],
+  show_widget: ['그림 보이기', 'Show visual'],
+  read_me: ['그림 안내 읽기', 'Read visual guide'],
+  ToolSearch: ['도구 찾기', 'Find tools'],
+  Skill: ['스킬', 'Skill'],
+  mark_chapter: ['장 나누기', 'Mark chapter'],
+  start_session: ['새 세션', 'Start session'],
+  AskUserQuestion: ['물어보기', 'Ask'],
+  SendMessage: ['메시지 보내기', 'Send message'],
+  Artifact: ['아티팩트', 'Artifact'],
+  // 메인 대화가 에이전트를 띄운 요청(그 요청 값 = 띄우라고 쓴 메인 요청 값) — "Agent 설명 $0.42" 가 에이전트가 쓴 값처럼 읽혀, 바로 위
+  // 에이전트 줄(에이전트 자신의 요청 · Haiku 면 $0.01 이하)과 겹쳐 보였다
+  Agent: ['에이전트 띄우기', 'Start agent'],
+  Task: ['에이전트 띄우기', 'Start agent'],
+}
+
+const hasKey = (o: object, k: string) => Object.prototype.hasOwnProperty.call(o, k)
+
+/** 동작 이름 한 칸: 도구(원래 이름) · 보이는 이름 · 종류 · 대상(파일 · 설명 · 검색어) */
+export type ToolPart = { name: string; shown: string; kind: ToolKind; rest: string }
+
+/** 도구 이름처럼 생긴 낱말 — 아는 도구, 또는 MCP 도구 꼴(snake_case · 낱말 둘 넘는 PascalCase) */
+function isToolWord(w: string): boolean {
+  return hasKey(TOOL_KINDS, w) || hasKey(TOOL_NAMES, w) || /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(w) || /^[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)+$/.test(w)
+}
+
+/**
+ * 동작 이름(stepLabel 이 "도구 대상" 을 ", " 로 이은 글)을 도구 칸으로 — 그릴 때 도구 이름만 종류 색 · 쉬운 이름. 첫 칸이 도구가 아니면(답변
+ * 작성 등 mod 이름) 빈 배열(글 그대로). 설명에 든 ", " 는 앞 도구에 붙인다
+ */
+export function toolParts(label: string): ToolPart[] {
+  const parts: ToolPart[] = []
+  for (const piece of label.split(', ')) {
+    const sp = piece.indexOf(' ')
+    const word = sp < 0 ? piece : piece.slice(0, sp)
+    if (isToolWord(word)) {
+      const named = TOOL_NAMES[word]
+      parts.push({ name: word, shown: named ? L(named[0], named[1]) : word, kind: TOOL_KINDS[word] ?? 'app', rest: sp < 0 ? '' : piece.slice(sp + 1) })
+    } else if (parts.length > 0) {
+      const last = parts[parts.length - 1]!
+      last.rest = last.rest ? `${last.rest}, ${piece}` : piece
+    } else return []
+  }
+  return parts
+}
+
 /** 도구 호출 하나의 이름: 도구와 대상(파일 이름 · 설명 · 검색어) */
 function toolLabel(tool: { name: string; input: unknown }): string {
   const input = (tool.input ?? {}) as Record<string, unknown>
@@ -383,9 +533,10 @@ function toolLabel(tool: { name: string; input: unknown }): string {
   }
 }
 
-/** 요청 하나가 한 일: 도구를 불렀으면 그 이름들, 아니면 답변 작성. 70자로 자른다 */
+/** 요청 하나가 한 일: 도구를 불렀으면 그 이름들, 아니면 답변 작성. 240자로 자른다 */
 export function stepLabel(toolUses: readonly { name: string; input: unknown }[]): string {
   if (toolUses.length === 0) return L('답변 작성', 'Writing the answer')
   const label = toolUses.map(toolLabel).join(', ').replace(/\s+/g, ' ').trim()
-  return label.length > 70 ? `${label.slice(0, 69)}…` : label
+  // 240자까지 저장 — 그리는 곳이 칸 폭에 맞춰 자른다. 예전 70자는 넓은 패널 · 나중에 펼쳐 볼 때도 잘린 글이었다(1.0 시안 1017n ②)
+  return label.length > 240 ? `${label.slice(0, 239)}…` : label
 }

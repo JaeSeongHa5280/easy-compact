@@ -55,7 +55,7 @@ export function statusLineText(v: StatusLineInput): string {
 /** 설정 줄 풀이(마우스 올림 칩) */
 export function statusLineUse(): string {
   return L(
-    '턴 끝에 앱이 "다음 단계" 상자(단추로 묻는 칸)를 띄우는 동안엔 바가 빠집니다 — 앱 동작이라 mod 로 못 막습니다. 켜면 입력창 아래에 바의 요지를 한 줄로 늘 둡니다. 예: 🟦 이지 컴팩트 · 컨텍스트 140k · 컴팩트 구간 200k~250k · 세션 $8.40',
-    'While the app shows its "next step" box at the end of a turn (the one asking with buttons), the bar is taken away — that is the app, a mod can’t stop it. Turn this on to keep the gist of the bar as one line below the input, e.g. 🟦 Easy Compact · Context 140k · compact range 200k~250k · Session $8.40',
+    '앱이 "다음 단계" 상자를 띄우는 동안엔 바가 빠집니다. 켜면 입력창 아래에 바의 요지를 한 줄로 늘 둡니다.',
+    'While the app shows its "next step" box, the bar is taken away. Turn this on to keep its gist as one line below the input.',
   )
 }

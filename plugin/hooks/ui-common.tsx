@@ -4,11 +4,16 @@ import { barSvg, CTX_MARK_PAD, ctxBarSvg, fmtTokens, fmtUsd, levelOf, modelName,
 import type { BarAnim } from './cost'
 import { gaugeFrac, gaugeSvg, gaugeWidth, redDepth } from './gauge'
 import type { GaugeShape } from './gauge'
-import { agentCharSvg } from './agent-char'
+import { AGENT_MAX_SHOWN, type AgentPose, agentCharSvg, agentCharWidth, workCharSvg, workCharWidth } from './agent-char'
+import { flashText } from './flash'
+import type { FlashKey } from './flash'
 import { L } from './i18n'
+import { MIN_ENGINE } from './paths'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
 import { barCells } from './cells'
-import { cellsOf, fitCells, compactStepText, labelNow, widthOf } from './text'
+import { cellsOf, fitCells, compactStepText, labelNow, toolParts, widthOf } from './text'
+import type { ToolKind } from './text'
+import { isAutoSaveKind } from './tidy'
 
 /**
  * 화면 공통 조각 — 카드 · 줄 · 칸 · 막대 · 색.
@@ -82,7 +87,7 @@ export function gaugeEl(
   ui: Ui,
   surface: string,
   ctx: number,
-  o: { key: string; alt: string; px: number; blink?: boolean; motion?: boolean; from?: number; fromCtx?: number; live?: boolean; busy?: boolean },
+  o: { key: string; alt: string; px: number; blink?: boolean; motion?: boolean; from?: number; fromCtx?: number; live?: boolean; busy?: boolean; lit?: boolean },
 ) {
   const Svg = svgOf(ui, surface)
   if (!Svg) return null
@@ -90,17 +95,21 @@ export function gaugeEl(
   // 컴팩트 끝 줄어듦: 앞 크기(fromCtx)의 채움에서 지금으로 — 색은 진행 파랑에서(B11, 컴팩트 중이 파랑이었다)
   const hasFrom = o.fromCtx !== undefined && o.fromCtx > 0
   const shape = gaugeShapeNow()
+  // 깜빡이는 게이지(틀)는 그림이 바뀌면 틀이 다시 떠 빈 상자가 번쩍인다 — 일하는 중에도 깜빡이니(1.0) 채움은 5% · 깊이는 4단계로 묶어 요청마다
+  // 같은 그림이게
+  const frac = gaugeFrac(ctx, t.ctxWarn, t.ctxCut)
   const source = gaugeSvg({
     px: o.px,
     shape,
-    frac: gaugeFrac(ctx, t.ctxWarn, t.ctxCut),
+    frac: o.blink ? Math.round(frac * 20) / 20 : frac,
     level: levelOf(ctx),
-    blink: o.blink ? redDepth(ctx, t.ctxCut) : null,
+    blink: o.blink ? Math.round(redDepth(ctx, t.ctxCut) * 4) / 4 : null,
     motion: o.motion,
     from: hasFrom ? gaugeFrac(o.fromCtx!, t.ctxWarn, t.ctxCut) : o.from,
     fromLevel: hasFrom ? levelOf(o.fromCtx!) : undefined,
     ...(hasFrom ? { fromBusy: true } : {}),
     ...(o.busy === true ? { busy: true } : {}),
+    ...(o.lit === true ? { lit: true } : {}),
   })
   // live = 샌드박스 틀(isInteractive). 앱은 화면을 다시 그릴 때 같은 틀(iframe)만 남기고 img 는 새로 만든다 — img 면 깜빡임 · 줄어듦이
   // 다시 그릴 때마다 처음부터라 움직이지 않는 것처럼 보였다(앱 2.37337 렌더러 실측 · 사용자 "애니메이션 안 됨"). 같은 그림이면 틀이 남아 이어진다
@@ -120,7 +129,7 @@ export function gaugeShapeNow(): GaugeShape {
 
 export type RasterElement = (props: { key: string; columns: number; rows: number; cells: string }) => unknown
 
-/** 설정 "움직임"(S1) — register 가 설정을 읽을 때 넣는다(thresholds · bandOrder 와 같은 방식). 꺼지면 에이전트 캐릭터도 서 있는 그림 */
+/** 설정 "애니메이션"(S1 — 옛 이름 움직임) — register 가 설정을 읽을 때 넣는다(thresholds · bandOrder 와 같은 방식). 꺼지면 에이전트 캐릭터도 서 있는 그림 */
 let isMotionOn = true
 
 export function setMotion(on: boolean): void {
@@ -128,21 +137,64 @@ export function setMotion(on: boolean): void {
 }
 
 /**
- * 에이전트 표시(B4, 0.6.1 피드백): 데스크톱은 🤖 대신 도트 캐릭터 그림 — 그 에이전트가 도는 동안만 걷고(샌드박스 틀 isInteractive — 다시 그려도
- * 같은 그림이면 앱이 틀을 남겨 움직임이 이어진다), 끝나면 서 있는 기본 모습. 터미널 · 그 밖 표면은 null(글 그대로 — 터미널은 그림 글자 없이)
+ * 에이전트 표시(B4, 0.6.1 피드백): 데스크톱은 🤖 대신 도트 캐릭터 그림 — 그 에이전트가 도는 동안만 움직이고(샌드박스 틀 isInteractive — 다시
+ * 그려도 같은 그림이면 앱이 틀을 남겨 움직임이 이어진다), 끝나면 DONE 표지판을 든 그림(1.0 사용자). 터미널 · 그 밖 표면은 null(글 그대로 —
+ * 터미널은 그림 글자 없이)
  */
-export function agentMark(ui: Ui, key: string, isRunning: boolean) {
+export function agentMark(ui: Ui, key: string, running: boolean | number) {
   const Svg = onDesktop() ? (ui as unknown as { Svg?: SvgElement }).Svg : undefined
   if (!Svg) return null
-  const isWalking = isRunning && isMotionOn
+  // running = 도는 에이전트 수(참 = 하나). 1.0: 도는 수만큼 작은 벌레 셋까지, 움직임을 끄면 쉬는 그림, 다 끝나면 DONE 표지판
+  const count = typeof running === 'number' ? running : running ? 1 : 0
+  const isRunning = count > 0
+  const pose: AgentPose = isRunning ? (isMotionOn ? 'run' : 'still') : 'done'
+  const n = pose === 'run' ? count : 1
   return (
     <Svg
       key={key}
-      source={agentCharSvg(16, isWalking)}
-      alt={isRunning ? L('에이전트 도는 중', 'Agent running') : L('에이전트', 'Agent')}
-      width={16}
+      source={agentCharSvg(16, pose, n)}
+      alt={isRunning ? (count > 1 ? L(`에이전트 ${count}개 도는 중`, `${count} agents running`) : L('에이전트 도는 중', 'Agent running')) : L('에이전트 끝남', 'Agents done')}
+      width={agentCharWidth(16, pose, n)}
       height={16}
-      {...(isWalking ? { isInteractive: true as const } : {})}
+      {...(pose === 'run' ? { isInteractive: true as const } : {})}
+    />
+  )
+}
+
+/**
+ * 단계 값 글(1.0 — 사용자 2026-10-18 "단계 색 글 함수 통합 — 깜빡일 값은 한 함수로 그리게, 화면은 그대로"): 컨텍스트 · 요청당 · 세션 금액 ·
+ * 캐시처럼 단계 색으로 급함을 말하는 값은 모두 이것으로 그린다 — 단계 색 + 입력창 위 바를 그리는 동안 단계가 오르면 바탕 3번 깜빡(flash.ts).
+ * 바 밖(패널 · 설정 견본)은 같은 함수여도 색만(바탕은 drawingBar 안에서만 켜진다). 예전엔 자리마다 flashText 를 따로 불러 새 줄(슬림 알림
+ * 줄)이 빠뜨렸다. key = 무엇의 단계(ctx · sess · cache), color = 그 단계 색(없으면 색 없이). noFlash = 단계 색만(확인 카드 — 결정하는
+ * 칸이라 조용히), bold false = 굵게 안 함. 이 함수 밖에서 flashText 를 부르거나 바 파일(ui-band · ui-bar)에서 LEVEL_TEXT 를 글 색으로
+ * 바로 쓰면 tools/check-stage-text.mjs 가 막는다
+ */
+export function stageText(ui: Ui, key: FlashKey, color: string | undefined, children: unknown, o: { noFlash?: boolean; bold?: false; textKey?: string } = {}) {
+  const look = o.noFlash ? (color ? { color } : {}) : flashText(key, color)
+  return (
+    <ui.Text {...(o.textKey ? { key: o.textKey } : {})} {...(o.bold === false ? {} : { bold: true })} {...look}>
+      {children}
+    </ui.Text>
+  )
+}
+
+/**
+ * 1.0 진행 칸 캐릭터(노트북 진행 막대 — agent-char workCharSvg): 데스크톱만, 움직임 끔이면 쉬는 그림. isFrame false = 그림(img — 설정 견본처럼
+ * 열고 닫히는 자리, 틀은 뜰 때 빈 상자가 번쩍). 대답하는 동안 칸은 틀이라 다시 그려도 움직임이 이어진다. isStill = 늘 쉬는 그림(패널 진행 중 줄 —
+ * 크기 경계)
+ */
+export function workMark(ui: Ui, key: string, isFrame = true, isStill = false) {
+  const Svg = onDesktop() ? (ui as unknown as { Svg?: SvgElement }).Svg : undefined
+  if (!Svg) return null
+  const isRun = isMotionOn && !isStill
+  return (
+    <Svg
+      key={key}
+      source={workCharSvg(16, isRun ? 'run' : 'still')}
+      alt={L('진행 중', 'Running')}
+      width={workCharWidth(16)}
+      height={16}
+      {...(isRun && isFrame ? { isInteractive: true as const } : {})}
     />
   )
 }
@@ -150,15 +202,17 @@ export function agentMark(ui: Ui, key: string, isRunning: boolean) {
 /**
  * 에이전트 글("🤖 에이전트 1개 …" — text.ts agentPart 등)을 그린다: 데스크톱은 🤖 자리에 도트 캐릭터(agentMark), 그 밖은 글 그대로. prefix =
  * 앞에 붙는 " · " 같은 글, textProps = 글 꼴(흐림 · 색 · 줄바꿈). 0.9.4: 컴팩트 글("🗜 컴팩트 …" · "🗜 저장 중 …")도 — 🗜 자리에 지금 꼴
- * 표시(compactMark)
+ * 표시(compactMark). noMark = 그림 없이 글만(🤖 도 빼고 — 진행 칸처럼 그림이 줄 앞에 따로 있을 때, 그림 두 번 없게)
  */
-export function agentText(ui: Ui, key: string, text: string, isRunning: boolean, textProps: Record<string, unknown> = {}, prefix = '') {
+export function agentText(ui: Ui, key: string, text: string, isRunning: boolean | number, textProps: Record<string, unknown> = {}, prefix = '', noMark = false) {
   const { Box, Text } = ui
   const AGENT = '🤖 '
   const COMPACT = '🗜 '
   const isAgent = text.startsWith(AGENT)
   const ICON = isAgent ? AGENT : COMPACT
   const mark = isAgent ? agentMark(ui, `${key}-mark`, isRunning) : text.startsWith(COMPACT) ? compactMark(ui, `${key}-mark`) : null
+  // 셋 넘게 돌면 그림 옆 "+N"(그림은 셋까지 — 줄 폭을 지킨다)
+  const extra = isAgent && typeof isRunning === 'number' && isRunning > AGENT_MAX_SHOWN && isMotionOn ? `+${isRunning - AGENT_MAX_SHOWN} ` : ''
   if (!mark)
     return (
       <Text key={key} {...textProps}>
@@ -168,8 +222,8 @@ export function agentText(ui: Ui, key: string, text: string, isRunning: boolean,
   return (
     <Box key={key} flexDirection="row" alignItems="center" columnGap={0.5}>
       {prefix ? <Text {...textProps}>{prefix}</Text> : null}
-      {mark}
-      <Text {...textProps}>{text.slice(ICON.length)}</Text>
+      {noMark ? null : mark}
+      <Text {...textProps}>{`${noMark ? '' : extra}${text.slice(ICON.length)}`}</Text>
     </Box>
   )
 }
@@ -373,24 +427,105 @@ export function stepText(d: StepDetail): { text: string; note: string } {
   return { text, note }
 }
 
-export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, boxCols: number, g: Grid, hasMore = false) {
+/**
+ * 도구 종류 글 색(1.0 시안 1017n ③ ★ 종류별 다섯 색) — 단계 색(주황 · 빨강 = 급함, 초록 = 아낌, 파랑 점 = 진행)과 안 겹치게. 테마 이름은 밝은 ·
+ * 어두운 테마를 따르고(읽기 = 강조 파랑, 고치기 = 보라, 앱 도구 = 회색), 테마에 없는 청록 · 분홍은 두 테마 다 읽히는 중간 밝기
+ */
+export const TOOL_COLOR: Readonly<Record<ToolKind, string>> = { read: 'suggestion', edit: 'autoAccept', cmd: '#1f9a8c', agent: '#d1589a', app: 'inactive' }
+
+/**
+ * 메인 요청 동작 글을 조각으로: 도구 이름은 종류 색 · 굵게(앱 도구는 쉬운 이름), 대상은 보통 글. maxCells 에 맞춰 끝을 자른다(자른 끝 "…" 은
+ * 그 조각 꼴). 도구 칸이 아니면(답변 작성 등) null — 부르는 쪽이 글 그대로
+ */
+function toolPieces(raw: string): { text: string; kind?: ToolKind }[] | null {
+  const parts = toolParts(raw)
+  if (parts.length === 0) return null
+  const pieces: { text: string; kind?: ToolKind }[] = []
+  parts.forEach((p, i) => {
+    if (i > 0) pieces.push({ text: ', ' })
+    pieces.push({ text: p.shown, kind: p.kind })
+    if (p.rest) pieces.push({ text: ` ${p.rest}` })
+  })
+  return pieces
+}
+
+/** 동작 한 줄의 보이는 글(메인 요청은 도구 쉬운 이름으로) · 줄 끝 경고 — 그리기와 잘림 판정이 같은 글을 쓴다 */
+function rowShown(d: StepDetail): { shown: string; text: string; note: string; isMain: boolean } {
+  const { text, note } = stepText(d)
+  const isMain = !d.agent && !d.app && !d.compact
+  const pieces = isMain ? toolPieces(labelNow(d.label)) : null
+  return { shown: pieces ? pieces.map(p => p.text).join('') : text, text, note, isMain }
+}
+
+/** 동작 줄 글이 들어갈 칸(금액 · 가지 표시 · 줄 끝 경고를 뺀 자리) */
+function rowCells(g: Grid, boxCols: number, note: string): number {
+  return Math.max(8, textCells(g, boxCols - BULLET_W - g.amountW - 1) - cellsOf(note))
+}
+
+/** 동작 줄 중 칸 폭을 넘어 끝이 잘리는 줄이 있나 — 그 질문에만 [글 다 보기] 를 둔다(1.0 시안 1017o 안 3) */
+export function detailCut(details: readonly StepDetail[], boxCols: number, g: Grid): boolean {
+  return details.some(d => {
+    const r = rowShown(d)
+    return cellsOf(r.shown) > rowCells(g, boxCols, r.note)
+  })
+}
+
+/**
+ * [글 다 보기 ▾] · [한 줄로 ▴] — 질문마다 하나(1.0 시안 1017o 안 3, 사용자 "줄마다 누르면 질문 강조 색과 겹치고 버튼이 많아짐"): 그 질문의
+ * 잘린 동작 줄을 모두 그 자리에서 줄 바꿈. 펼친 줄엔 바탕색이 없다(회색은 질문 강조 하나만)
+ */
+export function fullButton(ui: Ui, key: string, isOn: boolean, onPress: () => void) {
+  const { Button } = ui
+  return <Button key={key} label={isOn ? L('한 줄로 ▴', 'One line ▴') : L('글 다 보기 ▾', 'Full text ▾')} variant="secondary" onPress={onPress} />
+}
+
+function toolLine(ui: Ui, key: string, raw: string, maxCells: number): unknown[] | null {
+  const pieces = toolPieces(raw)
+  if (pieces === null) return null
+  const { Text } = ui
+  let left = fitCells(pieces.map(p => p.text).join(''), maxCells)
+  const els: unknown[] = []
+  pieces.forEach((p, i) => {
+    if (left.length === 0) return
+    const take = left.startsWith(p.text) ? p.text : left
+    left = left.slice(take.length)
+    els.push(
+      p.kind ? (
+        <Text key={`${key}-t${i}`} bold color={TOOL_COLOR[p.kind]}>
+          {take}
+        </Text>
+      ) : (
+        <Text key={`${key}-t${i}`}>{take}</Text>
+      ),
+    )
+  })
+  return els
+}
+
+/** isFull = [글 다 보기] 로 편 질문 — 자르지 않고 그 자리에서 줄 바꿈(1.0 시안 1017o 안 3) */
+export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, boxCols: number, g: Grid, hasMore = false, isFull = false) {
   const { Box, Text } = ui
+  const wrap = isFull ? ('wrap' as const) : ('truncate-end' as const)
   return details.map((d, j) => {
-    const { text, note } = stepText(d)
-    // "-" · 금액 칸 · 사이를 뺀 자리에 맞게 미리 자른다(줄을 안 바꾸는 글이 길면 패널 틀이 넓어진다)
-    const label = fitCells(text, Math.max(8, textCells(g, boxCols - BULLET_W - g.amountW - 1) - cellsOf(note)))
+    const { text, note, isMain } = rowShown(d)
+    // "-" · 금액 칸 · 사이를 뺀 자리에 맞게 미리 자른다(줄을 안 바꾸는 글이 길면 패널 틀이 넓어진다). 편 질문은 자르지 않는다
+    const maxCells = isFull ? Number.POSITIVE_INFINITY : rowCells(g, boxCols, note)
+    const label = fitCells(text, maxCells)
+    // 메인 요청이면 도구 이름만 종류 색 · 쉬운 이름(1.0 시안 1017n ③) — 에이전트 · 앱 자체 요청 · 컴팩트 줄은 제 머리 그대로
+    const tools = isMain ? toolLine(ui, `${key}-${j}`, labelNow(d.label), maxCells) : null
     return (
-      <Box key={`${key}-${j}`} columnGap={1}>
+      // 편 질문은 여러 줄 — 가지 표시 · 금액은 첫 줄에 맞춘다(가운데에 오면 어느 줄 값인지 흐렸다)
+      <Box key={`${key}-${j}`} columnGap={1} alignItems="flex-start">
         {/* 아래에 "그 밖 동작" 줄이 붙으면(hasMore) 마지막도 ├─ */}
         <Text dimColor>{j === details.length - 1 && !hasMore ? '└─' : '├─'}</Text>
         {usdCell(ui, d.usd, false, g.amountW)}
         <Box flexShrink={1} minWidth={0}>
           {/* 에이전트 줄은 데스크톱이면 🤖 대신 도트 캐릭터(B4) — 그 에이전트가 도는 동안 걷는다. 컴팩트 줄은 🗜 대신 지금 꼴 표시(0.9.4) */}
           {((d.agent && label.startsWith('🤖 ')) || (d.compact && label.startsWith('🗜 '))) && onDesktop() ? (
-            agentText(ui, `${key}-${j}-agent`, label, d.done === false, { wrap: 'truncate-end' })
+            agentText(ui, `${key}-${j}-agent`, label, d.done === false, { wrap })
           ) : (
-            <Text wrap="truncate-end">
-              {label}
+            <Text wrap={wrap}>
+              {tools ?? label}
               {note ? <Text color="warning">{note}</Text> : null}
             </Text>
           )}
@@ -415,7 +550,9 @@ export function phaseLook(phase: unknown, kind: unknown, hasIcon = true): { hex:
   // 바는 🗜 를 따로 파랗게 그려 글엔 빼고 받는다(hasIcon = false)
   const icon = (text: string) => (hasIcon ? withIcon('🗜', text) : text)
   // 글자색은 테마 suggestion(밝은 · 어두운 테마 둘 다 읽히는 파랑) — 점 · 🗜 의 고정 파랑과 같은 계열
-  if (phase === 'tidying') return { hex: PHASE_HEX.tidying, color: ACCENT, text: icon(L('저장 중 → 끝나면 컴팩트', 'Saving → then compact')) }
+  // 이지 오토 저장 중(compactKind = kindAutoSave)이면 이름을 붙인다(시안 1019a "이지 오토 · 저장 중 → 끝나면 컴팩트")
+  if (phase === 'tidying')
+    return { hex: PHASE_HEX.tidying, color: ACCENT, text: icon(isAutoSaveKind(kind) ? L('이지 오토 · 저장 중 → 끝나면 컴팩트', 'Easy Auto · saving → then compact') : L('저장 중 → 끝나면 컴팩트', 'Saving → then compact')) }
   if (phase !== 'compacting') return null
   const name = typeof kind === 'string' && kind ? kind : L('컴팩트', 'Compact')
   return { hex: PHASE_HEX.compacting, color: ACCENT, text: icon(L(`${name} 중…`, `${name} in progress…`)) }
@@ -424,10 +561,13 @@ export function phaseLook(phase: unknown, kind: unknown, hasIcon = true): { hex:
 /** 보통 진행 중 질문의 깜빡이는 점(ACCENT 와 비슷한 파랑) */
 export const LIVE_HEX = '#4c9be8'
 
-/** 깜빡이는 점: 데스크톱은 깜빡이는 그림, 터미널은 같은 색 ● 한 칸(그림 글자 대신 — 띠 버튼의 🟡 · 🔴 를 뺀 자리의 색 표시) */
-export function pulseDot(ui: Ui, surface: string, hex: string, alt: string) {
+/**
+ * 깜빡이는 점: 데스크톱은 깜빡이는 그림, 터미널은 같은 색 ● 한 칸(그림 글자 대신 — 띠 버튼의 🟡 · 🔴 를 뺀 자리의 색 표시). isFrame false =
+ * 그림(img — 설정 견본처럼 열고 닫히는 자리, 틀은 뜰 때 빈 상자가 번쩍)
+ */
+export function pulseDot(ui: Ui, surface: string, hex: string, alt: string, isFrame = true) {
   const Svg = svgOf(ui, surface)
-  if (Svg) return <Svg source={pulseSvg(hex, 10)} alt={alt} width={10} height={10} isInteractive />
+  if (Svg) return <Svg source={pulseSvg(hex, 10)} alt={alt} width={10} height={10} {...(isFrame ? { isInteractive: true as const } : {})} />
   return surface === 'terminal' ? <ui.Text color={hex}>●</ui.Text> : null
 }
 
@@ -577,6 +717,40 @@ const SEG_BG = 'rgba(128,128,128,0.08)'
 const SEG_EDGE = 'rgba(128,128,128,0.32)'
 /** 고른 칸 테두리 — 칸 테두리보다 한 단 진하게(크기별 비용 표의 고른 줄도 같은 테두리) */
 export const SEG_ON_EDGE = 'rgba(128,128,128,0.5)'
+
+/**
+ * 잠긴 묶음 버튼: 정해 둔 화면이 정하는 옵션도 고를 수 있는 값을 다 보인다 — 묶음 틀(segGroup 과 같은 바탕 · 테두리) 안에 흐린 글, 고른 칸은 테두리.
+ * 누를 수 없게 버튼이 아니라 글(데스크톱은 버튼 흐림을 안 그려 누를 수 있는 것처럼 보였다). 터미널은 고름 꼴 "✓ 이름" 흐린 글. 키는 <칸>-locked
+ */
+export function lockedSeg(ui: Ui, key: string, items: readonly { key: string; label: string; isOn: boolean }[]) {
+  const { Box, Text } = ui
+  if (onTerminal()) {
+    return (
+      <Box key={key} columnGap={2} flexWrap="wrap" alignItems="center">
+        {items.map(it => (
+          <Box key={`${it.key}-locked`}>
+            <Text dimColor>{`${it.isOn ? '✓' : ' '} ${it.label}`}</Text>
+          </Box>
+        ))}
+      </Box>
+    )
+  }
+  return (
+    <Box key={key} columnGap={0} alignItems="center" flexWrap="wrap" borderStyle="round" borderColor={SEG_EDGE} backgroundColor={SEG_BG} paddingX={0.25} paddingY={0.2}>
+      {items.map(it =>
+        it.isOn ? (
+          <Box key={`${it.key}-locked`} borderStyle="round" borderColor={SEG_ON_EDGE} paddingX={0.8}>
+            <Text dimColor>{it.label}</Text>
+          </Box>
+        ) : (
+          <Box key={`${it.key}-locked`} paddingX={0.8}>
+            <Text dimColor>{it.label}</Text>
+          </Box>
+        ),
+      )}
+    </Box>
+  )
+}
 
 export function segGroup(ui: Ui, key: string, children: unknown) {
   const { Box } = ui
@@ -903,7 +1077,21 @@ export function tipRow(
       {tip.mark}
     </Box>
   )
-  return settingRow(ui, key, named, toggle?.isOpen ? desc : null, control, tip.card ? [tip.card, ...extra] : extra, stack)
+  // 1.0: 연 풀이는 이름 칸이 아니라 줄 아래 — 부품이 제자리에 남는다
+  const below = toggle?.isOpen
+    ? [
+        <Box key={`${key}-desc`} paddingBottom={onTerminal() ? 0 : 0.4}>
+          {typeof desc === 'string' ? (
+            <Text dimColor wrap="wrap">
+              {desc}
+            </Text>
+          ) : (
+            desc
+          )}
+        </Box>,
+      ]
+    : []
+  return settingRow(ui, key, named, null, control, [...below, ...(tip.card ? [tip.card] : []), ...extra], stack)
 }
 
 /** 설정 줄 부품 폭 어림(칸): 버튼 하나 = 글 + 양옆(데스크톱 3 · 터미널 "[ 글 ]" 4) · 드롭다운 = 가장 긴 고르기 + 4 */
@@ -926,6 +1114,18 @@ export function choiceControl(ui: Ui, key: string, options: readonly { value: st
     const { Select } = ui
     return <Select key={key} options={options} value={value} onSelect={v => onPick(v)} />
   }
+  return segGroup(
+    ui,
+    `${key}-seg`,
+    options.map(o => segButton(ui, `${key}-${o.value}`, o.label, o.value === value, () => onPick(o.value))),
+  )
+}
+
+/**
+ * 고를 것을 다 늘어놓는 묶음 버튼(툴바) — 어느 표면이든. 1.0 컴팩트 문구:
+ * 고를 것 넷까지 · 한 줄에 들 때는 묶음 버튼(한 번에 보이고 한 번 누름), 그보다 많거나 값 목록이면 드롭다운(choiceControl)
+ */
+export function segChoice(ui: Ui, key: string, options: readonly { value: string; label: string }[], value: string, onPick: (value: string) => void) {
   return segGroup(
     ui,
     `${key}-seg`,
@@ -998,5 +1198,20 @@ export function emptyLine(ui: Ui, key: string, text: string) {
     <Text key={key} dimColor wrap="wrap">
       {`· ${text}`}
     </Text>
+  )
+}
+
+/** 낮은 엔진 판 안내 — Button 없이 글 한 줄(낮은 판은 Button 안 글을 못 그린다) */
+export function oldEngineNote(ui: Ui, at: string) {
+  const { Box, Text } = ui
+  return (
+    <Box key="old-engine">
+      <Text color="warning">
+        {L(
+          `이지 컴팩트는 Claude Code ${MIN_ENGINE} 이상이 필요합니다. 이 세션은 ${at} 입니다. 업데이트한 뒤 새 세션을 여세요(앱: Check for Updates · 터미널: claude update).`,
+          `Easy Compact needs Claude Code ${MIN_ENGINE} or later; this session runs ${at}. Update, then start a new session (app: Check for Updates · terminal: claude update).`,
+        )}
+      </Text>
+    </Box>
   )
 }

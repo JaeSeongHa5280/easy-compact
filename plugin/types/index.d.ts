@@ -59,8 +59,8 @@ export type Settings = {
    */
   bandAutoOpen: boolean
   /**
-   * 화면 프리셋(설정 탭 맨 위): 간단 · 기본 · 자세히는 보기 값(ScreenView)을 정해 두고 바꾸지 못한다 — 세부는 보기만.
-   * 커스텀은 custom 값을 쓰고 다 바꾼다
+   * 화면 프리셋(설정 탭 맨 위): 간단 · 자세히는 보기 값(ScreenView)을 정해 두고 바꾸지 못한다 — 세부는 보기만. 커스텀은 custom 값을 쓰고
+   * 다 바꾼다. 슬림 화면(slim)이 켜져 있는 동안은 쉰다(값은 남아 끄면 돌아온다)
    */
   screen: ScreenPreset
   /** 커스텀의 보기 값 — 처음 커스텀을 고를 때 그때 프리셋 값을 옮겨 둔다(그 전엔 null) */
@@ -70,8 +70,12 @@ export type Settings = {
    * 바꾼다 — 보기가 아니라 사람마다 다른 예산 경고선, 사용자 2026-10-13). 0.4.0 은 커스텀 보기 값 안에 있었다(normalizeSettings 가 옮김)
    */
   sessionColors: [number, number, number]
-  /** 한도 줄 칸(5시간 · 7일 · 리셋까지 남은 시간) — 화면 프리셋과 따로. 0.4.0 은 보기 값 안에 있었다(normalizeSettings 가 옮김) */
-  limitShow: LimitShow
+  /**
+   * 오늘 · 이번 달 금액 색 기준(달러, 오름차순 — 1.0, 사용자 2026-10-18 "오늘 · 이번 달도 색상 · 깜빡임은 안 해야 됨"): 넘으면 노랑 · 주황 ·
+   * 빨강. 세션 금액 색과 같은 꼴 · 따로 값. 깜빡이지 않는다(한 번 넘으면 그날 · 그달 내내 넘어 있다)
+   */
+  todayColors: [number, number, number]
+  monthColors: [number, number, number]
   /**
    * 질문 강조(기본 끔 — 0.9.2, 그 전엔 켬): 답변 끝 질문 비용 칩이나 사용량 패널의 그 질문 줄에 마우스를 올리면 칩 · 패널 줄 · 그 답변이 함께
    * 회색(엔진 hover scope · reveal). 답변 글에 올려선 반응 없음. 데스크톱만 — 터미널 설정 탭엔 줄이 없다
@@ -84,16 +88,9 @@ export type Settings = {
   paneAutoOpen: boolean
   /** 사용량 패널: 모든 데스크톱 세션 같이 열고 닫기(기본 끔) — 사람이 연 · 닫은 것을 떠 있는 다른 데스크톱 세션이 따라 한다. 터미널은 늘 혼자 */
   paneShared: boolean
-  /**
-   * 바 비용 줄에 오늘 · 이번 달 사용량(기본 끔, 모든 화면 공통): 이 PC 의 모든 세션 기록(하위 에이전트 포함)의 요청 합을 공식 요율로
-   * 센 API 정가 환산 — 앱 자체 요청(다음 질문 제안 · 컴팩트 요청 등)은 기록에 없어 빠져 "~". 구독이어도 API 요금제여도 같은 자리
-   *
-   */
-  spendToday: boolean
-  spendMonth: boolean
   /** 0.5 묶음 2(N15): 바 비용 줄 칸 순서(BAND_ORDER_DEFAULT 의 이름들) — 설정 "바 · 패널" 에서 ◂ 로 한 칸씩 앞으로 */
   bandOrder: string[]
-  /** 0.5 묶음 2(N20): 모션 — system = OS 동작 줄이기만 따름, reduce = 게이지 · 점 움직임 없음(앱 "모션" 값은 mod 가 못 읽는다) */
+  /** 0.5 묶음 2(N20): 모션 — system = OS 동작 줄이기만 따름, reduce = 게이지 · 점 움직임 · 값 깜빡임 없음(앱 "모션" 값은 mod 가 못 읽는다) */
   motion: 'system' | 'reduce'
   /** B1(0.6.1 피드백): 바 · 설명 칩의 컨텍스트 · 컴팩트 구간 숫자 꼴 — size = 281k, pct = 최대 컨텍스트 대비 28%(앱 '11% 사용됨' 과 같은 셈), both = 281k(28%) */
   ctxUnit: 'size' | 'pct' | 'both'
@@ -101,7 +98,64 @@ export type Settings = {
   gaugeShape: 'bar' | 'ring' | 'vbar' | 'cells'
   /** 0.9.0 B10: 입력창 아래 한 줄($.ui.status — 크기 단계 · 컨텍스트 · 컴팩트 구간 · 세션 금액). 앱이 "다음 단계" 상자 동안 바를 빼서. 기본 끔 */
   statusLine: boolean
+  /**
+   * 이지 오토 구간(2026-10-19 — 모든 세션 공통, 켜고 끄기는 세션마다 입력창 아래 칩): 답이 끝났을 때 앞쪽(autoStart)을 넘었으면 저장 →
+   * 컴팩트, 일하는 도중 뒤쪽(autoEnd)을 넘으면 끊고 저장 → 컴팩트 → 이어가기. 처음 값은 그때의 컴팩트 구간(그 뒤 따로)
+   */
+  autoStart: number
+  autoEnd: number
 }
+
+/**
+ * 이지 오토 사슬 하나(세션마다 · 상태 auto 안). wait = 답 끝 0.5초 기다림(사람 글이 오면 쉼) · saving = 요약 턴 · compacting = /compact ·
+ * continuing = 이어가기 턴(긴 일 길만). turnId = 우리 턴(글 머리표 "[이지 오토" 로 알아본다 — 우리 훅은 우리 보내기를 못 본다)
+ */
+export type AutoChain = {
+  path: 'end' | 'mid'
+  stage: 'wait' | 'saving' | 'compacting' | 'continuing'
+  /** 그 단계에 들어간 시각 — 10분 넘게 묵은 사슬은 버린다 */
+  atMs: number
+  turnId: string | null
+  /** 사슬을 건 때의 컨텍스트 */
+  before: number
+  /** 컴팩트를 시작한 뒤 사람 · 다른 세션 글이 들어왔다 — 이어가기를 안 보낸다 */
+  isInterrupted?: boolean
+}
+
+/**
+ * 이지 오토 세션 상태(상태 auto — 다시 불림에 남고, $.store auto:<세션> 에도 적어 앱을 다시 켜도 이어받는다).
+ * stop = 자동 멈춤(stuck 컴팩트하고도 앞쪽 아래로 못 내려감 · again 앞 컴팩트 뒤 요청 3번 안에 또 넘음) — 칩 "오토 멈춤".
+ * note = 입력창 위 한 줄(멈춤 둘 · cold 캐시 만료 · model 모델 바뀜으로 저절로 꺼짐), ✕ 로 닫는다.
+ * since = 앞 사슬의 컴팩트가 끝난 뒤 메인 요청 수(자동 멈춤 판정)
+ */
+export type AutoState = {
+  on: boolean
+  stop: 'stuck' | 'again' | null
+  note: 'stuck' | 'again' | 'cold' | 'model' | null
+  chain: AutoChain | null
+  since: { atMs: number; requests: number } | null
+  atMs: number
+}
+
+/** 바 꼴(1.0): button = 평소 입력창 위가 비고 아래 버튼 하나(슬림) · one = 바 한 줄(간단) · three = 한도 · 비용 · 질문 세 줄(자세히) */
+export type BarLayout = 'button' | 'one' | 'three'
+
+/** 칸 단계: 끔 · 필요할 때(지금 색이 바뀌는 문턱부터) · 늘 */
+export type PartLevel = 'off' | 'need' | 'on'
+
+/**
+ * 칸(1.0 — 화면마다): ctx 컨텍스트 · btn 컴팩트 버튼(아래 버튼 꼴) · cache 캐시 남은 시간 · lim 한도(5시간 · 7일) · resets 리셋까지 남은 시간 ·
+ * sess 이 세션 금액 · req 요청당 · today 오늘 · month 이번 달 · range 컴팩트 구간 · last 지난 · 진행 중 질문(세 줄 꼴) · chip 답변 끝 칩 ·
+ * spin 작업 중 금액. 칸마다 고를 수 있는 단계 · 쓰는 바 꼴은 settings.ts PARTS
+ */
+export type PartKey = 'ctx' | 'btn' | 'cache' | 'lim5' | 'lim7' | 'resets' | 'sess' | 'req' | 'today' | 'month' | 'range' | 'last' | 'chip' | 'spin'
+
+export type PartShow = Record<PartKey, PartLevel>
+
+/** 1.0 전 슬림 이름(같은 것) */
+export type SlimLevel = PartLevel
+export type SlimKey = PartKey
+export type SlimShow = PartShow
 
 /** 오늘 · 이번 달 사용량(달러) — atMs 에 잰 값. tools/scan-spend.mjs 결과를 cost.ts spendUsd 로 센 것 */
 /** retroMonth = 이번 달 값 중 잰 값이 없는 컴팩트 어림(M2 — 장부 전 · 질문 기록 60개 밖, 대화 기록의 컴팩트 크기로) */
@@ -117,6 +171,11 @@ export type SpendTotals = { atMs: number; today: number; month: number; retroMon
 export type UpdateState = {
   /** dev = 폴더로 불러온 개발본(0.9.1 — 버튼은 늘 보이되 업데이트 명령은 없다) */
   phase: 'idle' | 'checking' | 'latest' | 'newer' | 'updating' | 'done' | 'failed' | 'synced' | 'dev'
+  /**
+   * phase dev 에서 개발자 모드 스위치가 꺼짐(2026-10-17 — ~/.claude/mods/README.md "개발자 모드"): 판 표시에 "개발자 모드" 를 안 붙여
+   * 공개판처럼, 서랍 글로 꺼진 것을 알린다. 공개판엔 스위치를 읽는 코드가 없어 늘 비어 있다
+   */
+  devOff?: boolean
   own: string | null
   market: string | null
   marketAt: string | null
@@ -139,15 +198,20 @@ export type UpdateState = {
 export type ChangeGroup = { head: string; items: string[] }
 
 /**
- * 화면 프리셋: 간단(처음 쓰는 분 · 정보 최소) · 자세히(AI 를 잘 아는 분 · 정보 전부) · 커스텀(다 고름). 0.4.0 의 기본('basic')은
- * 뺐다 — 바가 자세히와 같고 차이는 패널 보기뿐이었다. 저장값 'basic' 은 자세히로 옮긴다
+ * 화면 프리셋(1.0 — 시안 preview-1017d 안 3): 슬림(익숙해진 분 · 필요한 것만) · 간단(처음 쓰는 분 · 정보 최소) · 자세히(AI 를 잘 아는 분 ·
+ * 정보 전부) · 커스텀(다 고름). 0.4.0 의 기본('basic')은 간단으로, 1.0 전 따로 켜던 슬림(slim) · 개발본의 'glance' 는 슬림으로 옮긴다
  */
-export type ScreenPreset = 'simple' | 'detail' | 'custom'
+export type ScreenPreset = 'slim' | 'simple' | 'detail' | 'custom'
 
 /** 프리셋이 정하는 보기 값 — 창 상태(바 크기 · 접기 · 패널 자동 열기 · 같이)는 넣지 않는다(창 버튼과 같은 값) */
 export type ScreenView = {
-  /** 바에 보일 비용 · 질문 줄 칸 — 끈 칸은 빠지고, 칸이 다 빠진 줄은 줄째 빠진다. 한도 줄은 Settings.limitShow */
-  bandShow: CostShow
+  /** 바 꼴 — 아래 버튼(슬림) · 한 줄(간단) · 세 줄(자세히) */
+  layout: BarLayout
+  /**
+   * 칸마다 끔 · 필요할 때 · 늘(1.0 — 사용자 "필요할 때 · 늘 · 끄기 옵션이 기본 옵션에서도"). 1.0 전엔 비용 · 질문 줄 칸만 켬/끔이고 한도 줄 ·
+   * 오늘 · 이번 달은 화면과 따로였다(normalizeSettings 가 옮김)
+   */
+  parts: PartShow
   /**
    * 정보량 — 최소(간단) / 전부(자세히). 사용량 패널의 처음 보기도 정한다(최소 = 간략, 전부 = 자세히 — settings.ts paneModeOf).
    * 0.4.1 작업 중 따로 있던 "패널 보기" 를 합쳤다. 패널 위 [간략][자세히] 는 이 세션만 잠깐
@@ -155,6 +219,10 @@ export type ScreenView = {
   info: InfoLevel
 }
 
+/**
+ * 현황 보기(사이드 패널 — 자세히 보고 싶은 사람 몫). 한 장 요약은 패널이 아니라 입력창 위 요약 카드(게이지 · 슬림 아래 버튼으로 엶 —
+ * 1.0 시안 3판 "보기는 위, 공부는 옆")
+ */
 export type PaneMode = 'simple' | 'detail'
 
 /**
@@ -172,7 +240,7 @@ export type QuestionDetail = 'summary' | 'steps'
 /**
  * 바 크기. full = 최대(한도 · 비용 · 질문 세 줄 + 이지 컴팩트 버튼), min = 최소 한 줄(요청당 · 컨텍스트 · 컴팩트 구간 +
  * 사용량 패널 · 이지 컴팩트 버튼 — 캐시 · 한도 · 질문 줄은 뺀다). 늘 떠 있어 거슬린다는 말에서 min 과 자동 숨김(bandAuto) ·
- * 안 보이기(bandHidden)를 더했다. 0.2.0 의 'auto' 는 min + bandAuto 로 옮긴다(normalizeSettings)
+ * 안 보이기(bandHidden)를 더했다. 0.2.0 의 'auto' 는 min + bandAuto 로 옮긴다(normalizeSettings). 슬림 화면은 크기와 상관없이 슬림 꼴
  */
 export type BandMode = 'full' | 'min'
 
@@ -396,6 +464,12 @@ export type TurnSummary = {
   turnId?: string
 }
 
+/**
+ * 질문 기록 한도(TURNS_KEEP) 밖으로 밀린 질문들의 합(1.0) — 개수 · 금액 · 그중 에이전트 · 앱 자체 요청. 질문 합계 = 남긴 줄 + 이것.
+ * rebuilt = 대화 기록에서 다시 센 몫이 있다(1.0 전 세션 — 앱 자체 요청 · 컴팩트 값은 기록에 없어 빠진다)
+ */
+export type TurnsOlder = { count: number; usd: number; agentUsd: number; appUsd: number; rebuilt?: true }
+
 /** 컨텍스트 흐름 그래프의 점: 메인 모델 요청 하나 */
 export type CtxPoint = {
   atMs: number
@@ -413,17 +487,27 @@ export type CtxPoint = {
 export type CompactEvent = {
   atMs: number
   trigger: string
-  /** 컴팩트 직전 · 직후 첫 요청의 컨텍스트. 직후는 다음 요청이 와야 안다 */
+  /**
+   * 컴팩트 직전 · 직후 첫 요청의 컨텍스트(기본 적재 + 남긴 대화 + 새 질문 글). 직후는 다음 요청이 와야 안다 — 그 전엔 null(어림은
+   * kept + 기본 적재, flow.ts afterGuess)
+   */
   before: number
   after: number | null
   /** 컴팩트 요청의 실제 값(엔진이 준 토큰 × 요율). 기록 파일로만 안 경우는 없다 — 추정으로 보인다 */
   costUsd: number | null
   index: number
   /**
-   * 요약(새로 쓴 몫): 컴팩트 뒤 첫 요청이 캐시에서 못 읽고 새로 낸 토큰(input + cache_creation) — 요약 · 다시 붙은 파일 · 새 질문.
-   * 나머지(시스템 · 도구 · 메모리)는 컴팩트 요청이 데워 둬 읽는다. 그 요청이 캐시가 식은 뒤였거나 못 쟀으면 없다(직후 − 첫 요청으로 어림)
+   * 요약(새로 쓴 몫): 컴팩트 뒤 첫 요청이 캐시에서 못 읽고 새로 낸 토큰(input + cache_creation) — 컴팩트 비용의 요약 쓰기 값. 컴팩트
+   * 요청이 데워 둔 앞부분(시스템 · 도구 — 2026-10-18 이 PC 실측 58.6k)만 읽고 메모리 · 요약 · 다시 붙은 파일 · 새 질문은 새로 쓴다.
+   * 그 요청이 캐시가 식은 뒤였거나 못 쟀으면 없다(직후 − 첫 요청으로 어림)
    */
   summary?: number | null
+  /**
+   * 남긴 대화: 엔진이 컴팩트 결과로 준 크기(tokensAfter = 기록 compact_boundary 의 postTokens) — 경계 + 요약 + 다시 붙인 파일 + 훅
+   * 결과(엔진 2.1.299 실행 파일). 기본 적재(시스템 지시 · 도구 · 메모리)는 안 든다 — 화면의 "컴팩트 요약". 0.6.0 ~ 1.0 은 이 값을
+   * 직후 크기로 써 상주가 18k(기본 적재 0)로 보였다. 엔진이 안 줬으면 없다
+   */
+  kept?: number
 }
 
 /**
@@ -444,12 +528,16 @@ declare module 'claude-code' {
   interface PluginState {
     'easy-compact': {
       isConfirmingCompact: boolean
+      /** 확인 카드 [클리어]를 눌러 같은 자리가 경고 카드로 바뀜(2026-10-19) */
+      isAskingClear: boolean
       paneView: PaneView | null
       /** 터미널(CLI) 세션이 열어 둔 화면 — 데스크톱 세션은 $.store 'pane' 을 같이 따르고, 터미널 세션은 이것만 본다 */
       localPane: PaneView | null
       usage: Usage | null
       live: LiveTurn | null
       turnSummaries: TurnSummary[]
+      /** 한도 밖으로 밀린 질문들의 합 — null = 모름(1.0 전 파일이 한도까지 참 · 아직 대화 기록에서 못 채움) */
+      turnsOlder: TurnsOlder | null
       /** "정리 후 컴팩트" 진행 단계. 진행 중이면 버튼 대신 상태 글자를 그려 다시 못 누르게 한다 */
       compactPhase: CompactPhase
       /** 도는 컴팩트의 이름("바로 컴팩트" · "저장 끝 → 컴팩트" · "클로드 기본 compact" · "클로드 기본 auto-compact") — 컴팩트 중 글에 붙는다 */
@@ -458,6 +546,8 @@ declare module 'claude-code' {
       expandedTurn: number | null
       /** 답변 아래 칩에서 상세(분해 · 동작별 값)를 펼친 질문들(atMs) — 처음엔 다 접힘 */
       answerOpen: number[]
+      /** 질문별 비용에서 동작 줄을 [글 다 보기]로 편 질문들(끝난 질문 = atMs, 진행 중 = 'live') — 1.0 시안 1017o 안 3 */
+      stepsFull: (number | 'live')[]
       /** 설정 미리보기의 질문 비용 견본을 펼쳤는가(이 세션만, 패널을 닫으면 접힘) */
       previewOpen: boolean
       /** 질문별 비용: true 면 전체, 아니면 최근 5개 */
@@ -527,6 +617,12 @@ declare module 'claude-code' {
       paneModeLocal: PaneMode | null
       /** 자동으로 펴진 바를 ✕ 로 다시 접은 단계(warn · cut · cold) — 그보다 급해질 때만 다시 편다. 컴팩트하면 null */
       autoDismissed: string | null
+      /** 1.0 요약 카드(입력창 위 — 게이지 · 슬림 아래 버튼으로 엶)가 열려 있나. 저장 · 컴팩트를 시작하면 닫는다 */
+      summaryCard: boolean
+      /** 1.0 값 강조 시계(0.2초)가 올리는 수 — 바만 읽어 강조 동안 그 칸만 다시 그린다 */
+      flashTick: number
+      /** 이지 오토(이 세션) — null 이면 아직 안 읽음(세션 시작 때 저장소 · 마지막으로 고른 값으로 채운다) */
+      auto: AutoState | null
     }
   }
 }

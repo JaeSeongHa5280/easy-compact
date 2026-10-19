@@ -1,6 +1,6 @@
 import type { Settings } from '../types'
 import { L } from './i18n'
-import { compactText, tidyBody } from './settings'
+import { compactText, tidyBody, tidyStyles } from './settings'
 
 /**
  * 컴팩트 지시문 — [컴팩트 준비] 프롬프트 · 진행/보류 표시 · 컴팩트 종류 이름 · 요약에 남길 것.
@@ -131,4 +131,71 @@ export function tidyVerdict(reason: string, answer: string): 'go' | 'hold' | 'st
   if (reason !== 'answer') return 'stopped'
   if (TAGS.hold.some(mark => answer.includes(mark))) return 'hold'
   return TAGS.go.some(mark => answer.includes(mark)) ? 'go' : 'unmarked'
+}
+
+// ── 이지 오토(2026-10-19 — 정본 D:/Claude/easy-compact-auto.md §5): 우리가 보내는 글 둘 · /compact 지시 · 이름 ──
+
+/** 우리 턴 글 머리표 — 우리 훅은 우리 보내기를 못 봐서(엔진 "every hook but the calling one") turn.start 글로 알아본다. 두 언어 다 */
+const AUTO_TAGS = { save: ['[이지 오토 · 요약]', '[Easy Auto · summary]'], cont: ['[이지 오토 · 이어가기]', '[Easy Auto · continue]'] } as const
+
+/** 글이 우리 요약 · 이어가기 턴인가(앞의 "The … plugin sent a message:" 는 부른 쪽이 떼고 준다) */
+export function autoTurnOf(text: string): 'save' | 'continue' | null {
+  const t = text.trimStart()
+  if (AUTO_TAGS.save.some(tag => t.startsWith(tag))) return 'save'
+  return AUTO_TAGS.cont.some(tag => t.startsWith(tag)) ? 'continue' : null
+}
+
+/** 진행 칸 · 질문별 비용의 우리 턴 이름 = 글 머리표(지금 언어로) */
+export function autoTurnName(kind: 'save' | 'continue'): string {
+  return pick(kind === 'save' ? AUTO_TAGS.save : AUTO_TAGS.cont)
+}
+
+/**
+ * 요약 글: 머리표 + 이지 컴팩트 "일반" 저장 글 + 끝 줄 [컴팩트 진행]. 보류는 묻지 않는다 — 답에 표시가 없으면 이번 사슬만 쉰다.
+ * mid = 긴 일 도중 끊음(이어가기를 보낸다는 것까지 알려 남은 일을 적게 한다 — 시험 B "단계 3~5는 아직 실행하지 않았습니다"). at = 넘은 크기 글
+ */
+export function autoSavePrompt(path: 'end' | 'mid', at: string): string {
+  const head =
+    path === 'mid'
+      ? L(
+          `일하는 도중 컨텍스트가 이지 오토 구간 끝(${at})을 넘어 잠깐 멈췄습니다. 이 답이 끝나면 대화를 컴팩트하고, 컴팩트가 끝나면 하던 일을 이어서 하게 합니다.`,
+          `While working, the context passed the end of the Easy Auto range (${at}), so work paused. When this answer ends, the conversation is compacted, then you will be asked to continue.`,
+        )
+      : L(
+          `컨텍스트가 이지 오토 구간(${at})을 넘어, 이 답이 끝나면 대화를 컴팩트합니다(세부 내용은 요약만 남습니다).`,
+          `The context passed the Easy Auto range (${at}), so the conversation is compacted when this answer ends (details survive only as a summary).`,
+        )
+  return [
+    `${pick(AUTO_TAGS.save)} ${head}`,
+    L('아래대로 하세요:', 'Do the following:'),
+    ...tidyStyles().default.body,
+    L(`다 했으면 답 맨 끝 줄에 ${markGo()} 만 쓰세요. 새 작업은 시작하지 마세요.`, `When done, write only ${markGo()} on the last line. Do not start new work.`),
+  ].join('\n')
+}
+
+/** 이어가기 글(긴 일 길만) */
+export function autoContinuePrompt(): string {
+  return `${pick(AUTO_TAGS.cont)} ${L('컴팩트를 마쳤습니다. 하던 일을 이어서 해 주세요.', 'Compacting is done. Please continue what you were doing.')}`
+}
+
+/** 이지 오토의 /compact 지시: 요약 답을 남기라는 고정 지시 + 이지 컴팩트 "일반" 지시 */
+export function autoCompactKeep(): string {
+  return L(
+    `직전 ${pick(AUTO_TAGS.save)} 답에 적은 내용("이어서 할 일" 등)은 요약에 그대로 남길 것. ${tidyStyles().default.compact}`,
+    `Keep what the previous ${pick(AUTO_TAGS.save)} answer wrote (e.g. "next steps") in the summary as is. ${tidyStyles().default.compact}`,
+  )
+}
+
+/** 컴팩트 중 이름(바 "이지 오토 컴팩트 중…") · 저장 중 표시(compactKind 에 둔다 — ui-common phaseLook 이 "이지 오토 · 저장 중 → 끝나면 컴팩트") */
+export function kindAuto(): string {
+  return L('이지 오토 컴팩트', 'Easy Auto compact')
+}
+
+export function kindAutoSave(): string {
+  return L('이지 오토', 'Easy Auto')
+}
+
+/** 저장 중 표시가 이지 오토 것인가(언어가 바뀌어도) */
+export function isAutoSaveKind(kind: unknown): boolean {
+  return kind === '이지 오토' || kind === 'Easy Auto'
 }

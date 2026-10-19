@@ -4,7 +4,7 @@
 // 남는다 — 이 mod 를 쓰기 전 구간도 그래서 그릴 수 있다. 컴팩트 요청 자체의 값은 기록에 없어
 // 그 구간은 그때 캐시 상태로 추정하고(compactEffects), mod 가 본 컴팩트는 엔진이 준 실제 토큰으로 잰다.
 
-import type { CompactEvent, CtxPoint } from '../types'
+import type { CompactEvent, CtxPoint, StepDetail } from '../types'
 import { barAnimCss, CACHE_TTL_MIN, costOf, dayOf, engineOfLine, fmtTokens, LEVEL_HEX, levelOf, modelKey, ratesFor, thresholds, ttlOfTokens, writeRate } from './cost'
 import type { Tokens } from './cost'
 import { L } from './i18n'
@@ -22,10 +22,13 @@ export const MAX_POINTS = 5000
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
-/** 기록에서 뽑은 한 건: 요청 하나(p — engine = 그 요청을 보낸 Claude Code 판, 기록 줄의 version · 0.9.3) · 컴팩트 하나(c) · 질문 시작 하나(q) */
+/**
+ * 기록에서 뽑은 한 건: 요청 하나(p — engine = 그 요청을 보낸 Claude Code 판, 기록 줄의 version · 0.9.3) · 컴팩트 하나(c — post = 남긴
+ * 대화, 경계 줄의 postTokens · 없으면 없음) · 질문 시작 하나(q)
+ */
 export type FlowRecord =
   | { kind: 'p'; atMs: number; tokens: Tokens; model: string; engine?: string }
-  | { kind: 'c'; atMs: number; trigger: string; pre: number }
+  | { kind: 'c'; atMs: number; trigger: string; pre: number; post?: number }
   | { kind: 'q'; atMs: number; text?: string }
 
 /**
@@ -50,13 +53,16 @@ const PROMPT_ID = /"promptId":"([^"]+)"/
  * 최댓값으로(블록마다 · 스트리밍 중 출력이 늘며 줄이 따로 남는다 — 첫 줄만 세면 출력이 모자랐다, N1). 질문은 promptId 가 처음 나온 사용자 줄의 시각 — 같은 줄이 다시 적혀도(2026-10-11:
  * 이 세션 사용자 글 줄 3,500여 개 중 3,200개가 중복) 한 번만. 깨진 줄은 건너뛴다. tools/scan-transcript.mjs 와 같은 규칙
  */
-export function recordsFromTranscript(text: string): FlowRecord[] {
+export function recordsFromTranscript(text: string, own: string | null = null): FlowRecord[] {
   const out: FlowRecord[] = []
   // 응답 id → 그 요청의 토큰(뒤 줄에서 출력만 늘린다)
   const seen = new Map<string, Tokens>()
   // 컴팩트 경계 줄도 같은 것이 다시 적힌다(2026-10-11: 세 번째 컴팩트 때 첫 경계 줄이 그대로 한 번 더) — 시각 · 직전 크기로 한 번만
   const seenBoundary = new Set<string>()
   const seenPrompt = new Set<string>()
+  // own 일 때: 건너뛴 부모 줄의 마지막 질문 글 · 자기 질문 시작을 냈나(갈라 올 때 돌던 부모 질문이 자기 줄에서 이어지면 첫 자기 요청 앞에 그 이름으로 질문 시작)
+  let carry: string | undefined
+  let isOwnAsked = false
   for (const line of text.split('\n')) {
     // 대부분의 줄은 도구 결과 · 사용자 글이다 — 파싱 전에 거른다(질문은 새 promptId 의 첫 줄만)
     const isBoundary = line.includes('"compact_boundary"')
@@ -70,9 +76,19 @@ export function recordsFromTranscript(text: string): FlowRecord[] {
       continue
     }
     if (r.isSidechain === true) continue
+    // own = 이 세션만(포크 세션 기록 앞부분은 부모 세션 줄 복사본 — 질문 · 금액은 부모 몫, 사용자 2026-10-18 "포크 세션은 자기 비용만")
+    if (own !== null && typeof r.sessionId === 'string' && r.sessionId !== own) {
+      // 부모 질문은 본 것으로만 — 그 질문이 자기 줄에서 이어져도(같은 promptId) 새 질문으로 안 센다
+      if (isNewPrompt && r.type === 'user') {
+        seenPrompt.add(promptId)
+        carry = promptTextOf((r.message as { content?: unknown } | undefined)?.content)
+      }
+      continue
+    }
     const atMs = Date.parse(String(r.timestamp ?? '')) || 0
     if (isNewPrompt && r.type === 'user') {
       seenPrompt.add(promptId)
+      isOwnAsked = true
       // 질문 글 앞부분(N3 — 기록에서 다시 만든 질문 줄 이름). 글 블록이 없으면(그림만 등) 없음
       const text = promptTextOf((r.message as { content?: unknown } | undefined)?.content)
       out.push(text ? { kind: 'q', atMs, text } : { kind: 'q', atMs })
@@ -83,7 +99,8 @@ export function recordsFromTranscript(text: string): FlowRecord[] {
       const key = `${atMs}:${num(meta.preTokens)}`
       if (seenBoundary.has(key)) continue
       seenBoundary.add(key)
-      out.push({ kind: 'c', atMs, trigger: typeof meta.trigger === 'string' ? meta.trigger : 'manual', pre: num(meta.preTokens) })
+      const post = num(meta.postTokens)
+      out.push({ kind: 'c', atMs, trigger: typeof meta.trigger === 'string' ? meta.trigger : 'manual', pre: num(meta.preTokens), ...(post > 0 ? { post } : {}) })
       continue
     }
     const m = r.message as { id?: string; model?: string; usage?: Record<string, unknown> } | undefined
@@ -96,6 +113,10 @@ export function recordsFromTranscript(text: string): FlowRecord[] {
     }
     const tokens = tokensOfUsage(m.usage)
     seen.set(m.id, tokens)
+    if (carry !== undefined && !isOwnAsked) {
+      isOwnAsked = true
+      out.push(carry ? { kind: 'q', atMs, text: carry } : { kind: 'q', atMs })
+    }
     const engine = engineOfLine(r.version)
     out.push({ kind: 'p', atMs, model: m.model ?? '?', tokens, ...(engine ? { engine } : {}) })
   }
@@ -140,7 +161,10 @@ export function lastMainTtl(text: string): number | null {
   return null
 }
 
-/** tools/scan-transcript.mjs 의 출력(줄마다 "p …" · "c …" · "q …") → 건들. p 줄 끝 둘(5분 · 1시간 쓰기) · 셋째(엔진 판, "-" = 모름)는 없을 수 있다 */
+/**
+ * tools/scan-transcript.mjs 의 출력(줄마다 "p …" · "c …" · "q …") → 건들. p 줄 끝 둘(5분 · 1시간 쓰기) · 셋째(엔진 판, "-" = 모름) ·
+ * c 줄 다섯째(남긴 대화 postTokens, 0 = 모름)는 없을 수 있다
+ */
 export function recordsFromLines(text: string): FlowRecord[] {
   const out: FlowRecord[] = []
   for (const line of text.split('\n')) {
@@ -162,7 +186,8 @@ export function recordsFromLines(text: string): FlowRecord[] {
         },
       })
     } else if (f[0] === 'c' && f.length >= 4) {
-      out.push({ kind: 'c', atMs: Number(f[1]) || 0, trigger: f[2]!, pre: Number(f[3]) || 0 })
+      const post = Number(f[4]) || 0
+      out.push({ kind: 'c', atMs: Number(f[1]) || 0, trigger: f[2]!, pre: Number(f[3]) || 0, ...(post > 0 ? { post } : {}) })
     } else if (f[0] === 'q' && f.length >= 2) {
       // 셋째 칸부터 질문 글 앞부분(tools/scan-transcript.mjs — 공백은 하나로 줄어 있다)
       const text = f.slice(2).join(' ')
@@ -170,6 +195,70 @@ export function recordsFromLines(text: string): FlowRecord[] {
     }
   }
   return out
+}
+
+/**
+ * 기록에서 읽는 세션 금액 단서. 갈라 온(포크) 세션 기록의 앞부분은 부모 세션 줄
+ * 복사본(부모 sessionId)이고, 엔진은 세션을 열 때 마지막 메시지 줄 세션의 마지막 비용 상태 줄(cost-state — 세션 id 마다 마지막 것, 엔진 2.1.299
+ * 실행 파일)로 비용 장부를 되살린다. 그래서 갓 갈라 온 포크의 엔진 세션 비용엔 부모 몫이 들고(2026-10-18 이 PC: 포크 엔진 $287.85 = 부모 비용 상태
+ * $280.95 + 제 몫), 보통 세션도 다시 열면 옛 비용 상태 값부터 센다.
+ * isFork = 첫 자기 메시지 줄 앞에 다른 세션 메시지 줄이 있다, inherited = 갈라 올 때 엔진이 되살린 부모 몫(앞부분 마지막 메시지 세션의 앞부분 속 마지막
+ * 비용 상태 — 없으면 0), states = 기록 전체의 세션별 마지막 비용 상태 값(엔진이 이번에 되살렸을 수 있는 값 — restoredOf).
+ * tools/scan-transcript.mjs --costs 와 같은 규칙
+ */
+export type CostScan = { isFork: boolean; inherited: number; states: number[] }
+
+const SESSION_ID = /"sessionId":"([^"]+)"/
+
+export function costScanOf(text: string, own: string): CostScan {
+  let isOwnSeen = false
+  let leaf: string | null = null
+  const states = new Map<string, number>()
+  const before = new Map<string, number>()
+  for (const line of text.split('\n')) {
+    if (line.startsWith('{"type":"cost-state"')) {
+      let r: Record<string, unknown>
+      try {
+        r = JSON.parse(line) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      const usd = r.totalCostUSD
+      if (typeof r.sessionId !== 'string' || typeof usd !== 'number' || !Number.isFinite(usd)) continue
+      states.set(r.sessionId, usd)
+      if (!isOwnSeen) before.set(r.sessionId, usd)
+      continue
+    }
+    // 메타 줄(제목 · 모드 등)엔 uuid 가 없다 — 메시지 줄로만 경계를 본다
+    if (isOwnSeen || !line.includes('"uuid":"')) continue
+    const id = SESSION_ID.exec(line)?.[1]
+    if (id === undefined) continue
+    if (id === own) isOwnSeen = true
+    else leaf = id
+  }
+  return { isFork: leaf !== null, inherited: leaf === null ? 0 : (before.get(leaf) ?? 0), states: [...states.values()] }
+}
+
+/** tools/scan-transcript.mjs --costs 의 출력("f <포크 0|1> <부모 몫>" 한 줄 + 비용 상태마다 "s <값>") → 단서. f 줄이 없으면 null */
+export function costScanFromLines(text: string): CostScan | null {
+  let scan: CostScan | null = null
+  const states: number[] = []
+  for (const line of text.split('\n')) {
+    const f = line.trim().split(/\s+/)
+    if (f[0] === 'f' && f.length >= 3) scan = { isFork: f[1] === '1', inherited: Number(f[2]) || 0, states }
+    else if (f[0] === 's' && Number.isFinite(Number(f[1]))) states.push(Number(f[1]))
+  }
+  return scan
+}
+
+/**
+ * 이번에 엔진이 되살린 장부 값 어림: 기록의 비용 상태 값 중 지금 엔진 값을 안 넘는 가장 큰 것(엔진 값 = 되살린 값 + 그 뒤 쓴 값 — mod 는 세션을 열 때 재니
+ * 대개 되살린 값 그대로). 없으면 0
+ */
+export function restoredOf(states: readonly number[], engine: number): number {
+  let best = 0
+  for (const v of states) if (v > best && v <= engine + 1e-6) best = v
+  return best
 }
 
 /**
@@ -259,7 +348,7 @@ export function flowFromRecords(records: readonly FlowRecord[]): Flow {
       // 같은 컴팩트가 두 번 적힌 기록(위 recordsFromTranscript · 추출 도구가 거르지만, 예전 출력 · 저장 파일 대비)
       if (flow.compactions.some(c => c.atMs === r.atMs && c.before === r.pre)) continue
       const last = flow.points[flow.points.length - 1]
-      flow.compactions.push({ atMs: r.atMs, trigger: r.trigger, before: r.pre || (last ? last.ctx : 0), after: null, costUsd: null, index: flow.points.length })
+      flow.compactions.push({ atMs: r.atMs, trigger: r.trigger, before: r.pre || (last ? last.ctx : 0), after: null, costUsd: null, index: flow.points.length, ...(r.post ? { kept: r.post } : {}) })
       continue
     }
     const t = r.tokens
@@ -285,8 +374,9 @@ export function flowFromRecords(records: readonly FlowRecord[]): Flow {
   return trim(flow)
 }
 
-export function scanTranscript(text: string): Flow {
-  return flowFromRecords(recordsFromTranscript(text))
+/** own = 이 세션 줄만(갈라 온 세션 그래프는 자기 요청만 — 물려받은 크기는 첫 점이 말한다) */
+export function scanTranscript(text: string, own: string | null = null): Flow {
+  return flowFromRecords(recordsFromTranscript(text, own))
 }
 
 /**
@@ -345,6 +435,7 @@ export function parseFlowFile(text: string): Flow | null {
         costUsd: typeof c.costUsd === 'number' ? c.costUsd : null,
         index: num(c.index),
         ...(typeof c.summary === 'number' ? { summary: c.summary } : {}),
+        ...(typeof c.kept === 'number' && c.kept > 0 ? { kept: c.kept } : {}),
       }))
       // 중복 컴팩트를 걸러내기 전에 저장한 파일도 고쳐 읽는다(같은 시각 · 직전 크기면 하나)
       .filter((c, i, all) => all.findIndex(o => o.atMs === c.atMs && o.before === c.before) === i)
@@ -353,10 +444,50 @@ export function parseFlowFile(text: string): Flow | null {
       raw.v === 5 && raw.s !== null && typeof raw.s === 'object' && !Array.isArray(raw.s)
         ? Object.fromEntries(Object.entries(raw.s as Record<string, unknown>).map(([k, v]) => [k, num(v)]))
         : undefined
-    return { points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}) }
+    return fixAfters({ points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}) })
   } catch {
     return null
   }
+}
+
+/**
+ * 0.6.0 ~ 1.0 이 저장한 컴팩트 바로잡기:
+ * 그 판은 엔진 tokensAfter(남긴 대화 — 기본 적재가 빠져 12k ~ 27k)를 직후 크기로 적었다. 이 세션 기록 컴팩트 20번의 첫 요청은
+ * 97k ~ 125k 였다. 남긴 대화(kept)가 없는 컴팩트는 직후 = 그 뒤 첫 요청 크기로 맞추고, 옛 값이 그보다 작으면 엔진 값이라 kept 로
+ * 옮긴다. 첫 요청을 모르면(아직 없음 · 다음 컴팩트가 바로 이어짐 · 앞 점이 잘림) 직후를 비운다 — 아직 없으면 다음 요청이 채우고,
+ * 나머지는 계산에서 빠진다(직후 없는 컴팩트는 효과 · 총계에 안 든다). 그 앞 판 · 기록에서 다시 만든 흐름은 직후가 이미 첫 요청이라 그대로
+ */
+export function fixAfters(flow: Flow): Flow {
+  const n = flow.points.length
+  const compactions = flow.compactions.map((c, i) => {
+    if (c.kept !== undefined || c.after === null) return c
+    const later = flow.compactions[i + 1]
+    // 점이 MAX_POINTS 로 잘린 흐름의 0 번 컴팩트는 그 뒤 첫 요청이 잘려 나갔을 수 있다
+    const first = c.index < n && later?.index !== c.index && !(c.index === 0 && n >= MAX_POINTS) ? flow.points[c.index] : undefined
+    if (first === undefined) return c.index >= n && !later ? { ...c, after: null, kept: c.after } : { ...c, after: null }
+    if (c.after === first.ctx) return c
+    return c.after < first.ctx ? { ...c, after: first.ctx, kept: c.after } : { ...c, after: first.ctx }
+  })
+  return { ...flow, compactions }
+}
+
+/**
+ * 질문별 비용의 컴팩트 줄("🗜 컴팩트 933k → 18k")을 흐름의 직후 크기에 맞춘다 — 같은 컴팩트 = 직전 크기가 같다. 흐름이 첫 요청을
+ * 기다리는 컴팩트(fixAfters 가 비운 옛 값 = 남긴 대화)면 그 줄도 비워 다음 요청이 채우게(fillCompactAfter). 흐름이 모르는 컴팩트 줄은
+ * 그대로. 바뀐 게 없으면 같은 배열
+ */
+export function syncCompactAfter(details: StepDetail[], compactions: readonly CompactEvent[]): StepDetail[] {
+  let isChanged = false
+  const out = details.map(d => {
+    if (!d.compact) return d
+    const before = d.compact.before
+    const c = [...compactions].reverse().find(o => o.before === before)
+    const after = !c ? d.compact.after : c.after !== null ? c.after : c.kept !== undefined && d.compact.after === c.kept ? null : d.compact.after
+    if (after === d.compact.after) return d
+    isChanged = true
+    return { ...d, compact: { ...d.compact, after } }
+  })
+  return isChanged ? out : details
 }
 
 /** 모델을 적기 전 판(v1) 저장 파일에서 읽은 흐름 — 점이 있는데 모델이 하나도 없다 */
@@ -409,7 +540,8 @@ export function withQuestion(flow: Flow, atMs: number): Flow {
 export function addPoint(flow: Flow, p: CtxPoint, fresh?: number): void {
   flow.points.push(p)
   const last = flow.compactions[flow.compactions.length - 1]
-  // 컴팩트 뒤 첫 점: 직후 크기를 엔진이 안 줬으면 이 점으로(N2 — 엔진 tokensAfter 가 있으면 그것을 이미 적었다), 요약(새로 쓴 몫)은 늘 이 점으로
+  // 컴팩트 뒤 첫 점: 직후 크기 · 요약(새로 쓴 몫)은 이 점으로. 0.6.0(N2) ~ 1.0 은 엔진 tokensAfter 를 직후로 먼저 적고 이 점을 안 썼는데,
+  // 그 값은 남긴 대화뿐(기본 적재가 빠짐)이었다 — 이제 그 값은 kept, 직후는 늘 이 점(2026-10-19)
   if (last && last.index === flow.points.length - 1 && last.summary === undefined) {
     if (last.after === null) last.after = p.ctx
     const lastQ = flow.questions?.[flow.questions.length - 1]
@@ -471,8 +603,11 @@ function trim(flow: Flow): Flow {
  */
 export function mergeMeasured(fresh: readonly CompactEvent[], old: readonly CompactEvent[]): CompactEvent[] {
   return fresh.map(c => {
-    const same = old.find(o => o.costUsd !== null && Math.abs(o.atMs - c.atMs) < 10 * 60_000)
-    return same ? { ...c, costUsd: same.costUsd } : c
+    const near = (o: CompactEvent) => Math.abs(o.atMs - c.atMs) < 10 * 60_000
+    const same = old.find(o => o.costUsd !== null && near(o))
+    // 남긴 대화(엔진 값)는 기록 경계 줄에도 있다(postTokens) — 그 줄에 없을 때만 예전에 잰 값
+    const kept = c.kept ?? old.find(o => o.kept !== undefined && near(o))?.kept
+    return same || kept !== c.kept ? { ...c, ...(same ? { costUsd: same.costUsd } : {}), ...(kept !== undefined ? { kept } : {}) } : c
   })
 }
 
@@ -786,4 +921,37 @@ export function compactSummary(flow: Flow, c: CompactEvent, first: CtxPoint | nu
   const model = flow.points[c.index]?.model ?? flow.points[c.index - 1]?.model
   if (model && first.model && modelKey(model) !== modelKey(first.model)) return null
   return c.after - first.ctx
+}
+
+/**
+ * 화면의 "컴팩트 요약"(상주 칸 · 컴팩트 효과 줄 "요약 N 포함"): 엔진이 준 남긴 대화(kept — 요약 + 다시 붙인 파일). 없으면(그 값이 없는
+ * 기록) 새로 쓴 몫 셈(compactSummary — 메모리 · 새 질문 글까지 들어 조금 크다). 직후보다 크지 않게
+ */
+export function keptOf(flow: Flow, c: CompactEvent, first: CtxPoint | null): number | null {
+  if (c.kept !== undefined && c.after !== null) return Math.min(c.kept, c.after)
+  return compactSummary(flow, c, first)
+}
+
+/**
+ * 이 세션에서 잰 기본 적재(시스템 지시 · 도구 · 메모리 · 스킬 — 컴팩트해도 남는 몫): 마지막으로 잰 컴팩트의 직후 − 남긴 대화(엔진 값).
+ * /context 분류보다 이것이 먼저다 — 분류는 엔진 어림이고, 이 값은 실제 요청 크기에서 잰다(이 세션 컴팩트마다 86k ~ 99k, 바로 앞 값으로
+ * 다음 직후를 어림하면 ±8k 안). 그 컴팩트 뒤 첫 요청의 모델이 model 과 다르면(모델마다 세는 값이 다르다) · 못 쟀으면 null
+ */
+export function measuredBase(flow: Flow, model: string): number | null {
+  const last = [...flow.compactions].reverse().find(c => c.after !== null && c.kept !== undefined)
+  if (!last || last.after === null || last.kept === undefined) return null
+  const at = flow.points[last.index]?.model
+  if (at && model && modelKey(at) !== modelKey(model)) return null
+  return last.after > last.kept ? last.after - last.kept : null
+}
+
+/**
+ * 컴팩트 직후 크기 어림 — 컴팩트 뒤 첫 요청 전(바 크기 · 게이지 줄어듦 · 상주 · 계산식 재료): 남긴 대화(엔진 kept) + 기본 적재(이 세션에서
+ * 잰 값, 없으면 base = /context 분류 · 기록 첫 요청). 첫 요청이 오면 그 크기로 바로잡는다(addPoint). 남긴 대화나 기본 적재를 모르면 null
+ */
+export function afterGuess(flow: Flow, c: CompactEvent, model: string, base: number | null): number | null {
+  if (c.kept === undefined) return null
+  const b = measuredBase(flow, model) ?? base
+  // 컴팩트는 줄인다 — 직전 크기를 넘는 어림은 기본 적재를 잘못 잡은 것(이어 받은 세션의 큰 첫 요청 등)
+  return b === null || (c.before > 0 && c.kept + b >= c.before) ? null : c.kept + b
 }

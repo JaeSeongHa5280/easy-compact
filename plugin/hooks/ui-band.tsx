@@ -1,13 +1,14 @@
-import type { BandShow, CompactInputs, CostParts, LiveTurn, StepDetail, TurnSummary, Usage } from '../types'
-import { cacheWarnFor, estimateFor, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, sessionColorOf, thresholds, priceWarnings } from './cost'
+import type { BandShow, CompactInputs, CostParts, PartKey, PartShow, SlimKey, SlimShow, StepDetail, TurnSummary, Usage } from '../types'
+import { approxUsd, cacheWarnFor, estimateFor, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, limitHex, REWRITE_NOTE_USD, sessionColorOf, thresholds, priceWarnings } from './cost'
 import { L, plural } from './i18n'
-import { bandShowOf, DEFAULT_SETTINGS, SESSION_COLORS_DEFAULT } from './settings'
+import { bandShowOf, DEFAULT_SETTINGS, REVEAL_SQUARE, SESSION_COLORS_DEFAULT } from './settings'
 import { agentPart, agentSum, callsOf, ctxNumText, limitName, rangeNumText, widthOf } from './text'
 import type { CtxUnit } from './text'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
-import { agentText, bar, CH_PX, decoIcon, gaugeEl, gaugeShapeNow, previewFrame, previewLabel, TILE } from './ui-common'
+import { agentText, bar, CH_PX, decoIcon, gaugeEl, gaugeShapeNow, previewFrame, previewLabel, stageText, TILE } from './ui-common'
 import { gaugeWidth } from './gauge'
 import type { Ui } from './ui-common'
+import type { FlashKey } from './flash'
 
 /** 입력창 위 띠의 줄들 — 한도 · 예상(이 세션 · 요청당 · 컨텍스트 · 캐시) · 지난 질문. 칸마다 화면 보기 값(bandShow)으로 뺄 수 있다 */
 
@@ -148,8 +149,11 @@ function packRows(list: readonly LineCell[], w: number): LineCell[][] {
  * ("캐시 만료 42분 남음"). 이 세션 · 컨텍스트 · 상태는 안 뺀다(이름 빼기 안 C 는 안 함 — 사용자 고름).
  * isShort = 최소(한 줄) 바: 캐시를 처음부터 짧은 꼴로
  */
-/** 바에 보일 오늘 · 이번 달 사용량(설정에서 켠 것만, 못 쟀으면 null) */
-export type SpendShown = { today: number | null; month: number | null }
+/**
+ * 바에 보일 오늘 · 이번 달 사용량(설정에서 켠 것만, 못 쟀으면 null) · 금액 색(1.0 — 설정 오늘 · 이번 달 금액 색 기준을 넘으면 노랑 · 주황 · 빨강,
+ * 넘지 않으면 없음. 값 강조처럼 깜빡이지 않는다 — 사용자 2026-10-18 "넘어가면 맨날 깜빡여서")
+ */
+export type SpendShown = { today: number | null; month: number | null; todayColor?: string; monthColor?: string }
 
 /** 0.5 묶음 2(N15): 비용 줄 칸 순서(설정 bandOrder) — register 가 그리기 전에 넣는다(thresholds() 와 같은 방식) */
 let bandOrder: readonly string[] = ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache']
@@ -216,9 +220,8 @@ function costCellsRaw(
           <Text>
             {dot(isFirst)}
             <Text dimColor>{L('세션 ', 'Session ')}</Text>
-            <Text bold {...(color ? { color } : {})}>
-              {fmtUsd(usd)}
-            </Text>
+            {/* 1.0 값 강조(flash.ts): 색 단계가 오르면 바탕이 그 색으로 3번 깜빡 */}
+            {stageText(ui, 'sess', color, fmtUsd(usd))}
             {warns.length > 0 ? <Text color="warning"> ⚠</Text> : null}
           </Text>
         )
@@ -237,7 +240,8 @@ function costCellsRaw(
   // 오늘 · 이번 달(설정에서 켰을 때만) — 이 세션 금액 바로 뒤 돈 묶음. 모든 세션 기록 합 + 기록 밖 요청 장부(0.7.0 피드백 M1)여도 다른
   // 기기 · 웹은 못 세 "~".
   // 좁으면 컴팩트 구간 → 요청당 → 캐시 짧은 꼴 다음에 이번 달 → 오늘 순으로 뺀다(사람이 켠 칸이라 캐시를 먼저 줄인다)
-  const spendCell = (key: string, name: string, usd: number, drop: number): LineCell => ({
+  // 금액 색(1.0)은 색만 — 값 강조(flashText)를 안 거친다
+  const spendCell = (key: string, name: string, usd: number, drop: number, color: string | undefined): LineCell => ({
     key,
     drop,
     text: `${name}${fmtUsd(usd)}`,
@@ -245,14 +249,16 @@ function costCellsRaw(
       <Text>
         {dot(isFirst)}
         <Text dimColor>{name}</Text>
-        <Text bold>{fmtUsd(usd)}</Text>
+        <Text bold {...(color ? { color } : {})}>
+          {fmtUsd(usd)}
+        </Text>
       </Text>
     ),
   })
-  if (spend?.today !== null && spend?.today !== undefined) cells.push(spendCell('c-today', L('오늘 ', 'Today '), spend.today, 2.4))
-  if (spend?.month !== null && spend?.month !== undefined) cells.push(spendCell('c-month', L('이번 달 ', 'This month '), spend.month, 2.2))
+  if (spend?.today !== null && spend?.today !== undefined) cells.push(spendCell('c-today', L('오늘 ', 'Today '), spend.today, 2.4, spend.todayColor))
+  if (spend?.month !== null && spend?.month !== undefined) cells.push(spendCell('c-month', L('이번 달 ', 'This month '), spend.month, 2.2, spend.monthColor))
   const level = levelOf(u.contextTokens)
-  // 컴팩트 뒤 첫 요청 전이면 "컴팩트 직후" — 크기는 엔진이 준 직후 크기(N2), 그게 없어 추정이면 "~"
+  // 컴팩트 뒤 첫 요청 전이면 "컴팩트 직후" — 크기는 어림(엔진이 준 남긴 대화 + 기본 적재, flow.ts afterGuess)이라 "~"
   const isJust = u.contextEstimated === true || u.isAfterCompact === true
   const ctxNum = `${u.contextEstimated ? '~' : ''}${ctxNumText(u.contextTokens, u.window, ctxUnit)}`
   const ctxText = isJust ? L(`컨텍스트 ${ctxNum} 컴팩트 직후`, `Context ${ctxNum} just compacted`) : L(`컨텍스트 ${ctxNum}`, `Context ${ctxNum}`)
@@ -266,9 +272,7 @@ function costCellsRaw(
           <Text>
             {dot(isFirst)}
             <Text dimColor>{L('컨텍스트 ', 'Context ')}</Text>
-            <Text bold {...(LEVEL_TEXT[level] ? { color: LEVEL_TEXT[level] } : {})}>
-              {ctxNum}
-            </Text>
+            {stageText(ui, 'ctx', LEVEL_TEXT[level], ctxNum)}
             {isJust ? <Text dimColor>{L(' 컴팩트 직후', ' just compacted')}</Text> : null}
           </Text>
         ),
@@ -301,16 +305,15 @@ function costCellsRaw(
     // 아이콘은 캡슐 꼴 Svg(빨강 — 바 바탕 위라 상태 색, 확인 카드 제목과 같은 그림), 터미널은 글만
     const isModel = est.reason === 'model'
     const stateWord = isModel ? L('모델 바뀜', 'Model switched') : L('캐시 만료', 'Cache expired')
-    // 0.5 묶음 2: 옛 캡슐 아이콘은 뺐다 — 빨강 굵은 "캐시 만료" 글이 말하고, 상태 그림은 버튼 옆 게이지 하나
+    // 0.5 묶음 2: 옛 캡슐 아이콘은 뺐다 — 빨강 굵은 "캐시 만료" 글이 말하고, 상태 그림은 버튼 옆 게이지 하나.
+    // 1.0 값 강조(flash.ts 'cache'): 만료가 된 때 · 세션에 들어온 때 바탕 3번 깜빡
     cells.push({
       key: 'c-cold',
       text: stateWord,
       el: isFirst => (
         <Box columnGap={1} alignItems="center">
           {isFirst ? null : <Text dimColor> ·</Text>}
-          <Text color="error" bold>
-            {stateWord}
-          </Text>
+          {stageText(ui, 'cache', 'error', stateWord)}
         </Box>
       ),
     })
@@ -319,7 +322,7 @@ function costCellsRaw(
   }
   // 요청당 = 지금 크기 × 읽기 요율 + 요청마다 읽기 말고 드는 실측 값(새로 쓰기 · 출력, 9a), 못 쟀으면 읽기만 — 색은 컨텍스트 색
   if (show.perRequest) {
-    const perCall = `~${fmtUsd(est.perCallUsd + (u.perCallExtraUsd ?? 0))}`
+    const perCall = `${approxUsd(est.perCallUsd + (u.perCallExtraUsd ?? 0))}`
     cells.push({
       key: 'c-call',
       drop: 2,
@@ -328,9 +331,8 @@ function costCellsRaw(
         <Text>
           {dot(isFirst)}
           <Text dimColor>{L('요청당 ', 'Per request ')}</Text>
-          <Text bold color={LEVEL_TEXT[level]}>
-            {perCall}
-          </Text>
+          {/* 1.0 값 강조: 요청당은 컨텍스트 단계 색이라 컨텍스트와 같은 때 깜빡 */}
+          {stageText(ui, 'ctx', LEVEL_TEXT[level], perCall)}
         </Text>
       ),
     })
@@ -343,7 +345,9 @@ function costCellsRaw(
   // 영어는 앞말이 "cache expires in " 이라 값은 "38m" 만 — "in 38m left" 로 겹쳤다(공개 세션 발견, 2026-10-13)
   if (show.cache && est.minsLeft !== null) {
     const mins = est.minsLeft
+    // 노랑(곧 만료)이 된 때 · 그때 세션에 들어온 때 남은 분이 3번 깜빡(flash.ts 'cache')
     const isLate = mins < cacheWarnFor(thresholds(), est.ttlMin)
+    const lateColor = isLate ? 'warning' : undefined
     const cacheCell = (isShortForm: boolean): LineCell => ({
       key: 'c-cache',
       text: isShortForm ? L(`캐시 만료 ${mins}분 남음`, `cache expires in ${mins}m`) : L(`캐시 만료까지 ${mins}분 남음`, `cache expires in ${mins}m`),
@@ -353,7 +357,7 @@ function costCellsRaw(
             {(isFirst ? '' : ' · ') +
               (isShortForm ? L('캐시 만료 ', isFirst ? 'Cache expires in ' : 'cache expires in ') : L('캐시 만료까지 ', isFirst ? 'Cache expires in ' : 'cache expires in '))}
           </Text>
-          <Text {...(isLate ? { color: 'warning' } : {})}>{L(`${mins}분 남음`, `${mins}m`)}</Text>
+          {stageText(ui, 'cache', lateColor, L(`${mins}분 남음`, `${mins}m`), { bold: false })}
         </Text>
       ),
       ...(isShortForm ? {} : { drop: 2.1, short: cacheCell(true) }),
@@ -365,9 +369,7 @@ function costCellsRaw(
       el: () => (
         <Text>
           <Text dimColor>{L('캐시 ', 'Cache ')}</Text>
-          <Text bold {...(isLate ? { color: 'warning' } : {})}>
-            {L(`${mins}분`, `${mins}m`)}
-          </Text>
+          {stageText(ui, 'cache', lateColor, L(`${mins}분`, `${mins}m`))}
           <Text dimColor>{L(' 남음', ' left')}</Text>
         </Text>
       ),
@@ -442,10 +444,12 @@ function limitCells(ui: Ui, surface: string, u: Usage, nowMs: number, show: Band
 }
 
 /**
- * 0.9.4 바 A(uxi — 사용자 "바는 추천대로", 정본 0.9.md "uxi 다듬기"): 최대 바 세 줄을 다시 묶어(한도 / 쌓인 돈 / 지금 값 + 진행 중 질문)
+ * 0.9.4 바 A(uxi — 사용자 "바는 추천대로", 정본 0.9.md "uxi 다듬기"): 최대 바 세 줄을 다시 묶어(한도 / 쌓인 돈 / 지금 값 + 지난 질문)
  * 칸 맞춤 — 칸마다 같은 열 폭이라 줄마다 같은 세로줄에서 시작한다(예전엔 " · " 흐름이라 어느 세로줄도 안 맞았고 둘째 줄에 6칸이 몰렸다).
  * 열 폭 = 그 열에서 가장 넓은 칸(어림 글 — 리셋 · 캐시 · % 는 가장 긴 꼴이라 값이 바뀌어도 안 흔들림). 셋째 줄 끝 칸(질문 — 값 · 요청 수가
- * 자주 바뀐다)은 뒤에 아무것도 없어 열에 안 넣는다. 세 줄이 다 왼쪽 폭(leftW)에 들 때만 — 안 들면 null(부르는 쪽이 다시 묶은 흐름으로)
+ * 자주 바뀐다)은 뒤에 아무것도 없어 열에 안 넣는다. 세 줄이 다 왼쪽 폭(leftW)에 들 때만 — 안 들면 null(부르는 쪽이 다시 묶은 흐름으로).
+ * 1.0: 한도 줄은 열에 안 넣는다 — 0.9.4 는 한도 줄도 열에 맞춰 리셋 시각이 제 한도에서 떨어져 옆 열(오늘 · 컨텍스트) 값처럼 읽혔다. 한도 줄은 흐름 꼴(drawLimitsLine — 좁은 바의 흐름과 같은 꼴), 열 맞춤은
+ * 아래 두 줄(쌓인 돈 · 지금 값)만
  */
 export function bandGrid(
   ui: Ui,
@@ -456,7 +460,6 @@ export function bandGrid(
   colors: readonly [number, number, number],
   spend: SpendShown | null,
   last: TurnSummary | null,
-  now: LiveTurn | null,
   leftW: number,
 ): { limits: unknown; money: unknown | null; now: unknown } | null {
   const { Box } = ui
@@ -464,18 +467,21 @@ export function bandGrid(
   const lim = limitCells(ui, surface, u, nowMs, show)
   if (lim.length === 0) return null
   const groups = costGroups(ui, u, nowMs, show, colors, false, spend, true)
-  const q = lastTurnCells(ui, last, now)
+  const q = lastTurnCells(ui, last)
   // 데스크톱 글 폭 어림(ch)은 바 글꼴에서 한글 · 공백이 조금 모자라 칸마다 2 여유 — 1 이면 "컴팩트 구간 200k~250k" 가 두 줄로 꺾였다
   // (render 도구 130칸 — 19ch 칸에 약 19.5ch 글)
   const slack = isTerm ? 0 : 2
   const GAP = 2
   const w = (c: LineCell) => widthOf(c.text, isTerm) + slack
-  const rows = [lim, groups.money, groups.now]
+  // 한도 줄 폭(흐름): 한도마다 [이름 · 막대 · %] + 리셋("· " 와 사이 한 칸 = 3) · 한도 사이 3칸(drawLimitsLine columnGap)
+  const isReset = (c: LineCell) => c.key.endsWith('-r')
+  const limW = lim.reduce((s, c) => s + w(c) + (isReset(c) ? 3 : 0), 0) + 3 * Math.max(0, lim.filter(c => !isReset(c)).length - 1)
+  const rows = [groups.money, groups.now]
   const n = Math.max(...rows.map(r => r.length))
   const colW = Array.from({ length: n }, (_, k) => Math.max(0, ...rows.map(r => (r[k] ? w(r[k]!) : 0))))
   const rowW = (r: readonly LineCell[], tail = 0) => r.reduce((s, _c, k) => s + colW[k]!, 0) + GAP * Math.max(0, r.length - 1) + (tail > 0 ? (r.length > 0 ? GAP : 0) + tail : 0)
   const qW = q ? q.reduce((s, c, i) => s + widthOf((i > 0 ? ' · ' : '') + c.text, isTerm), 0) + slack : 0
-  if (rowW(lim) > leftW || rowW(groups.money) > leftW || rowW(groups.now, qW) > leftW) return null
+  if (limW > leftW || rowW(groups.money) > leftW || rowW(groups.now, qW) > leftW) return null
   const rowEl = (key: string, cells: readonly LineCell[], tail: unknown = null) =>
     cells.length === 0 && tail === null ? null : (
       <Box key={key} columnGap={GAP} alignItems="center">
@@ -492,7 +498,7 @@ export function bandGrid(
       {fitLine(ui, q, null).el}
     </Box>
   ) : null
-  return { limits: rowEl('bg-limits', lim), money: rowEl('bg-money', groups.money), now: rowEl('bg-now', groups.now, qEl) }
+  return { limits: <Box key="bg-limits">{drawLimitsLine(ui, surface, u, nowMs, show)}</Box>, money: rowEl('bg-money', groups.money), now: rowEl('bg-now', groups.now, qEl) }
 }
 
 /**
@@ -548,10 +554,14 @@ export type BandPreviewExtra = {
   stage?: boolean
   /** 바 크기 — 한 줄(min)이면 견본도 한 줄 꼴(S14) */
   band?: 'full' | 'min'
+  /** 슬림 화면 칸(1.0) — 있으면 견본이 슬림 꼴: 평소(입력창 아래 버튼) · 컴팩트할 때(입력창 위 알림) 두 장면 */
+  slim?: SlimShow
   /** 바 접어 두기 켬 — 맨 위에 접힌 모습(펴는 버튼 이름 — revealLabel) */
   foldedLabel?: string | null
   /** 입력창 아래 한 줄 켬 — 그 글(statusLineText) */
   statusLine?: string | null
+  /** 1.0 진행 중 질문 칸 켬 — 진행 칸 견본(ui-answer liveSample, 데스크톱). 바 견본 아래 · 슬림은 "대답하는 동안" 장면 */
+  live?: unknown
 }
 
 /**
@@ -587,7 +597,7 @@ export function drawBandPreview(
   const frame = (key: string, body: unknown) => previewFrame(ui, key, label, body)
   // 간단 화면은 한 줄 고정 — 한도 줄을 안 그린다(바와 같다)
   const limits = !isLean && u && u.rateLimits.length > 0 ? drawLimitsLine(ui, surface, u, nowMs, show) : null
-  const turn = show.lastTurn ? drawLastTurnLine(ui, last, null) : null
+  const turn = show.lastTurn ? drawLastTurnLine(ui, last) : null
   const why = (key: string, text: string) =>
     frame(
       key,
@@ -605,6 +615,7 @@ export function drawBandPreview(
           : L('이 세션엔 한도 값이 아직 없습니다(첫 응답 뒤 · API 키 세션엔 없음)', 'No limit values in this session yet (after the first answer · none with an API key)'),
     )
   }
+  if (extra.slim && part === 'all') return drawSlimPreview(ui, surface, u, nowMs, extra.slim, colors, label, extra.live ?? null)
   if (part === 'turn' && (isLean || !turn)) {
     return why('band-preview-turn', isLean ? L('간단 화면은 바가 한 줄이라 질문 줄이 안 보입니다', 'The one-row Simple screen has no question row') : L('질문 줄이 꺼져 있습니다', 'The question row is off'))
   }
@@ -682,10 +693,10 @@ export function drawBandPreview(
   const regrouped = (() => {
     if (!isRegroup || !u) return null
     const rightW = Math.max(widthOf(winText, isTerm), compactW)
-    const grid = boxW === null ? null : bandGrid(ui, surface, u, nowMs, show, colors, spend, last, null, boxW - stageW - rightW - 2)
+    const grid = boxW === null ? null : bandGrid(ui, surface, u, nowMs, show, colors, spend, last, boxW - stageW - rightW - 2)
     if (grid) return [line('pv-1', grid.limits, win), grid.money ? line('pv-2', grid.money, null) : null, line('pv-3', grid.now, compact)]
     const g = costGroups(ui, u, nowMs, show, colors, false, spend)
-    const q = afterCells(ui, lastTurnCells(ui, last, null) ?? [])
+    const q = afterCells(ui, lastTurnCells(ui, last) ?? [])
     const money = fitLine(ui, g.money, null, boxW === null ? null : Math.max(12, boxW - stageW)).el
     const nowLine = fitLine(ui, [...g.now, ...q], null, boxW === null ? null : Math.max(12, boxW - stageW - compactW - 2)).el
     return [line('pv-1', limits, win), money ? line('pv-2', money, null) : null, line('pv-3', nowLine, compact)]
@@ -699,9 +710,11 @@ export function drawBandPreview(
         : [line('pv-1', est, hasTurnRow ? win : [compact, win]), hasTurnRow ? line('pv-3', turn, compact) : null]
   // 무대(S13 ★ — 바 전체 · 데스크톱): 바 견본을 테두리 상자에, 그 아래 입력창 모형 — "입력창 위에 뜨는 바"를 그대로
   const isStage = extra.stage === true && !isTerm
+  // 1.0 진행 칸 견본은 바 카드 안 아래(실물과 같은 자리 — 사용자 2026-10-18 "미리보기 바에 왜 질문 표시 내용은 반영 안 해 줘?")
   const barBox = isStage ? (
     <Box key="pv-bar" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1} paddingY={0}>
       {rows}
+      {extra.live ?? null}
     </Box>
   ) : (
     <Box key="pv-bar" flexDirection="column">
@@ -709,9 +722,9 @@ export function drawBandPreview(
     </Box>
   )
   const input = isStage ? (
-    <Box key="pv-input" borderStyle="round" borderColor="promptBorder" paddingX={1} justifyContent="space-between" alignItems="center">
-      <Text dimColor>{L('메시지 입력', 'Type a message')}</Text>
-      <Text dimColor>↑</Text>
+    // 입력창 모형은 자리 표만(흐린 테두리 · 가운데 "입력창") — "메시지 입력 ↑" 은 쳐 넣을 수 있는 칸처럼 보였다
+    <Box key="pv-input" borderStyle="round" borderColor="promptBorder" borderDimColor paddingX={1} justifyContent="center" alignItems="center">
+      <Text dimColor>{L('입력창', 'Prompt box')}</Text>
     </Box>
   ) : null
   // S14: 접어 두기 켬 — 맨 위에 접힌 모습(펴는 버튼 — 데스크톱 입력창 아래 · 터미널 바 자리), 그 아래 "펼치면" 바 견본
@@ -743,19 +756,20 @@ export function drawBandPreview(
 }
 
 /**
- * 띠 질문 줄: 지난 질문 하나에 실제로 든 값(작업 중엔 이번 질문이 지금까지 쓴 값 — 요청이 끝날 때마다 늘어난다). 합 · 요청 수 —
+ * 띠 질문 줄: 지난 질문 하나에 실제로 든 값(1.0 — 대답하는 동안에도 지난 질문: 이번 질문 값은 칸 "진행 중 질문 칸"(데스크톱 입력창 바로 위 ·
+ * 터미널 작업 줄)이 따로 — 두 칸은 서로 독립, 사용자 2026-10-18 "서로서로 독립 셋팅"). 합 · 요청 수 —
  * 요청마다 든 값 · 읽기 · 쓰기 · 출력은 질문별 비용 패널에(띠에선 흐린 괄호가 길기만 하고 안 읽혔다). 요청 수는 에이전트
  * 요청까지, 에이전트는 "🤖 에이전트 1개 $1.93 포함" — 값 옆 "🤖 $" 만으론 질문 값과의 관계가 헷갈렸다. 질문이
  * 끝난 뒤 도는 백그라운드 에이전트도 "지난 질문" 줄에서 도는 중 → 끝남. 좁을 때 빼는 차례: 에이전트 → 요청 수(합 · "캐시 다시 씀"
  * 경고는 남김, 2026-10-14 uxi D1)
  */
-export function fitLastTurnLine(ui: Ui, last: TurnSummary | null, now: LiveTurn | null, maxW: number | null): LineFit {
-  const cells = lastTurnCells(ui, last, now)
+export function fitLastTurnLine(ui: Ui, last: TurnSummary | null, maxW: number | null): LineFit {
+  const cells = lastTurnCells(ui, last)
   return cells ? fitLine(ui, cells, maxW) : { el: null, width: 0, over: false }
 }
 
-/** 띠 질문 줄의 칸(진행 중 · 지난 질문) — 없으면 null. 0.9.4 바 A 는 지금 값 칸 뒤에 이어 붙인다 */
-export function lastTurnCells(ui: Ui, last: TurnSummary | null, now: LiveTurn | null): LineCell[] | null {
+/** 띠 질문 줄의 칸(지난 질문) — 없으면 null. 0.9.4 바 A 는 지금 값 칸 뒤에 이어 붙인다 */
+export function lastTurnCells(ui: Ui, last: TurnSummary | null): LineCell[] | null {
   const { Text } = ui
   const make = (head: string, cost: CostParts, steps: number, rewriteUsd: number | undefined, details: readonly StepDetail[] | undefined) => {
     const agents = agentPart(details, true)
@@ -775,16 +789,253 @@ export function lastTurnCells(ui: Ui, last: TurnSummary | null, now: LiveTurn | 
       { key: 't-calls', drop: 2, text: L(`요청 ${calls}회`, plural(calls, 'request')), el: () => <Text dimColor>{L(` · 요청 ${calls}회`, ` · ${plural(calls, 'request')}`)}</Text> },
     ]
     // B4(0.6.1 피드백): 🤖 대신 도트 캐릭터(데스크톱) — 이 질문 에이전트가 도는 동안만 걷는다
-    if (agents) cells.push({ key: 't-agents', drop: 1, text: agents, el: () => agentText(ui, 't-agents-el', agents, agentSum(details)?.running === true, {}, ' · ') })
+    if (agents) cells.push({ key: 't-agents', drop: 1, text: agents, el: () => agentText(ui, 't-agents-el', agents, (agentSum(details)?.runningCount ?? 0), {}, ' · ') })
     if (rewrite && rewriteUsd !== undefined) cells.push({ key: 't-rewrite', text: L(`캐시 다시 씀 ${fmtUsd(rewriteUsd)}`, `cache rewrite ${fmtUsd(rewriteUsd)}`), el: () => rewrite })
     return cells
   }
-  if (now && now.steps > 0) return make(L('진행 중 질문 ', 'This question '), now.cost, now.steps, now.rewriteUsd, now.details)
   if (!last) return null
   return make(L('지난 질문 ', 'Last question '), last.cost, last.steps, last.rewriteUsd, last.details)
 }
 
 /** 띠 질문 줄(폭 맞춤 없이) — 설정 미리보기 */
-export function drawLastTurnLine(ui: Ui, last: TurnSummary | null, now: LiveTurn | null) {
-  return fitLastTurnLine(ui, last, now, null).el
+export function drawLastTurnLine(ui: Ui, last: TurnSummary | null) {
+  return fitLastTurnLine(ui, last, null).el
+}
+
+/**
+ * 슬림 칸(1.0 — Settings.slim, 시안 3판): 지금 보일 칸만, 급한 차례(한도 → 캐시 → 세션 → 요청당 → 오늘 · 이번 달 → 구간). 컨텍스트 ·
+ * 컴팩트 버튼은 따로(아래 버튼의 값 · 위 알림의 버튼). text = 아래 버튼 글(버튼 안 글은 앱 버튼 색이라 색을 못 낸다), el = 위 알림 칸(색).
+ * 필요할 때 = 지금 색이 바뀌는 문턱(한도 70% · 캐시 경고 분 · 세션 금액 색 첫 기준 · 요청당은 컴팩트할 때부터). 식은 캐시면 캐시 칸 자리에
+ * "캐시 만료" · "모델 바뀜"(빨강) — 다음 요청이 전체를 다시 써 꼭 볼 값이라 캐시 칸이 끔이 아니면 늘
+ */
+export function slimParts(ui: Ui, u: Usage, nowMs: number, view: SlimShow, colors: readonly [number, number, number], spend: SpendShown | null): LineCell[] {
+  const { Text } = ui
+  const shown = (k: SlimKey, need: boolean) => view[k] === 'on' || (view[k] === 'need' && need)
+  const dot = (isFirst: boolean) => (isFirst ? null : <Text dimColor> · </Text>)
+  // flash = 값 강조 칸(flash.ts — 색 단계가 오르면 바탕 3번 깜빡)
+  const named = (key: string, name: string, value: string, color?: string, flash?: FlashKey): LineCell => ({
+    key,
+    text: `${name}${value}`,
+    el: isFirst => (
+      <Text>
+        {dot(isFirst)}
+        <Text dimColor>{name}</Text>
+        {flash ? stageText(ui, flash, color, value) : <Text bold {...(color ? { color } : {})}>{value}</Text>}
+      </Text>
+    ),
+  })
+  const cells: LineCell[] = []
+  for (const r of u.rateLimits) {
+    if ((r.kind !== 'five_hour' && r.kind !== 'seven_day') || !shown(r.kind === 'five_hour' ? 'lim5' : 'lim7', r.percentUsed >= 70)) continue
+    const pct = `${Math.round(r.percentUsed)}%`
+    const reset = view.resets === 'on' && r.resetsAt ? L(`${fmtUntil(r.resetsAt, nowMs)} 후 리셋`, `resets in ${fmtUntil(r.resetsAt, nowMs)}`) : null
+    const name = `${limitName(r.kind)} `
+    const pctEl = (
+      <Text bold {...(r.percentUsed >= 90 ? { color: 'error' } : r.percentUsed >= 70 ? { color: 'warning' } : {})}>
+        {pct}
+      </Text>
+    )
+    // 짧은 꼴(리셋 시각 뺌): 아래 버튼 글 · 좁은 알림 줄
+    const short: LineCell = {
+      key: `s-lim-${r.kind}`,
+      text: `${name}${pct}`,
+      el: isFirst => (
+        <Text>
+          {dot(isFirst)}
+          <Text dimColor>{name}</Text>
+          {pctEl}
+        </Text>
+      ),
+    }
+    cells.push({
+      key: `s-lim-${r.kind}`,
+      text: `${name}${pct}${reset ? ` · ${reset}` : ''}`,
+      el: isFirst => (
+        <Text>
+          {dot(isFirst)}
+          <Text dimColor>{name}</Text>
+          {pctEl}
+          {reset ? <Text dimColor>{` · ${reset}`}</Text> : null}
+        </Text>
+      ),
+      ...(reset ? { drop: 1, short } : {}),
+    })
+  }
+  const level = levelOf(u.contextTokens)
+  const est = estimateFor(u, nowMs)
+  if (est.kind === 'cold') {
+    if (view.cache !== 'off') {
+      const word = est.reason === 'model' ? L('모델 바뀜', 'Model switched') : L('캐시 만료', 'Cache expired')
+      cells.push({
+        key: 's-cold',
+        text: word,
+        el: isFirst => (
+          <Text>
+            {dot(isFirst)}
+            {stageText(ui, 'cache', 'error', word)}
+          </Text>
+        ),
+      })
+    }
+  } else if (est.kind !== 'unpriced' && est.minsLeft !== null) {
+    const isLate = est.minsLeft < cacheWarnFor(thresholds(), est.ttlMin)
+    if (shown('cache', isLate)) cells.push(named('s-cache', L('캐시 ', 'Cache '), L(`${est.minsLeft}분`, `${est.minsLeft}m`), isLate ? 'warning' : undefined, 'cache'))
+  }
+  if (u.costUsd !== null) {
+    const color = sessionColorOf(u.costUsd, colors)
+    if (shown('sess', color !== null)) cells.push(named('s-sess', L('세션 ', 'Session '), fmtUsd(u.costUsd), color ?? undefined, 'sess'))
+  }
+  if (est.kind !== 'cold' && est.kind !== 'unpriced' && shown('req', level !== 'ok')) {
+    cells.push(named('s-req', L('요청당 ', 'Per request '), `${approxUsd(est.perCallUsd + (u.perCallExtraUsd ?? 0))}`, LEVEL_TEXT[level], 'ctx'))
+  }
+  if (spend) {
+    // 금액 색(1.0) — 깜빡임(flash) 없이 색만
+    if (view.today === 'on' && spend.today !== null) cells.push(named('s-today', L('오늘 ', 'Today '), fmtUsd(spend.today), spend.todayColor))
+    if (view.month === 'on' && spend.month !== null) cells.push(named('s-month', L('이번 달 ', 'This month '), fmtUsd(spend.month), spend.monthColor))
+  }
+  if (view.range === 'on') cells.push(named('s-range', L('구간 ', 'Range '), rangeNumText(thresholds(), u.window, ctxUnit)))
+  return cells
+}
+
+/**
+ * 1.0 슬림 요약 한 줄(아래 버튼 · 게이지를 누르면 — 사용자 "슬림도 한 줄 볼 수 있어야 · 항상 컴팩트 시점하고 나오니까 슬림이 아닌데"): 컨텍스트 ·
+ * 다음 요청 · 캐시 + 슬림에서 고른 칸(필요할 때도 늘처럼 — 보려고 연 것). 컴팩트 시점 막대 · 표는 패널 몫(공부는 옆)
+ */
+export function slimSummaryCells(ui: Ui, u: Usage, nowMs: number, view: SlimShow, colors: readonly [number, number, number], spend: SpendShown | null): LineCell[] {
+  const { Text } = ui
+  const level = levelOf(u.contextTokens)
+  const est = estimateFor(u, nowMs)
+  const color = LEVEL_TEXT[level]
+  const cell = (key: string, name: string, value: string, c?: string, flash?: FlashKey): LineCell => ({
+    key,
+    text: `${name}${value}`,
+    el: isFirst => (
+      <Text>
+        {isFirst ? null : <Text dimColor> · </Text>}
+        <Text dimColor>{name}</Text>
+        {flash ? stageText(ui, flash, c, value) : <Text bold {...(c ? { color: c } : {})}>{value}</Text>}
+      </Text>
+    ),
+  })
+  const head: LineCell[] = [cell('s-ctx', L('컨텍스트 ', 'Context '), `${u.contextEstimated ? '~' : ''}${ctxNumText(u.contextTokens, u.window, ctxUnit)}`, color, 'ctx')]
+  // 다음 요청도 강조: 식은 캐시면 캐시 만료와 같은 때(다시 쓰는 값), 아니면 컨텍스트와 같은 때
+  if (est.kind === 'cold') head.push(cell('s-next', L('다음 요청 ', 'Next request '), `${approxUsd(est.rewriteUsd)}`, 'error', 'cache'))
+  else if (est.kind !== 'unpriced') head.push(cell('s-next', L('다음 요청 ', 'Next request '), `${approxUsd(est.perCallUsd + (u.perCallExtraUsd ?? 0))}`, color, 'ctx'))
+  const all = Object.fromEntries(Object.entries(view).map(([k, v]) => [k, v === 'off' ? 'off' : 'on'])) as SlimShow
+  return [...head, ...slimParts(ui, u, nowMs, { ...all, req: 'off', cache: 'on' }, colors, spend)]
+}
+
+/**
+ * 바 칸(켬/끔)을 지금 값으로(1.0 — 칸 단계 "끔 · 필요할 때 · 늘", 사용자 "필요할 때 · 늘 · 끄기 옵션이 기본 옵션에서도"): 늘 = 켬, 필요할 때 =
+ * 그 문턱부터(한도 70% · 세션 금액 색 첫 기준 · 컴팩트할 때 · 캐시 경고 분 아래 · 만료), 끔 = 끔. 한도 줄은 보일 한도가 없으면 줄째 빠진다
+ */
+export function bandShowNow(view: PartShow, u: Usage | null, nowMs: number, colors: readonly [number, number, number]): BandShow {
+  const lvl = (k: PartKey, need: boolean) => view[k] === 'on' || (view[k] === 'need' && need)
+  const level = u && u.contextTokens > 0 ? levelOf(u.contextTokens) : 'ok'
+  const est = u ? estimateFor(u, nowMs) : null
+  const limHigh = (kind: string) => (u?.rateLimits ?? []).some(r => r.kind === kind && r.percentUsed >= 70)
+  const cacheNeed = est !== null && (est.kind === 'cold' || (est.kind !== 'unpriced' && est.minsLeft !== null && est.minsLeft < cacheWarnFor(thresholds(), est.ttlMin)))
+  return {
+    fiveHour: lvl('lim5', limHigh('five_hour')),
+    sevenDay: lvl('lim7', limHigh('seven_day')),
+    resets: view.resets === 'on' && (view.lim5 !== 'off' || view.lim7 !== 'off'),
+    session: lvl('sess', u !== null && u.costUsd !== null && sessionColorOf(u.costUsd, colors) !== null),
+    perRequest: lvl('req', level !== 'ok'),
+    context: lvl('ctx', level !== 'ok'),
+    range: view.range === 'on',
+    cache: lvl('cache', cacheNeed),
+    lastTurn: view.last === 'on',
+  }
+}
+
+/** 슬림 아래 버튼에 넣는 칸 수 — 넘치는 칸(셋째부터)은 입력창 위 알림 카드로 */
+export const SLIM_BUTTON_PARTS = 2
+
+/**
+ * 슬림 아래 버튼 글(1.0): 단계 색 네모(데스크톱) + 컨텍스트(늘 · 필요할 때 = 컴팩트할 때부터) + 보일 칸 두 개까지. 버튼 안 글은 색을 못 내
+ * 네모가 단계를 말한다(접힘 C 와 같은 꼴). 터미널은 그림 글자 없이 글로. 요약 카드가 열려 있으면 끝에 ▴
+ */
+/** isOpen: 참 = 요약이 위에 열림(▴), 'side' = 현황이 옆 패널에 열림(▸ — 1.0 사용자 "패널이 열린 느낌이 없음"), 거짓 = 둘 다 닫힘 */
+export function slimButtonText(u: Usage | null, parts: readonly LineCell[], view: SlimShow, unit: CtxUnit, isOpen: boolean | 'side' = false, isTerminal = false): string {
+  const level = u && u.contextTokens > 0 ? levelOf(u.contextTokens) : 'ok'
+  const ctx = u && u.contextTokens > 0 && (view.ctx === 'on' || level !== 'ok') ? `${u.contextEstimated ? '~' : ''}${ctxNumText(u.contextTokens, u.window, unit)}` : null
+  // 버튼엔 짧은 꼴(한도는 리셋 시각 없이 — 렌더 확인 2026-10-17: "5시간 42% · 2시간 30분 후 리셋 · 7일 17% · …" 로 버튼이 줄 끝까지 늘었다)
+  const words = [ctx, ...parts.slice(0, SLIM_BUTTON_PARTS).map(p => (p.short ?? p).text)].filter((w): w is string => w !== null && w !== '')
+  const body = words.length > 0 ? words.join(' · ') : L('이지 컴팩트', 'Easy Compact')
+  const mark = isOpen === 'side' ? ' ▸' : isOpen ? ' ▴' : ''
+  return isTerminal ? `${body}${mark}` : `${REVEAL_SQUARE[level]} ${body}${mark}`
+}
+
+/**
+ * 슬림 견본(설정 바 탭 — 1.0): 두 장면 — 평소(입력창 위엔 없고 입력창 아래 버튼 하나) · 컴팩트할 때(입력창 위 알림 한 줄). 값은 견본(평소 =
+ * 이 세션이 여유면 그 값, 아니면 구간 앞), 버튼은 흐린 글이라 눌러지지 않는다
+ */
+export function drawSlimPreview(ui: Ui, surface: string, u: Usage | null, nowMs: number, view: SlimShow, colors: readonly [number, number, number], label: unknown, live: unknown = null) {
+  const { Box, Text } = ui
+  const isTerm = !onDesktop()
+  const thr = thresholds()
+  const okCtx = u && u.contextTokens > 0 && levelOf(u.contextTokens) === 'ok' ? u.contextTokens : Math.round(thr.ctxWarn * 0.6)
+  const warnCtx = Math.round((thr.ctxWarn + thr.ctxCut) / 2)
+  const win = u?.window ?? 1_000_000
+  const sample = (ctx: number): Usage | null => (u ? { ...u, contextTokens: ctx, contextEstimated: false } : null)
+  const okU = sample(okCtx)
+  const okParts = okU ? slimParts(ui, okU, nowMs, view, colors, null) : []
+  const okLabel = okU ? slimButtonText(okU, okParts, view, ctxUnit, false, isTerm) : isTerm ? ctxNumText(okCtx, win, ctxUnit) : `${REVEAL_SQUARE.ok} ${ctxNumText(okCtx, win, ctxUnit)}`
+  const warnLabel = isTerm ? ctxNumText(warnCtx, win, ctxUnit) : `${REVEAL_SQUARE.warn} ${ctxNumText(warnCtx, win, ctxUnit)}`
+  const isRange = thr.isRange === true
+  // 넘은 값은 바와 같은 셈(ctxNumText — 단위까지). 구간 글을 ~ 에서 자르면 % 꼴에서 단위가 떨어졌다("25 넘음" — 사용자 실물)
+  const why = isRange ? L(`컴팩트할 때 · ${ctxNumText(thr.ctxWarn, win, ctxUnit)} 넘음`, `Time to compact · past ${ctxNumText(thr.ctxWarn, win, ctxUnit)}`) : L('곧 컴팩트할 때', 'Compact soon')
+  const fakeBtn = (key: string, text: string) => (
+    <Box key={key} alignSelf="flex-start" borderStyle="round" borderColor="promptBorder" paddingX={1} paddingY={0}>
+      <Text>{text}</Text>
+    </Box>
+  )
+  const input = (key: string) =>
+    isTerm ? null : (
+      <Box key={key} borderStyle="round" borderColor="promptBorder" borderDimColor paddingX={1} justifyContent="center" alignItems="center">
+        <Text dimColor>{L('입력창', 'Prompt box')}</Text>
+      </Box>
+    )
+  const gauge = gaugeEl(ui, surface, warnCtx, { key: 'pv-slim-gauge', alt: L('컨텍스트 견본', 'Sample context'), px: 16, motion: false })
+  const alert = (
+    <Box key="pv-slim-alert" columnGap={2} alignItems="center" justifyContent="space-between" borderStyle={isTerm ? undefined : 'round'} borderColor="promptBorder" paddingX={isTerm ? 0 : 1}>
+      <Box key="pv-slim-alert-l" columnGap={1} alignItems="center" flexShrink={1} minWidth={0}>
+        {gauge ? <Box key="pv-slim-g">{gauge}</Box> : null}
+        <Text color="warning" bold>
+          {why}
+        </Text>
+      </Box>
+      <Text key="pv-slim-alert-r" dimColor>
+        {L('[이지 컴팩트]  ✕', '[Easy Compact]  ✕')}
+      </Text>
+    </Box>
+  )
+  return previewFrame(
+    ui,
+    'band-preview',
+    label,
+    <Box key="band-preview-body" flexDirection="column" rowGap={1}>
+      <Box key="pv-slim-ok" flexDirection="column">
+        <Text dimColor>{isTerm ? L('평소 · 바 자리 한 줄', 'Usually · one line in the bar’s place') : L('평소 · 입력창 위엔 없고 아래 버튼 하나', 'Usually · nothing above the input, one button below')}</Text>
+        {input('pv-slim-input-ok')}
+        {fakeBtn('pv-slim-btn-ok', okLabel)}
+      </Box>
+      <Box key="pv-slim-warn" flexDirection="column">
+        <Text dimColor>{L('컴팩트할 때 · 입력창 위 알림', 'Time to compact · alert above the input')}</Text>
+        {alert}
+        {input('pv-slim-input-warn')}
+        {fakeBtn('pv-slim-btn-warn', warnLabel)}
+      </Box>
+      {/* 1.0 진행 중 질문 칸 켬: 대답하는 동안 입력창 바로 위 한 줄(위에 바가 없어 윗선 없이) */}
+      {live ? (
+        <Box key="pv-slim-live" flexDirection="column">
+          <Text dimColor>{L('대답하는 동안 · 입력창 바로 위', 'While answering · right above the input')}</Text>
+          <Box key="pv-slim-live-card" flexDirection="column" borderStyle="round" borderColor="promptBorder" paddingX={1}>
+            {live}
+          </Box>
+          {input('pv-slim-input-live')}
+        </Box>
+      ) : null}
+    </Box>,
+  )
 }

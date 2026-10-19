@@ -1,17 +1,19 @@
 import type { ChangeGroup, CostShow, Optimal, ScreenView, Settings, Source, TidyStyleId, TtlConfig, UpdateState } from '../types'
-import { cacheWarnFor, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_TEXT, thresholds, ttlName, writeRate } from './cost'
-import { BAND_MODES, BAND_PARTS, bandModeName, bandAutoUse, bandStateText, bandModeUse, bandPartName, bandShowOf, chooseScreen, editView, foldName, fmtUsd0, nudgeSessionColor, SESSION_COLOR_STEPS, paneAutoUse, paneSyncUse, infoName, infoUse, resetCustom, SCREEN_PRESETS, screenName, screenUse, screenStateText, setBandPart, setFolded, setLimits, viewOf, chooseTidy, customName, customUse, DEFAULT_SETTINGS, nudgeCache, CACHE_STEPS, CACHE_STEPS_5M, parseTokens, RANGE_BANDS, RANGE_ROWS, setCompactAt, thresholdsOf, TIDY_IDS, tidyStyles, tidySteps, usesCustom, BAND_ORDER_DEFAULT, moveEarlier, normalizeOrder, MONEY_ORDERS, moneyOf, withMoney, compactText, tidyBody, rangeBands, rangeRows, compactMax, contextWindowNow, autoCompactAt, revealWhere } from './settings'
+import { approxUsd, cacheWarnFor, isSubCent, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_TEXT, thresholds, ttlName, writeRate } from './cost'
+import { isSlim, LAYOUTS, layoutName, layoutUse, PARTS, levelName, partName, partUse, setPart, BAND_MODES, BAND_PARTS, bandModeName, bandAutoUse, bandStateText, bandModeUse, bandPartName, bandShowOf, chooseScreen, editView, foldName, fmtUsd0, MONEY_COLOR_STEPS, nudgeSessionColor, paneAutoUse, paneSyncUse, infoName, infoUse, resetCustom, SCREEN_PRESETS, screenName, screenUse, screenStateText, setBandPart, setFolded, setLimits, viewOf, chooseTidy, customName, customUse, DEFAULT_SETTINGS, nudgeCache, CACHE_STEPS, CACHE_STEPS_5M, parseTokens, RANGE_BANDS, RANGE_ROWS, setCompactAt, thresholdsOf, TIDY_IDS, tidyStyles, tidySteps, usesCustom, BAND_ORDER_DEFAULT, moveEarlier, normalizeOrder, MONEY_ORDERS, moneyOf, withMoney, compactText, tidyBody, rangeBands, rangeRows, compactMax, contextWindowNow, autoCompactAt, revealWhere, autoBands, setAutoRange } from './settings'
+import type { MoneyColorKey } from './settings'
 import { COMPACT_MIN, penaltyAt, rangeThresholdsFor, thresholdsFor, WARN_RATIO } from './optimal'
 import { tidyScript } from './tidy'
 import { L } from './i18n'
 import type { Lang } from './i18n'
-import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, section, segButton, segGroup, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW, plainCard, gaugeEl } from './ui-common'
+import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, lockedSeg, section, segButton, segGroup, rowLine, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW, plainCard, gaugeEl } from './ui-common'
 import type { Fold } from './ui-common'
 import { fitLine } from './ui-band'
 import { onTerminal } from './glyph'
 import type { LineCell } from './ui-band'
 import { bandNumText, cellsOf, ctxNumText, paneTitle, widthOf } from './text'
 import { GAUGE_SHAPES } from './gauge'
+import { autoIcon } from './ui-auto'
 import type { GaugeShape } from './gauge'
 import { statusLineUse } from './status-line'
 import { diagOwnText, diagSummary, ISSUE_URL } from './diag'
@@ -85,6 +87,8 @@ export type SettingsActions = {
   openOverview: () => void
   /** 설정 안 탭(S10, 0.8.1) */
   setTab: (tab: SettingsTab) => void
+  /** 컴팩트 탭 컴팩트 구간 칸의 직접 입력 오류 한 줄(현황 컴팩트 시점과 같은 값) */
+  sizeError?: (msg: string | null) => void
 }
 
 /**
@@ -131,6 +135,8 @@ export function drawSettings(
   tab: SettingsTab = 'bar',
   /** 일반 탭 끝에 붙일 줄(언어 — drawSettingsView 가 그린다) */
   genExtra: unknown[] = [],
+  /** 컴팩트 탭 컴팩트 구간 칸의 직접 입력 오류(register timingErr) */
+  sizeErr: string | null = null,
 ) {
   const { Box, Button, Code, Input, Select, Text } = ui
   const ttl = cache?.ttl ?? 60
@@ -152,7 +158,8 @@ export function drawSettings(
   const stackFor = (name: string, ctrlW: number, hasDesc: boolean) => cols !== null && cols - 1 - Math.max(widthOf(name, isTerminal), hasDesc ? 24 : 12) - 2 < ctrlW
   const row = (key: string, name: string, desc: unknown, control: unknown, ctrlW: number, extra: unknown[] = [], nameEl?: unknown) => {
     const isOpen = open[`desc-${key}`] === true || descOpen
-    return tipRow(ui, key, name, control, extra, nameEl, desc, control !== null && stackFor(name, ctrlW, isOpen && desc !== null && desc !== undefined && desc !== ''), {
+    // 풀이는 부품 아래에 펼친다(tipRow) — 열어도 줄을 쌓지 않아 부품이 제자리
+    return tipRow(ui, key, name, control, extra, nameEl, desc, control !== null && stackFor(name, ctrlW, false), {
       isOpen,
       onToggle: () => act.toggleFold(`desc-${key}`),
     })
@@ -173,7 +180,7 @@ export function drawSettings(
   // 따로(5분 캐시에 10분 경고면 늘 노랑). 유지 시간은 보이기만 — 바꾸던 칸은 0.6.1 피드백으로 뺐다(아래 ttlRow)
   const cfg = cache?.config ?? null
   const srcText = !cfg
-    ? L('자동(구독 요금제 사용량 안 1시간 · API 키 · 사용량 초과 5분)', 'automatic (1 h within a subscription plan · 5 min on an API key or over the plan)')
+    ? L('자동(구독은 1시간, API 키 · 초과 사용은 5분)', 'automatic (1 h on a subscription, 5 min on an API key or over the plan)')
     : cfg.source === 'force5m'
       ? L('환경 변수 FORCE_PROMPT_CACHING_5M(5분 고정)', 'env FORCE_PROMPT_CACHING_5M (5 min forced)')
       : cfg.source === 'env'
@@ -182,12 +189,12 @@ export function drawSettings(
           ? L(`설정 promptCacheTtl = ${cfg.value}`, `setting promptCacheTtl = ${cfg.value}`)
           : cfg.source === 'enable1h'
             ? L('환경 변수 ENABLE_PROMPT_CACHING_1H(1시간)', 'env ENABLE_PROMPT_CACHING_1H (1 h)')
-            : L('자동(구독 요금제 사용량 안 1시간 · API 키 · 사용량 초과 5분)', 'automatic (1 h within a subscription plan · 5 min on an API key or over the plan)')
+            : L('자동(구독은 1시간, API 키 · 초과 사용은 5분)', 'automatic (1 h on a subscription, 5 min on an API key or over the plan)')
   const rNow = ctxNow !== null && ctxNow > 0 && modelId ? ratesFor(modelId, ctxNow) : null
   const minsLeft = cache?.minsLeft ?? null
   const isLateNow = minsLeft !== null && minsLeft < cacheWarnFor(s, ttl)
   const stateText = cache?.isCold
-    ? L('캐시 만료 — 다음 요청이 대화 전체를 다시 씁니다', 'Cache expired — the next request rewrites the whole conversation')
+    ? L('캐시가 만료돼 다음 요청은 대화 전체를 다시 씁니다', 'The cache has expired, so the next request rewrites the whole conversation')
     : minsLeft !== null
       ? L(`캐시 만료까지 ${minsLeft}분 남음`, `Cache expires in ${minsLeft} min`)
       : L('첫 요청 뒤부터 잽니다', 'Measured after the first request')
@@ -196,12 +203,12 @@ export function drawSettings(
   const whyText =
     readNow !== null && rewriteNow !== null
       ? L(
-          `Claude 가 이 대화(${fmtTokens(ctxNow!)})를 ${ttlName(ttl)} 기억합니다. 그 안에 다음 질문을 보내면 캐시에서 읽어 요청당 ~${fmtUsd(readNow)}, 넘기면 전체를 다시 써 ~${fmtUsd(rewriteNow)} 가 한 번 더 듭니다. 그때 바로 컴팩트할지는 바 · 이지 컴팩트 버튼이 알려 줍니다.`,
-          `Claude keeps this conversation (${fmtTokens(ctxNow!)}) for ${ttlName(ttl)}. Ask again within it and it is read from cache at ~${fmtUsd(readNow)} per request; after it, rewriting everything costs ~${fmtUsd(rewriteNow)} once. The bar and the Easy Compact button then tell you whether to compact right away.`,
+          `이 대화(${fmtTokens(ctxNow!)})는 ${ttlName(ttl)} 동안 캐시에 남습니다. 그 안에 보내면 요청당 ${approxUsd(readNow)}, 넘기면 다시 써서 ${approxUsd(rewriteNow)} 가 한 번 더 듭니다.`,
+          `This conversation (${fmtTokens(ctxNow!)}) stays cached for ${ttlName(ttl)}. Within it a request costs ${approxUsd(readNow)}; after it, rewriting costs ${approxUsd(rewriteNow)} once.`,
         )
       : L(
-          `Claude 가 이 대화를 ${ttlName(ttl)} 기억합니다. 그 안에 다음 질문을 보내면 싸게 읽고, 넘기면 대화 전체를 다시 써 비쌉니다. 그때 바로 컴팩트할지는 바 · 이지 컴팩트 버튼이 알려 줍니다.`,
-          `Claude keeps this conversation for ${ttlName(ttl)}. Ask again within it and it is read cheaply; after it, the whole conversation is rewritten at a higher price. The bar and the Easy Compact button then tell you whether to compact right away.`,
+          `이 대화는 ${ttlName(ttl)} 동안 캐시에 남습니다. 그 안에 보내면 싸고, 넘기면 다시 써서 비쌉니다.`,
+          `This conversation stays cached for ${ttlName(ttl)}. Within it requests are cheap; after it, a rewrite costs more.`,
         )
   // 유지 시간은 보이기만(0.6.1 피드백 — 사용자 "캐시 유지 시간 변경 기능은 빼줘, 의도 아니었음" · 디렉터리 검토 보류 "설정 파일 쓰기"): 지금 값 ·
   // 무엇이 정하나 · 1시간/5분의 대가. 바꾸려면 Claude Code 설정(promptCacheTtl) · 환경 변수에서 — mod 는 설정 파일을 쓰지 않는다
@@ -212,14 +219,14 @@ export function drawSettings(
     <Box key="cache-ttl-desc" flexDirection="column">
       <Text dimColor wrap="wrap">
         {L(
-          `지금 ${ttlName(ttl)}${cache?.measured ? '(이 세션 기록에서 잼)' : '(추정 — 첫 요청 뒤 기록으로 잽니다)'} · 정하는 곳: ${srcText}`,
-          `Now ${ttlName(ttl)}${cache?.measured ? ' (measured from this session)' : ' (estimated — measured after the first request)'} · set by: ${srcText}`,
+          `지금 ${ttlName(ttl)}${cache?.measured ? '' : '(추정)'} · 정하는 곳: ${srcText}`,
+          `Now ${ttlName(ttl)}${cache?.measured ? '' : ' (estimated)'} · set by: ${srcText}`,
         )}
       </Text>
       <Text dimColor wrap="wrap">
         {L(
-          '1시간 = 쓰기가 입력 요율의 2배 · 1시간 안에 돌아오면 다시 안 씀. 5분 = 쓰기 1.25배 · 5분 넘게 쉬면 컨텍스트 전체를 다시 씀.',
-          '1 hour = writes cost 2× input · no rewrite if you are back within an hour. 5 min = writes cost 1.25× · a break over 5 min rewrites the whole context.',
+          '1시간 캐시는 쓰기 값이 2배, 5분 캐시는 1.25배입니다. 그 시간을 넘겨 쉬면 다시 씁니다.',
+          '1-hour cache writes cost 2×, 5-minute ones 1.25×. A longer break rewrites it.',
         )}
       </Text>
     </Box>,
@@ -270,103 +277,20 @@ export function drawSettings(
   )
   const cacheSection = plainCard(ui, 'set-cache', L('캐시', 'Cache'), [stateLine, ttlRow, warnRow('cache', 60), warnRow('cache5', 5), whyLine])
 
-  // ── 컴팩트 문구: 드롭다운으로 프리셋을 고르면
-  // 두 칸이 그 글로 채워지고, 칸을 고쳐 저장하면 "직접 쓰기". ① 은 [저장하고 컴팩트] 저장 턴의 가운데(앞뒤 잃을 정보 확인 · [컴팩트 진행]
-  // 표시는 mod 고정 — 흐름이 안 깨지게), ② 는 /compact 뒤(저장하고 컴팩트 = mod 의 "직전 답 남김" 뒤 · 바로 컴팩트 = 이 글만)
-  const isCustom = s.tidy === 'custom'
-  const steps = tidySteps(s)
-  const tidyLabels = [...TIDY_IDS.map(id => tidyStyles()[id].name), L('직접 쓰기', 'Write my own')]
-  const preText = isCustom ? s.tidyCustom : tidyBody(s).join(' ')
-  // N5: 터미널은 입력칸이 흐린 예시 글 한 줄로만 보여 칸인지 몰랐다 → 테두리 칸
-  const inputBox = (key: string, el: unknown) => (
-    <Box key={key} {...(isTerminal ? { borderStyle: 'round', borderColor: 'promptBorder', paddingX: 1 } : {})}>
-      {el}
+  // ── 컴팩트 문구: 1.0 부터 설정 칸이 아니라 [이지 컴팩트] 확인 팝업에서 고른다 — 찾으러 온 분께 한 줄 안내
+  const tidyNote = (
+    <Box key="tidy-note" flexDirection="column">
+      <Text key="tidy-note-head" bold>
+        {L('컴팩트 문구', 'Compact text')}
+      </Text>
+      <Text key="tidy-note-text" dimColor wrap="wrap">
+        {L(
+          `[이지 컴팩트]를 누르면 고를 수 있습니다. 고른 것은 다음에도 그대로입니다.`,
+          `Pick one when you press [Easy Compact]. Your pick stays for next time.`,
+        )}
+      </Text>
     </Box>
   )
-  const tidy = plainCard(ui, 'set-tidy', L('컴팩트 문구', 'Compact text'), [
-    row(
-      'tidy-pick-row',
-      L('문구', 'Text'),
-      L('고르면 아래 두 칸이 그 글로 채워집니다 — 칸을 고쳐 저장하면 "직접 쓰기"', 'Picking fills the two boxes below — saving an edited box switches to "Write my own"'),
-      choiceControl(
-        ui,
-        'tidy-pick',
-        [...TIDY_IDS.map(id => ({ value: id, label: tidyStyles()[id].name })), { value: 'custom', label: L('직접 쓰기', 'Write my own') }],
-        s.tidy,
-        v => save(v === 'custom' ? { ...s, tidy: 'custom' } : chooseTidy(s, v)),
-      ),
-      choiceW(tidyLabels),
-      [
-        isCustom ? null : (
-          <Text key="tidy-use" wrap="wrap">
-            {tidyStyles()[s.tidy as TidyStyleId].use}
-          </Text>
-        ),
-        isCustom ? (
-          <Text key="tidy-steps" dimColor wrap="wrap">
-            {L('아래 두 칸에 쓴 글대로 보냅니다(비운 칸은 일반 문구)', 'Sends what the two boxes below say (an empty box uses Normal)')}
-          </Text>
-        ) : (
-          <Box key="tidy-steps" columnGap={1} flexWrap="wrap">
-            <Text dimColor>{L('저장', 'Save')}</Text>
-            <Text bold>{steps.keep}</Text>
-            <Text dimColor>{L('· 답', '· Reply')}</Text>
-            <Text bold>{steps.reply}</Text>
-          </Box>
-        ),
-      ],
-    ),
-    row(
-      'tidy-pre-row',
-      L('① 컴팩트 전에 보낼 글', '① Text sent before compacting'),
-      L('[이지 컴팩트]의 저장 턴에 보냅니다 — 잃을 정보 확인과 [컴팩트 진행] 표시는 mod 가 앞뒤에 붙입니다.', 'Sent in the save turn of [Easy Compact] — the mod adds the lost-information check and the [Compact go] mark around it.'),
-      null,
-      0,
-      [
-        inputBox(
-          'tidy-input-row',
-          <Input
-            key="tidy-input"
-            placeholder={tidyStyles().default.body.join(' ')}
-            value={draft ?? preText}
-            submitLabel={L('저장', 'Save')}
-            onInput={v => act.typeTidy(v)}
-            onSubmit={v => act.saveTidy(v)}
-          />,
-        ),
-      ],
-    ),
-    row(
-      'tidy-post-row',
-      L('② /compact 뒤에 붙일 글', '② Text after /compact'),
-      L('요약에 남길 것 — [이지 컴팩트]는 mod 의 "직전 답 남김" 지시 뒤에, [기본 컴팩트]는 이 글만 붙습니다.', 'What the summary keeps — after the mod’s "keep the previous answer" for [Easy Compact], alone for [Plain compact].'),
-      null,
-      0,
-      [
-        inputBox(
-          'compact-input-row',
-          <Input
-            key="compact-input"
-            placeholder={tidyStyles().default.compact}
-            value={compactDraft ?? compactText(s)}
-            submitLabel={L('저장', 'Save')}
-            onInput={v => act.typeCompact(v)}
-            onSubmit={v => act.saveCompact(v)}
-          />,
-        ),
-      ],
-    ),
-    // 보내는 글 전체(자세히 · R6 펼침): 앱 코드 칸 — 두 버튼이 실제로 보내는 글 그대로
-    isLean ? null : (
-      <Box key="tidy-raw-unit" flexDirection="column">
-        <Box key="tidy-raw-row" columnGap={1} alignItems="center">
-          <Button key="tidy-raw" label={rawOpen ? '▾' : '▸'} variant="secondary" onPress={onToggleRaw} />
-          <Text>{L('보내는 글 전체', 'Full text sent')}</Text>
-        </Box>
-        {rawOpen ? <Code key="tidy-script" source={tidyScript(s).map(l => l.text).join('\n')} /> : null}
-      </Box>
-    ),
-  ])
 
   // ── 화면 종류: 프리셋 셋 — 간단 · 자세히 · 커스텀. 바 칸 · 답변 칩을 같이 정해 탭 위에 둔다(S10 — 예전엔 "화면" 카드
   // 안에 미리보기 · 그 화면이 정하는 칸이 있고, 바 칸이 바 공통 · 바 · 패널 카드로 흩어져 있었다)
@@ -390,21 +314,23 @@ export function drawSettings(
   const lockNote = (key: string) =>
     isCustomScreen ? null : (
       <Text key={key} dimColor wrap="wrap">
-        {L(`흐린 칸은 ${screenName(s.screen)} 화면이 정합니다 — 바꾸려면 위 화면 종류를 [커스텀]으로`, `Dimmed rows follow the ${screenName(s.screen)} screen — choose [Custom] above to change them`)}
+        {L(
+          "현재는 프리셋 설정이라 바꿀 수 없습니다. 바꾸려면 화면 프리셋 설정에서 '커스텀'을 고르세요.",
+          'This is a preset, so it can’t be changed here. Pick Custom under Screen preset to change it.',
+        )}
       </Text>
     )
-  const partRow = (k: keyof CostShow) =>
-    row(
-      `show-${k}-row`,
-      bandPartName(k),
-      null,
-      onOffControl(ui, `show-${k}`, view.bandShow[k], on => editV(v => ({ ...v, bandShow: { ...v.bandShow, [k]: on } })), !isCustomScreen),
-      onOffW(),
-      [],
-      subName(bandPartName(k), !isCustomScreen),
-    )
-  const limitsOn = s.limitShow.fiveHour || s.limitShow.sevenDay
-  const limitParts = BAND_PARTS.filter(p => p.group === 'limits')
+  // 1.0 칸 한 줄: 칸마다 끔 · 필요할 때 · 늘. 커스텀이면 묶음
+  // 버튼, 정해 둔 화면(슬림 · 간단 · 자세히)이면 같은 칸들을 흐리게(lockedSeg — 못 바꿈, 바꾸려면 [커스텀]). 예전엔 고른 값 글 하나라 무엇을 고를 수
+  // 있는지 몰랐다
+  const partRow = (p: (typeof PARTS)[number]) => {
+    const cur = view.parts[p.key]
+    const control = isCustomScreen
+      ? segGroup(ui, `part-${p.key}-seg`, p.states.map(v => one(`part-${p.key}-${v}`, levelName(p.key, v), cur === v, () => save(setPart(s, p.key, v)))))
+      : lockedSeg(ui, `part-${p.key}-v`, p.states.map(v => ({ key: `part-${p.key}-${v}`, label: levelName(p.key, v), isOn: cur === v })))
+    const w = segW(p.states.map(v => levelName(p.key, v)))
+    return row(`part-${p.key}-row`, partName(p.key), partUse(p.key), control, w, [], subName(partName(p.key), !isCustomScreen))
+  }
   const colorNames = [
     { name: L('노랑', 'yellow'), hex: SESSION_TEXT[0] },
     { name: L('주황', 'orange'), hex: SESSION_TEXT[1] },
@@ -418,46 +344,160 @@ export function drawSettings(
     { id: 'both' as const, name: L('둘 다', 'Both') },
   ]
 
-  // ── 탭 위: 화면 종류(+ 커스텀이면 처음 값 가져오기) → 탭 줄
-  const topRows = [
+  // 금액 색 한 줄(세션 · 오늘 · 이번 달 — 1.0 오늘 · 이번 달 더함, 같은 꼴): 노랑 · 주황 · 빨강 기준을 고르는 칸 셋. 키는 세션 줄 그대로(color-0 …)
+  const moneyColorsRow = (key: MoneyColorKey, rowKey: string, keyPrefix: string, name: string, use: string) =>
     row(
-      'screen-row',
-      L('화면 종류', 'Screen type'),
-      screenUse(s.screen),
-      segGroup(ui, 'screen-seg', SCREEN_PRESETS.map(p => one(`screen-${p}`, screenName(p), s.screen === p, () => save(chooseScreen(s, p))))),
-      segW(SCREEN_PRESETS.map(p => screenName(p))),
+      rowKey,
+      name,
+      use,
+      colorNames.map((c, i) => {
+        const cur = s[key]
+        const lo = i > 0 ? cur[i - 1]! : 0
+        const hi = i < 2 ? cur[i + 1]! : Number.POSITIVE_INFINITY
+        const vals = MONEY_COLOR_STEPS[key].filter(v => (v > lo && v < hi) || v === cur[i])
+        const k = `${keyPrefix}-${i}`
+        return (
+          <Box key={k} columnGap={1} alignItems="center">
+            <Text color={c.hex}>{c.name}</Text>
+            {onTerminal() ? (
+              <Box key={`${k}-step`} columnGap={1} alignItems="center">
+                <Button key={`${k}-down`} label="−" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, -1, key))} />
+                <Text>{fmtUsd0(cur[i]!)}</Text>
+                <Button key={`${k}-up`} label="+" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, 1, key))} />
+              </Box>
+            ) : (
+              <Select
+                key={`${k}-pick`}
+                options={vals.map(v => ({ value: String(v), label: fmtUsd0(v) }))}
+                value={String(cur[i])}
+                onSelect={v => {
+                  const c2 = [...cur] as [number, number, number]
+                  c2[i] = Number(v)
+                  save({ ...s, [key]: c2 })
+                }}
+              />
+            )}
+          </Box>
+        )
+      }),
+      colorsW,
+    )
+  // 세션 금액 색 · 컨텍스트 숫자 — 비용 줄 카드에 두고, 한눈 화면(비용 줄이 없다)은 바 전체 카드에(아이콘 바 칸도 이 값을 따른다)
+  const sessionColorsRow = moneyColorsRow(
+    'sessionColors',
+    'session-colors',
+    'color',
+    L('세션 금액 색', 'Session cost'),
+    L('바 · 패널의 세션 금액이 이 값을 넘으면 그 색.', 'The session cost on the bar and pane takes this color above each value.'),
+  )
+  // 1.0 오늘 · 이번 달 금액 색 — 세션 금액 바로 아래
+  const todayColorsRow = moneyColorsRow(
+    'todayColors',
+    'today-colors',
+    'today-color',
+    L('오늘 금액 색', 'Today cost'),
+    L(
+      '오늘 금액(이 PC 모든 세션)이 이 값을 넘으면 이 색으로 바뀝니다.',
+      'Today’s cost (all sessions on this PC) takes this color above this value.',
     ),
+  )
+  const monthColorsRow = moneyColorsRow(
+    'monthColors',
+    'month-colors',
+    'month-color',
+    L('이번 달 금액 색', 'This month cost'),
+    L(
+      '이번 달 금액(이 PC 모든 세션)이 이 값을 넘으면 이 색으로 바뀝니다.',
+      'This month’s cost (all sessions on this PC) takes this color above this value.',
+    ),
+  )
+  // B1(0.6.1 피드백 "컨텍스트 범위 값 · % 값으로 보이게 하는 옵션") · S9(0.8.1 — 현황 컴팩트 카드까지): 숫자 꼴. 비용 줄 칸(컨텍스트 · 컴팩트
+  // 구간)을 바꾸니 비용 줄 미리보기 곁에
+  const ctxUnitRow = row(
+    'ctx-unit-row',
+    L('컨텍스트 숫자', 'Context numbers'),
+    L(
+      '컨텍스트 크기를 281k 로 볼지, 28% 로 볼지, 둘 다 볼지 고릅니다.',
+      'Show context sizes as 281k, as 28%, or both.',
+    ),
+    segGroup(ui, 'ctx-unit-seg', units.map(x => one(`ctx-unit-${x.id}`, x.name, s.ctxUnit === x.id, () => save({ ...s, ctxUnit: x.id })))),
+    segW(units.map(x => x.name)),
+  )
+  // 아래 버튼 꼴(슬림 등): 늘 접힌 꼴이라 바 접기 · 펴기 · 입력창 아래 한 줄 칸이 없다
+  const isButton = view.layout === 'button'
+  // ── 탭 위: 화면 종류(+ 커스텀이면 처음 값 가져오기) → 탭 줄
+  // 1.0(시안 preview-1017d 안 3 — 사용자 "슬림 화면 켜고 끄는 거에 따라서 화면 종류 설정이 … 양립할 수 없는 곳"): 슬림은 넷째 화면 — 한 줄에 넷,
+  // 같이 켜질 수 없음이 꼴로 보인다(1.0 전 시안의 "슬림 화면 [끔 | 켬 | 커스텀]" 둘째 줄은 없앴다).
+  // 시안 1017n ① 안 A: 화면 종류가 주인공 — 굵은 이름 아래 제
+  // 줄에 묶음 버튼(왼쪽부터), 고른 화면의 한 줄 풀이는 늘 보인다("?" 없이). 아래 탭은 구분선 아래 한 단계(세부 설정 — 고른 화면)
+  const screenBlock = (
+    <Box key="screen-row" flexDirection="column" marginTop={1}>
+      {/* 제목 글은 못 키운다 — 엔진 Text size(heading)를 데스크톱 실물이 안 받았다(2026-10-17). 층은 구분선 · "세부 설정 — 고른 화면" 제목으로 가른다 */}
+      <Text bold>{L('화면 프리셋 설정', 'Screen preset')}</Text>
+      <Box key="screen-row-seg">{segGroup(ui, 'screen-seg', SCREEN_PRESETS.map(p => one(`screen-${p}`, screenName(p), s.screen === p, () => save(chooseScreen(s, p)))))}</Box>
+      <Box key="screen-use">
+        <Text dimColor wrap="wrap">
+          {screenUse(s.screen)}
+        </Text>
+      </Box>
+    </Box>
+  )
+  const topRows = [
+    screenBlock,
     isCustomScreen
       ? row(
           'custom-reset-row',
           L('처음 값 가져오기', 'Start from'),
-          L('커스텀 값을 그 화면의 값으로 되돌립니다', 'Reset Custom to that screen’s values'),
-          (['simple', 'detail'] as const).map(p => <Button key={`custom-from-${p}`} label={screenName(p)} variant="secondary" onPress={() => save(resetCustom(s, p))} />),
-          chipsW((['simple', 'detail'] as const).map(p => screenName(p))),
+          L('커스텀 값을 그 화면 값으로 되돌립니다', 'Reset Custom to that screen’s values'),
+          (['slim', 'simple', 'detail'] as const).map(p => <Button key={`custom-from-${p}`} label={screenName(p)} variant="secondary" onPress={() => save(resetCustom(s, p))} />),
+          chipsW((['slim', 'simple', 'detail'] as const).map(p => screenName(p))),
         )
       : null,
   ]
-  // 탭 줄 — 현황 · 설정 탭과 같은 묶음 버튼(앱 탭 꼴). 한 번에 한 탭만 그린다
+  // 탭 줄 — 화면 종류 아래 한 단계(시안 1017n 안 A → 실물 피드백 2026-10-17 "고른 바가 표시 안 됨 · '세부'도 누르는 것 같음 · 너무 딱 붙음 ·
+  // 여기가 저기의 하위 메뉴라고 알 수 있게 구분선" → 안 1): 구분선(rowLine) 아래 "세부 설정 — <고른 화면> 화면" 제목, 탭은 화면 종류와 같은
+  // 고름 꼴(고른 탭 테두리 — 묶음 틀은 없어 화면 종류보다 가볍다). plain 버튼 안 글 꼴(굵게 · 밑줄)은 데스크톱 실물이 안 그려 고른 표시가
+  // 없었다. 한 번에 한 탭만 그린다
   const tabRow = (
-    <Box key="set-tabs-row" marginTop={1}>
-      {segGroup(ui, 'set-tabs', SETTINGS_TABS.map(t => one(`set-tab-${t}`, settingsTabName(t), tab === t, () => act.setTab(t))))}
+    <Box key="set-tabs-row" flexDirection="column" marginBottom={1}>
+      {rowLine(ui, 'set-tabs-line')}
+      <Box key="set-tabs-head" columnGap={1} alignItems="center" flexWrap="wrap">
+        <Text bold>{L('세부 설정', 'Detailed settings')}</Text>
+        <Text dimColor>{L(`(${screenName(s.screen)} 화면)`, `(${screenName(s.screen)} screen)`)}</Text>
+      </Box>
+      <Box key="set-tabs" columnGap={1} alignItems="center" flexWrap="wrap">
+        {SETTINGS_TABS.map(t => one(`set-tab-${t}`, settingsTabName(t), tab === t, () => act.setTab(t)))}
+      </Box>
     </Box>
   )
 
   // ── 바 탭: 바의 줄 순서대로(전체 → 한도 → 비용 → 질문), 줄마다 그 줄 미리보기 바로 아래 그 줄을 바꾸는 칸(S11 — 맨 아래 칸을 바꿀 때도
   // 미리보기가 곁에 있다)
-  const wholeBar = plainCard(ui, 'set-bar-all', L('바 전체', 'Whole bar'), [
+  // 바 꼴(1.0 안 3): 정해 둔 화면이면 그 꼴을 흐린 글로, 커스텀이면 [아래 버튼 | 한 줄 | 세 줄]
+  const layoutRow = row(
+    'bar-layout-row',
+    L('바 꼴', 'Bar shape'),
+    layoutUse(view.layout),
+    isCustomScreen
+      ? segGroup(ui, 'bar-layout-seg', LAYOUTS.map(l => one(`layout-${l}`, layoutName(l), view.layout === l, () => editV(v => ({ ...v, layout: l })))))
+      : lockedSeg(ui, 'bar-layout-v', LAYOUTS.map(l => ({ key: `layout-${l}`, label: layoutName(l), isOn: view.layout === l }))),
+    segW(LAYOUTS.map(layoutName)),
+  )
+  // ── 바 탭(1.0 — 시안 preview-1017d 안 3): 바(견본 · 바 꼴 · 크기 · 게이지 · 창 상태) → 입력창에 보일 것(칸마다 끔 · 필요할 때 · 늘) → 숫자 · 색.
+  // 1.0 전엔 줄마다 카드(한도 줄 · 비용 줄 · 질문 줄 — 칸은 켬/끔, 한도 · 오늘 · 이번 달은 화면과 따로)였다
+  const wholeBar = plainCard(ui, 'set-bar-all', L('바', 'Bar'), [
     previews?.bar ?? null,
-    // 한도 줄 · 질문 줄이 없는 화면(간단 등)은 바가 한 줄 — 최소 · 최대가 같다(바의 [—] 도 빠진다)
-    row(
-      'band-mode-row',
-      L('바 크기', 'Bar size'),
-      s.screen === 'simple' || (!bandShowOf(s).lastTurn && !s.limitShow.fiveHour && !s.limitShow.sevenDay)
-        ? L('지금 화면은 바가 한 줄이라 전체 · 한 줄이 같습니다.', 'With this screen the bar is one row, so Full and One line look the same.')
-        : bandModeUse(s.band),
-      segGroup(ui, 'band-mode-seg', BAND_MODES.map(m => one(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m })))),
-      segW(BAND_MODES.map(m => bandModeName(m))),
-    ),
+    layoutRow,
+    // 바 크기(전체 · 한 줄 — 바의 [—] · [□] 와 같은 값)는 세 줄 꼴에만
+    view.layout === 'three'
+      ? row(
+          'band-mode-row',
+          L('바 크기', 'Bar size'),
+          bandModeUse(s.band),
+          segGroup(ui, 'band-mode-seg', BAND_MODES.map(m => one(`band-${m}`, bandModeName(m), s.band === m, () => save({ ...s, band: m })))),
+          segW(BAND_MODES.map(m => bandModeName(m))),
+        )
+      : null,
     // B8(0.8.1 사용자 "클로드 기본 컨텍스트 아이콘 말고 다른 아이콘 — 전부 제공해 주고 옵션으로, 기본은 가로 막대"): 게이지 꼴 — 바 · 패널 머리 ·
     // 확인 카드가 같이 바뀐다. 터미널엔 게이지 그림이 없어 줄을 뺀다(CLI 에서 안 쓰는 옵션은 안 보이게)
     isTerminal
@@ -466,8 +506,8 @@ export function drawSettings(
           'gauge-shape-row',
           L('게이지 모양', 'Gauge shape'),
           L(
-            '바 · 패널 머리 · 확인 카드의 컨텍스트 게이지 꼴 — 양 · 색(글자색 → 주황 → 빨강, 늦어지면 깜빡)은 같습니다. 고리는 입력창 오른쪽 앱 컨텍스트 고리와 같은 꼴입니다.',
-            'The context gauge on the bar, the pane header and the compact card — fill and colors (text → orange → red, pulsing when late) stay the same. The ring matches the app’s own context ring at the input’s right.',
+            '바와 패널에 나오는 컨텍스트 게이지 모양입니다. 고리는 앱의 컨텍스트 고리와 같은 모양입니다.',
+            'The context gauge on the bar and pane. The ring matches the app’s own context ring.',
           ),
           choiceControl(ui, 'gauge-shape', GAUGE_SHAPES.map(g => ({ value: g, label: gaugeShapeName(g) })), s.gaugeShape, v => save({ ...s, gaugeShape: v as GaugeShape })),
           choiceW(GAUGE_SHAPES.map(gaugeShapeName)),
@@ -488,7 +528,8 @@ export function drawSettings(
                 <Box key="gauge-strip" columnGap={2} rowGap={1} flexWrap="wrap" alignItems="center">
                   {samples.map(x => (
                     <Box key={`gauge-strip-${x.id}`} columnGap={1} alignItems="center">
-                      {gaugeEl(ui, surface, x.ctx, { key: `gauge-strip-${x.id}-svg`, alt: x.name, px: 16, blink: x.blink, busy: x.busy, motion, live: motion && (x.blink || x.busy) })}
+                      {/* 범례는 그림(img) — 틀로 띄우면 패널을 열 때마다 빈 상자가 번쩍였다. 깜빡임 · 컴팩트 중 움직임은 그림 안에서만(다시 그리면 처음부터) */}
+                      {gaugeEl(ui, surface, x.ctx, { key: `gauge-strip-${x.id}-svg`, alt: x.name, px: 16, blink: x.blink, busy: x.busy, motion })}
                       <Text dimColor>{x.name}</Text>
                     </Box>
                   ))}
@@ -497,96 +538,52 @@ export function drawSettings(
             })(),
           ],
         ),
-    // 창 상태(켜기/끄기 = 스위치, R3): 바의 창 버튼 ✕ · 입력창 아래 버튼과 같은 값
-    row(
-      'band-fold-row',
-      L('바 접어 두기', 'Keep the bar folded'),
-      L(`바 오른쪽 위 ✕ 와 같은 값 — 접으면 ${revealWhere()} 버튼으로 다시 폅니다.`, `Same as the ✕ at the bar’s top right — when folded, reopen it with the button ${revealWhere()}.`),
-      onOffControl(ui, 'bandFolded', s.bandFolded, on => save(setFolded(s, on))),
-      onOffW(),
-    ),
-    row('band-autoopen-row', L('컴팩트할 때 바 펴기', 'Open the bar when compacting'), bandAutoUse(s.bandAutoOpen), onOffControl(ui, 'bandAutoOpen', s.bandAutoOpen, on => save({ ...s, bandAutoOpen: on })), onOffW()),
-    // B10(0.9.0 사용자 "선택 버튼으로 물을 때 바가 내려가 내용이 안 보임"): 앱이 턴 끝 "다음 단계" 상자 동안 바를 뺀다(mod 로 못 막음) — 켜면
-    // 입력창 아래 바닥 줄에 바의 요지 한 줄($.ui.status, hooks/status-line.ts). 기본 끔
-    row('status-line-row', L('입력창 아래 한 줄', 'Line below the input'), statusLineUse(), onOffControl(ui, 'statusLine', s.statusLine, on => save({ ...s, statusLine: on })), onOffW()),
-  ])
-  // 요청이 끝났는데도 엔진이 한도를 안 준 세션(API 키 등 — 단정은 안 한다)엔 한도 줄 카드를 뺀다: 켜도 그릴 게 없다
-  const limitsCard =
-    hasLimits === false
+    // 창 상태(켜기/끄기 = 스위치, R3): 바의 창 버튼 ✕ · 입력창 아래 버튼과 같은 값. 아래 버튼 꼴(슬림 등)은 늘 접힌 꼴이라 이 줄들이 없다
+    isButton
       ? null
-      : plainCard(
-          ui,
-          'set-bar-limits',
-          hoverTip(
-            ui,
-            'limits-row',
-            <Text bold>{L('한도 줄', 'Limits row')}</Text>,
-            L('구독 요금제의 5시간 · 7일 한도(계정 전체 — 다른 세션 몫도 들어 있음).', 'Your plan’s 5-hour and 7-day limits (whole account — other sessions count too).'),
-            { isOpen: open['desc-limits-row'] === true || descOpen, onToggle: () => act.toggleFold('desc-limits-row') },
-          ),
-          [
-            previews?.limits ?? null,
-            unit('limits-unit', [
-              row('show-limits-row', L('한도 전체', 'All limits'), null, onOffControl(ui, 'limits', limitsOn, on => save(setLimits(s, on))), onOffW(), [], subName(L('한도 전체', 'All limits'))),
-              ...limitParts.map(p =>
-                row(`show-${p.key}-row`, bandPartName(p.key), null, onOffControl(ui, `show-${p.key}`, bandShowOf(s)[p.key], on => save(setBandPart(s, p.key, on))), onOffW(), [], subName(bandPartName(p.key))),
-              ),
-            ]),
-          ],
-        )
-  const costCard = plainCard(ui, 'set-bar-cost', L('비용 줄', 'Cost row'), [
-    previews?.cost ?? null,
-    unit('band-g-cost-unit', [lockNote('cost-locked'), ...BAND_PARTS.filter(p => p.group === 'cost').map(p => partRow(p.key as keyof CostShow))]),
-    // 오늘 · 이번 달 사용량(0.5.0) — 따로 켜고 끈다(기본 끔). 바 · 간단 패널에 보일지 — 자세히 패널엔 늘. 비용 줄 칸이라 이 카드에(S10)
-    unit('spend-unit', [
-      row(
-        'spend-row',
-        L('모든 세션', 'All sessions'),
-        L(
-          '켜면 바 비용 줄과 간단 패널에도 보입니다. 자세히 패널엔 늘 보입니다. 이 PC 모든 세션의 금액(API 정가 환산 · 추정)이고, 세션 기록에 없는 컴팩트 요약 · 앱 자체 요청은 이지 컴팩트가 잰 값으로 더합니다. 재기 전 컴팩트는 세션 기록의 컴팩트 크기로 어림해 합계 밖에 따로 보입니다("컴팩트 어림 +$X 별도" — 앱 자체 요청은 어림 못 함 · 다른 기기 · 웹 사용은 빠짐). 날짜는 Claude 사용량 화면처럼 UTC 로 나눕니다(한국은 오전 9시에 바뀜).',
-          'When on, also shown on the bar’s cost row and the Simple pane. The Detailed pane always shows them. Cost of every session on this PC (API list prices, estimated); compact summaries and the app’s own requests, which aren’t in the transcripts, are added as easy-compact measured them. Compacts from before it measured them are estimated from their size in the transcripts and shown apart from the total ("+$X est. compacts not included" — the app’s own requests can’t be estimated; other devices and the web aren’t counted). Days are split in UTC, as on Claude’s usage page.',
+      : row(
+          'band-fold-row',
+          L('바 접어 두기', 'Keep the bar folded'),
+          L(`바 오른쪽 위 ✕ 와 같습니다.`, `Same as the ✕ at the bar’s top right.`),
+          onOffControl(ui, 'bandFolded', s.bandFolded, on => save(setFolded(s, on))),
+          onOffW(),
         ),
-        null,
-        0,
-      ),
-      row('spend-today-row', L('오늘', 'Today'), null, onOffControl(ui, 'spendToday', s.spendToday, on => save({ ...s, spendToday: on })), onOffW(), [], subName(L('오늘', 'Today'))),
-      row('spend-month-row', L('이번 달', 'This month'), null, onOffControl(ui, 'spendMonth', s.spendMonth, on => save({ ...s, spendMonth: on })), onOffW(), [], subName(L('이번 달', 'This month'))),
+    isButton ? null : row('band-autoopen-row', L('컴팩트할 때 바 펴기', 'Open the bar when compacting'), bandAutoUse(s.bandAutoOpen), onOffControl(ui, 'bandAutoOpen', s.bandAutoOpen, on => save({ ...s, bandAutoOpen: on })), onOffW()),
+    // B10(0.9.0 사용자 "선택 버튼으로 물을 때 바가 내려가 내용이 안 보임"): 앱이 턴 끝 "다음 단계" 상자 동안 바를 뺀다(mod 로 못 막음) — 켜면
+    // 입력창 아래 바닥 줄에 바의 요지 한 줄($.ui.status, hooks/status-line.ts). 기본 끔. 아래 버튼 꼴은 아래 버튼이 늘 있어 없다
+    isButton ? null : row('status-line-row', L('입력창 아래 한 줄', 'Line below the input'), statusLineUse(), onOffControl(ui, 'statusLine', s.statusLine, on => save({ ...s, statusLine: on })), onOffW()),
+  ])
+  // 입력창에 보일 것(지금 바 꼴에 있는 칸만 — 지난 질문은 세 줄 꼴, 컴팩트 버튼 단계는 아래 버튼 꼴)
+  // 요청이 끝났는데도 엔진이 한도를 안 준 세션(API 키 등 — 단정은 안 한다)엔 한도 · 리셋 칸을 뺀다: 켜도 그릴 게 없다
+  const barParts = PARTS.filter(p => p.group === 'bar' && p.layouts.includes(view.layout) && !(hasLimits === false && (p.key === 'lim5' || p.key === 'lim7' || p.key === 'resets')))
+  const partsCard = plainCard(ui, 'set-bar-parts', L('입력창에 보일 것', 'Shown at the input'), [
+    unit('parts-unit', [
+      <Text key="parts-head" dimColor wrap="wrap">
+        {isButton
+          ? L(
+              "입력창 아래 버튼에는 컨텍스트와 두 칸까지 들어가고, 나머지는 위 알림에 나옵니다. '필요할 때'로 두면 주의가 필요할 때만 나타납니다.",
+              "The button below the input holds the context and two parts; the rest show in the alert above. 'When needed' shows a value only when it needs attention.",
+            )
+          : L("'필요할 때'로 두면 주의가 필요할 때만 나타납니다.", "'When needed' shows a value only when it needs attention.")}
+      </Text>,
+      lockNote('parts-locked'),
+      ...barParts.map(partRow),
     ]),
     row(
-      'session-colors',
-      L('세션 금액 색', 'Session cost'),
-      L('바 · 패널의 세션 금액이 이 값을 넘으면 그 색.', 'The session cost on the bar and pane takes this color above each value.'),
-      colorNames.map((c, i) => {
-        const lo = i > 0 ? s.sessionColors[i - 1]! : 0
-        const hi = i < 2 ? s.sessionColors[i + 1]! : Number.POSITIVE_INFINITY
-        const vals = SESSION_COLOR_STEPS.filter(v => (v > lo && v < hi) || v === s.sessionColors[i])
-        return (
-          <Box key={`color-${i}`} columnGap={1} alignItems="center">
-            <Text color={c.hex}>{c.name}</Text>
-            {onTerminal() ? (
-              <Box key={`color-${i}-step`} columnGap={1} alignItems="center">
-                <Button key={`color-${i}-down`} label="−" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, -1))} />
-                <Text>{fmtUsd0(s.sessionColors[i]!)}</Text>
-                <Button key={`color-${i}-up`} label="+" variant="secondary" onPress={() => save(nudgeSessionColor(s, i as 0 | 1 | 2, 1))} />
-              </Box>
-            ) : (
-              <Select
-                key={`color-${i}-pick`}
-                options={vals.map(v => ({ value: String(v), label: fmtUsd0(v) }))}
-                value={String(s.sessionColors[i])}
-                onSelect={v => {
-                  const c2 = [...s.sessionColors] as [number, number, number]
-                  c2[i] = Number(v)
-                  save({ ...s, sessionColors: c2 })
-                }}
-              />
-            )}
-          </Box>
-        )
-      }),
-      colorsW,
+      'spend-row',
+      L('모든 세션', 'All sessions'),
+      L(
+        '켜면 바 비용 줄과 간단 패널에도 보입니다. 이 PC 모든 세션 금액을 API 정가로 셈한 추정이고, 날짜는 UTC 기준이라 오전 9시에 바뀝니다.',
+        'When on, also shown on the bar’s cost row and the Simple pane. It estimates every session on this PC at API list prices; days are split in UTC.',
+      ),
+      null,
+      0,
     ),
-    // 0.5 묶음 2(N15): 바 돈 칸 순서 — 고르면 미리보기 · 입력창 위 바가 바로 바뀐다(모든 화면 공통)
+  ])
+  const looksCard = plainCard(ui, 'set-bar-cost', L('숫자 · 색', 'Numbers · colors'), [
+    sessionColorsRow,
+    todayColorsRow,
+    monthColorsRow,
     row(
       'money-order-row',
       L('비용 표시 순서', 'Cost order'),
@@ -594,24 +591,9 @@ export function drawSettings(
       choiceControl(ui, 'money-order', MONEY_ORDERS.map(o => ({ value: o.join(','), label: moneyLabel(o) })), moneyOf(s.bandOrder).join(','), v => save(withMoney(s, v.split(',')))),
       choiceW(MONEY_ORDERS.map(moneyLabel)),
     ),
-    // B1(0.6.1 피드백 "컨텍스트 범위 값 · % 값으로 보이게 하는 옵션") · S9(0.8.1 — 현황 컴팩트 카드까지): 숫자 꼴. 비용 줄 칸(컨텍스트 · 컴팩트
-    // 구간)을 바꾸니 비용 줄 미리보기 곁에
-    row(
-      'ctx-unit-row',
-      L('컨텍스트 숫자', 'Context numbers'),
-      L(
-        '바의 컨텍스트 · 컴팩트 구간, 게이지 칩, 현황 컴팩트 카드(시점 · 구간 · 크기별 비용 — 둘 다면 표는 크기)의 숫자 — 크기(281k) · %(최대 컨텍스트 대비 28%, 앱 컨텍스트 고리와 같은 셈) · 둘 다',
-        'Context and compact-range numbers on the bar, the gauge chip and the Overview compact card (timing · range · cost by size — the table stays in sizes for both) — size (281k), % of the max context (28%, like the app’s context ring) or both',
-      ),
-      segGroup(ui, 'ctx-unit-seg', units.map(x => one(`ctx-unit-${x.id}`, x.name, s.ctxUnit === x.id, () => save({ ...s, ctxUnit: x.id })))),
-      segW(units.map(x => x.name)),
-    ),
+    ctxUnitRow,
   ])
-  const turnCard = plainCard(ui, 'set-bar-turn', L('질문 줄', 'Question row'), [
-    previews?.turn ?? null,
-    unit('band-g-turn-unit', [lockNote('turn-locked'), ...BAND_PARTS.filter(p => p.group === 'turn').map(p => partRow(p.key as keyof CostShow))]),
-  ])
-  const barTab = [wholeBar, limitsCard, costCard, turnCard]
+  const barTab = [wholeBar, partsCard, looksCard]
 
   // ── 답변 칩 탭: 견본 칩 · 답변 칩 자세히(화면 종류가 정함) · 질문 강조(데스크톱 — 마우스 올림)
   const chipTab = [
@@ -620,10 +602,12 @@ export function drawSettings(
       // 0.6.0 실물: 답변 칩 자세히(예전 "정보량")는 답변 끝 칩의 [▸ 자세히] 만
       unit('chip-unit', [
         lockNote('chip-locked'),
+        // 1.0 채팅 칸(화면마다 — 슬림이던 칸): 답변 끝 칩 · 작업 중 금액 [끔 | 늘]
+        ...PARTS.filter(p => p.group === 'chat').map(partRow),
         row(
           'info-row',
           L('답변 칩 자세히', 'Answer chip details'),
-          L('답변 끝 질문 비용 칩에 [▸ 자세히] — 그 질문의 메인 · 에이전트 · 동작별 값', 'A [▸ Details] on the question-cost chip under each answer — its main, agent and per-step costs'),
+          L('답변 아래 칩에 [▸ 자세히]를 붙입니다.', 'Adds [▸ Details] to the chip under each answer.'),
           onOffControl(ui, 'chipDetail', view.info === 'full', on => editV(v => ({ ...v, info: on ? 'full' : 'lean' })), !isCustomScreen),
           onOffW(),
           [],
@@ -637,8 +621,8 @@ export function drawSettings(
             'hover-row',
             L('질문 강조', 'Highlight'),
             L(
-              '채팅창 답변 끝의 질문 비용 칩이나 패널의 그 질문 줄에 마우스를 올리면 칩 · 패널 줄 · 그 답변이 함께 회색이 됩니다 — 어느 답변의 값인지 보입니다. 지금 안 보이는 답변은 회색이 되어도 보이지 않습니다(채팅은 스크롤되지 않음).',
-              'Hover the question-cost chip under an answer, or that question’s row in the pane, and the chip, the row and the answer turn gray together. An answer scrolled out of view stays out of view (the chat does not scroll).',
+              '칩이나 패널의 질문 줄에 마우스를 올리면 그 답변이 회색으로 표시됩니다.',
+              'Hover a chip or a question row in the pane to gray out that answer.',
             ),
             onOffControl(ui, 'questionHover', s.questionHover, on => save({ ...s, questionHover: on })),
             onOffW(),
@@ -657,27 +641,57 @@ export function drawSettings(
     ]),
   ]
 
-  // ── 컴팩트 탭: 컴팩트 문구(이지 컴팩트 저장 턴 · /compact 뒤 글) · 캐시
-  const compactTab = [tidy, isLean ? null : cacheSection]
+  // ── 컴팩트 탭: 컴팩트 구간 · 바로 아래 이지 오토 구간(시안 1019c ② · 1019d — 같은 꼴 칸 · 끔 없음, 켜기는 [컴팩트] 팝업 — 사용자 2026-10-19
+  // "설정에선 구간만, 켜고 끄기는 컴팩트 누르면") · 컴팩트 문구 · 캐시. 컴팩트 구간 칸은 현황 컴팩트 시점의 간단 줄과 같은 칸(같은 값)
+  const autoNowValue = `${s.autoStart}-${s.autoEnd}`
+  const autoName = (a: number, b: number) => bandNumText(a, b, contextWindowNow(), s.ctxUnit)
+  const autoOpts = autoBands().map(([a, b]) => ({ value: `${a}-${b}`, label: autoName(a, b) }))
+  // 지금 값이 목록에 없으면(엔진 자동 컴팩트를 낮춤 · 명령으로 고른 구간) 그 값도 보인다
+  const autoChoices = autoOpts.some(o => o.value === autoNowValue) ? autoOpts : [...autoOpts, { value: autoNowValue, label: autoName(s.autoStart, s.autoEnd) }]
+  const autoRow = row(
+    'auto-range-pick',
+    L('이지 오토 구간', 'Easy Auto range'),
+    L(
+      '답이 끝났을 때 앞쪽을 넘었으면 저장하고 컴팩트합니다. 일하는 도중 뒤쪽을 넘으면 멈추고 저장, 컴팩트한 뒤 이어서 합니다. 켜기는 [컴팩트] 팝업에서 합니다.',
+      'When an answer ends past the start, it saves and compacts. If work goes past the end, it pauses, saves, compacts and then continues. Turn it on from the [Compact] popup.',
+    ),
+    choiceControl(ui, 'auto-range-select', autoChoices, autoNowValue, v => {
+      const [a, b] = v.split('-').map(Number)
+      if (a && b) save(setAutoRange(s, a, b))
+    }),
+    choiceW(autoChoices.map(o => o.label)),
+    [],
+    <Box key="auto-range-name" columnGap={1} alignItems="center">
+      {autoIcon(ui, surface, 'auto-range-icon', 12)}
+      <Text>{L('이지 오토 구간', 'Easy Auto range')}</Text>
+    </Box>,
+  )
+  const zoneCard = plainCard(ui, 'set-zone', L('컴팩트 시점', 'When to compact'), [
+    drawCompactTiming({ save, sizeError: msg => act.sizeError?.(msg), toggle: act.toggleFold }, ui, s, opt, ctxNow, surface, cols === null ? null : cols - CARD_INSET, cache, 'simple', sizeErr, open),
+    autoRow,
+  ])
+  const compactTab = [zoneCard, tidyNote, isLean ? null : cacheSection]
 
-  // ── 일반 탭: 움직임(S1 — 게이지 · 점 · 캐릭터 · 현황 막대) · 문제 제보(0.9.1 U6) · 언어(drawSettingsView)
+  // ── 일반 탭: 애니메이션(S1 — 게이지 · 점 · 캐릭터 · 현황 막대 · 값 깜빡임) · 문제 제보(0.9.1 U6) · 언어(drawSettingsView)
   const genTab = [
     plainCard(ui, 'set-gen', L('일반', 'General'), [
       // S1(0.6.1 피드백 "모션 시스템 / 줄임 용어가 안 맞음"): 앱 설정 낱말을 옮겼던 [시스템 | 줄임] → "움직임" 스위치. 앱 설정의 모션 값은 mod 가
-      // 못 읽어 따로 — 켜도 OS 동작 줄이기면 멈춘다(그림 안 prefers-reduced-motion). 저장 값은 그대로(system = 켬, reduce = 끔).
-      // 0.9.1: 터미널엔 움직이는 그림이 없어(게이지 · 캐릭터 · 막대 그림이 데스크톱만) 줄을 뺀다
-      isTerminal
-        ? null
-        : row(
-            'motion-row',
-            L('움직임', 'Animations'),
-            L(
-              '끄면 게이지 움직임(깜빡임 · 컴팩트 중) · 진행 점 · 에이전트 캐릭터 · 컴팩트 중 현황 막대가 멈춘 모습입니다. 켜도 운영체제의 동작 줄이기가 켜져 있으면 움직이지 않습니다.',
-              'Off: the gauge motion (pulse, compacting), progress dots, the agent character and the Overview bars while compacting stay still. Even when on, your OS reduce-motion setting stops them.',
+      // 못 읽어 따로 — 켜도 OS 동작 줄이기면 그림은 멈춘다(그림 안 prefers-reduced-motion). 저장 값은 그대로(system = 켬, reduce = 끔).
+      // 1.0: 값이 바뀔 때 바 글자 깜빡임(flash.ts)도 이 스위치 — 글자는 엔진이 다시 그려 OS 값을 못 읽으니 이 스위치로만. 이름은 "움직임" → "애니메이션"
+      // 0.9.1: 터미널엔 움직이는 그림이 없어(게이지 · 캐릭터 · 막대 그림이 데스크톱만) 줄을 뺐다.
+      // 1.0: 값 깜빡임은 터미널 바에서도 일어나 터미널에도 둔다 — 풀이는 터미널에서 하는 일(글자 깜빡임)만
+      row(
+        'motion-row',
+        L('애니메이션', 'Animations'),
+        isTerminal
+          ? L('끄면 값이 바뀔 때 바 글자가 깜빡이지 않습니다.', 'Off: bar values no longer blink when they change.')
+          : L(
+              '끄면 게이지 · 진행 점 · 캐릭터 움직임과 글자 깜빡임이 멈춥니다.',
+              'Off: the gauge, progress dots, character and value blink stay still.',
             ),
-            onOffControl(ui, 'motion', s.motion !== 'reduce', on => save({ ...s, motion: on ? 'system' : 'reduce' })),
-            onOffW(),
-          ),
+        onOffControl(ui, 'motion', s.motion !== 'reduce', on => save({ ...s, motion: on ? 'system' : 'reduce' })),
+        onOffW(),
+      ),
       ...genExtra,
     ]),
   ]
@@ -726,6 +740,8 @@ export function drawCompactTiming(
   mode: 'simple' | 'detail',
   sizeErr: string | null = null,
   open: Record<string, boolean> = {},
+  /** 이지 오토가 이 세션에서 일하는 중이면 그 구간 — 크기별 비용 표 그 줄 끝에 아이콘 + "오토" */
+  autoBand: { start: number; end: number } | null = null,
 ) {
   const { Box, Button, Input, Select, Text } = ui
   const ttl = cache?.ttl ?? 60
@@ -740,7 +756,7 @@ export function drawCompactTiming(
   const row = (key: string, name: string, desc: unknown, control: unknown, ctrlW: number, extra: unknown[] = [], nameEl?: unknown, isContent = false) =>
     isTerminal && isContent
       ? settingRow(ui, key, nameEl ?? name, desc, control, extra, control !== null && stackFor(name, ctrlW, true))
-      : tipRow(ui, key, name, control, extra, nameEl, isTerminal && !act.toggle ? null : desc, control !== null && stackFor(name, ctrlW, open[`desc-${key}`] === true), toggleOf(key))
+      : tipRow(ui, key, name, control, extra, nameEl, isTerminal && !act.toggle ? null : desc, control !== null && stackFor(name, ctrlW, false), toggleOf(key))
   // 0.6.0: 고르는 순간 저장. 예전 "고르는 도중 띠가 따라 움직임" 불만은
   // 구간 줄 버튼으로 둘러볼 때였다 — 드롭다운은 고름 = 결정
   const d: CmpDraft = { follow: s.follow, rangeStart: s.rangeStart, rangeEnd: s.rangeEnd, compactAt: s.compactAt }
@@ -894,14 +910,14 @@ export function drawCompactTiming(
           ),
         )
       : null
-  const starLine = inputs && opt ? term('cmp-how', L('★ 최적', '★ Best'), L('읽기 + 컴팩트 비용이 가장 적은 크기(공식 요율 · 이 세션 값)', 'Size with the lowest read + compact cost (official rates · this session)'), STAR_COLOR) : null
+  const starLine = inputs && opt ? term('cmp-how', L('★ 최적', '★ Best'), L('읽기와 컴팩트 비용을 합쳐 가장 적게 드는 크기', 'Size with the lowest read and compact cost combined'), STAR_COLOR) : null
   const capLine = capNote ? term('cmp-cap', model, capNote.trim()) : null
   // 간단 화면의 풀이는 한 줄 — 비용 칸 · 계산 값은 자세히 화면에
   // 글은 키로 못 찾아(시험 · 다른 mod) 상자에 키를 단다
   const leanNote = (
     <Box key="cmp-lean" marginTop={1}>
       <Text dimColor wrap="wrap">
-        {L('★ 최적 · 좋음 · 보통 · 비추천은 이 세션 값으로 판정합니다. 크기별 비용 · 계산 값은 자세히 화면에서.', '★ Best, good, fair and not advised are judged from this session. Costs per size and the inputs are on the Detailed screen.')}
+        {L('★ 최적 · 좋음 · 보통 · 비추천은 이 세션 값으로 판정합니다.', '★ Best, good, fair and not advised are judged from this session.')}
       </Text>
     </Box>
   )
@@ -920,8 +936,8 @@ export function drawCompactTiming(
     </Text>,
     <Text key="q-b" dimColor>
       {L(
-        `× (그 크기 읽기${perQAll ? ` + 요청마다 새로 쓰기 · 출력 ~${fmtUsd(perQAll.extraUsd)}` : ''}) · 에이전트 빼고 · ${model} 요율 — 작업량과 상관없이 크기끼리 견주는 기준.`,
-        `× (read at that size${perQAll ? ` + ~${fmtUsd(perQAll.extraUsd)} writes · output per request` : ''}) · agents excluded · ${model} rates — a fixed yardstick across sizes.`,
+        `그 크기로 요청 ${Q_STEPS}회를 읽는 값입니다(에이전트 빼고). 크기끼리 견주는 기준입니다.`,
+        `Reading that size for ${Q_STEPS} requests (agents excluded). A yardstick for comparing sizes.`,
       )}
     </Text>,
     ...(perQAll && sessionQ
@@ -980,7 +996,13 @@ export function drawCompactTiming(
       const read = usdAt(size, 'read')
       return read !== null ? Q_STEPS * (read + qExtra) : null
     }
-    const usd2 = (x: number | null, y: number | null) => (x === null || y === null ? '—' : `${fmtUsd(x)}~${fmtUsd(y).slice(1)}`)
+    // 범위 꼴 "$0.03~0.04" — 이 물결은 어림이 아니라 범위. 끝도 1센트가 안 되면 "$0.01 이하" 하나(Haiku 요율이면 작은 크기 칸이 그렇다),
+    // 앞만 안 되면 앞은 $0.00
+    const usd2 = (x: number | null, y: number | null) => {
+      if (x === null || y === null) return '—'
+      if (y < 0.005) return fmtUsd(y)
+      return `${isSubCent(x) ? '$0.00' : fmtUsd(x)}~${fmtUsd(y).slice(1)}`
+    }
     // R2: 구간 = 드롭다운(구간 이름만), 고른 구간의 금액 · 판정은
     // 바로 아래 한 줄(간단 · 자세히 둘 다)
     const curVerdict = penVerdict(penOf(d.rangeStart))
@@ -1024,8 +1046,8 @@ export function drawCompactTiming(
       'cmp-range-pick',
       L('컴팩트 구간', 'Compact range'),
       L(
-        '컨텍스트가 이 크기 띠에 들면 컴팩트할 때 — 고르면 바로 모든 세션에 적용. 끝의 "직접 입력…" 은 크기 하나를 직접 정합니다',
-        'Compact once the context is inside this band — applies to all sessions as soon as you pick. "Enter a size…" sets one size yourself',
+        '컨텍스트가 이 크기에 들면 컴팩트할 때입니다. 모든 세션에 바로 적용됩니다.',
+        'It’s time to compact once the context is inside this band. Applies to all sessions right away.',
       ),
       [allNote, rangeSelect(`${d.rangeStart}-${d.rangeEnd}`)],
       choiceW([...bandLabels, manualLabel]) + widthOf(L('모든 세션에 적용', 'All sessions'), isTerminal) + 1,
@@ -1067,8 +1089,8 @@ export function drawCompactTiming(
     const badDesc =
       badParts.length > 0
         ? L(
-            `${badParts.join(' · ')} — 최적보다 요청당 +${PEN_BAD_PCT}% 넘게${highBad ? ` · ${lastBandName} 은 자동 컴팩트(약 ${fmtTokens(autoCompactAt())}) 직전` : ''}`,
-            `${badParts.join(' · ')} — over +${PEN_BAD_PCT}% per request vs best${highBad ? ` · ${lastBandName} is right before auto-compact (~${fmtTokens(autoCompactAt())})` : ''}`,
+            `${badParts.join(' · ')} 구간으로, 최적보다 요청당 +${PEN_BAD_PCT}% 넘게 듭니다${highBad ? `. ${lastBandName} 구간은 자동 컴팩트(약 ${fmtTokens(autoCompactAt())}) 바로 앞입니다` : ''}`,
+            `${badParts.join(' · ')}: over +${PEN_BAD_PCT}% per request vs best${highBad ? `. ${lastBandName} is right before auto-compact (~${fmtTokens(autoCompactAt())})` : ''}`,
           )
         : null
     // 크기별 비용(자세히 · R6 펼침): 앱 표(Markdown — 사용자 2026-10-15 "앱 UI 기능을 쓰자"). 고르기는 위 드롭다운이라 표는 보기만, 고른 줄은
@@ -1081,7 +1103,7 @@ export function drawCompactTiming(
     const isOnBand = (a: number, b: number) => d.rangeStart === a && d.rangeEnd === b
     type Col = { id: string; head: string; cells: string[] }
     const colOf = (id: string, head: string, cell: (a: number, b: number, i: number) => string): Col => ({ id, head, cells: rangeBands().map(([a, b], i) => cell(a, b, i)) })
-    const bandCol = colOf('band', L('크기 구간', 'Size range'), (a, b) => `${bandNumText(a, b, contextWindowNow(), s.ctxUnit === 'both' ? 'size' : s.ctxUnit)}${isTerminal && isOnBand(a, b) ? L(' (고름)', ' (chosen)') : ''}`)
+    const bandCol = colOf('band', L('크기 구간', 'Size range'), (a, b) => bandNumText(a, b, contextWindowNow(), s.ctxUnit === 'both' ? 'size' : s.ctxUnit))
     const verdictCol = colOf('verdict', L('판정', 'Verdict'), (a, _b, i) => (i === starAt ? L('★ 최적', '★ Best') : (penVerdict(penOf(a))?.word ?? '')))
     const extraCols = [
       colOf('read', L('요청 1회', 'One read'), (a, b) => usd2(usdAt(a, 'read'), usdAt(b, 'read'))),
@@ -1090,9 +1112,28 @@ export function drawCompactTiming(
       colOf('pen', L('최적보다', 'Over best'), (a, b) => pens(a, b)),
     ]
     const colW = (c: Col) => Math.max(widthOf(c.head, isTerminal), ...c.cells.map(x => widthOf(x, isTerminal))) + (isTerminal ? 3 : 2)
+    // 1.0: 지금 줄 끝에
+    // "지금 73%"(파란 바탕 — 터미널은 뒤집은 색), 고른 줄 끝에 "고른 구간". 글이 스스로 말해 표 아래 풀이 줄(● = … · 테두리 = …)과 터미널
+    // "(고름)" 을 뺐다. 꼬리표는 폭 고정 끝 칸 — 판정 칸 안에 넣으면 그 줄 판정 글만 옆으로 밀렸다
+    const nowTagText = ctxNow !== null && ctxNow > 0 ? L(`지금 ${num(ctxNow)}`, `Now ${num(ctxNow)}`) : null
+    const chosenTag = L('고른 구간', 'Chosen')
+    // 이지 오토(2026-10-19 — 시안 1019c ① 둘 다 보이기): 겹치면 한 줄에 "고른 구간 · 오토 · [지금 X]"(예전엔 지금이 들면 "고른 구간" 이 빠졌다)
+    const autoTag = L('오토', 'Auto')
+    const isAutoBand = (a: number, b: number) => autoBand !== null && autoBand.start === a && autoBand.end === b
+    // 지금이 든 줄(아래 nowAt 과 같은 셈 — 폭을 먼저 재야 해서 여기서 한 번 더)
+    const nowIdx = nowTagText === null ? -1 : rangeBands().findIndex(([a, b], i, all) => ctxNow! >= a && (ctxNow! < b || (i === all.length - 1 && ctxNow! <= b)))
+    const nowAtBand = (i: number) => i === nowIdx
+    // 오토 아이콘 칸(데스크톱 그림 12px ≈ 20px = 3칸 · 터미널은 글만)
+    const autoTagW = widthOf(autoTag, isTerminal) + (isTerminal ? 0 : 3)
+    const tagsW = (i: number, isChosen: boolean, isAuto: boolean) => {
+      const parts = [isChosen ? widthOf(chosenTag, isTerminal) : 0, isAuto ? autoTagW : 0, nowAtBand(i) ? widthOf(nowTagText!, isTerminal) + 2 : 0].filter(w => w > 0)
+      return parts.reduce((s, w) => s + w, 0) + Math.max(0, parts.length - 1) * 3
+    }
+    const tagMax = Math.max(0, ...rangeBands().map(([a, b], i) => tagsW(i, isOnBand(a, b), isAutoBand(a, b))))
+    const tagW = tagMax > 0 ? tagMax + (isTerminal ? 3 : 2) : 0
     const room = cols === null ? Number.POSITIVE_INFINITY : cols - 4
     let kept = extraCols
-    while (kept.length > 0 && [bandCol, ...kept, verdictCol].reduce((sum, c) => sum + colW(c), 1) > room) kept = kept.slice(0, -1)
+    while (kept.length > 0 && [bandCol, ...kept, verdictCol].reduce((sum, c) => sum + colW(c), 1 + tagW) > room) kept = kept.slice(0, -1)
     // 최적보다 열이 남으면 판정 말을 그 칸에 붙여 열 하나를 던다(현황 패널 크기 한도 — 0.6.0), 빠졌으면 판정 열을 따로
     const hasPen = kept.some(c => c.id === 'pen')
     const shownCols = hasPen
@@ -1126,36 +1167,52 @@ export function drawCompactTiming(
     // 0.9.4 카드 A: 데스크톱 바탕을 옅게(18% → 8%) + 크기 칸 앞 파란 ● — 18% 바탕 위 초록 · 주황 · 빨강 글이 3.4 ~ 3.9:1 로 글 대비
     // 4.5:1 에 못 미쳤다(uxi accessibility-review 계산). 8% 면 4.6:1 이상 · 바탕만으론 덜 보이니 ● 가 지금 줄을 맡는다
     const nowBg = isTerminal ? 'userMessageBackground' : 'rgba(109,167,236,0.08)'
-    const nowMarkW = nowAt >= 0 && !isTerminal ? 2 : 0
     // 풀이 줄은 표 상자 밖(표 글에 "적용 중" 이 섞이면 예전 적용 중 열을 지킨 시험이 깨진다) · 키는 상자에(엔진 시험은 글의 키로 못 찾는다).
     // 다음 버전: "지금" 과 "적용 중" 이 둘 다 지금처럼
     // 읽혀 어느 쪽이 지금 컨텍스트인지 헷갈렸다 — 바탕은 "지금 컨텍스트", 테두리는 위 드롭다운 이름 그대로 "고른 컴팩트 구간"
-    const nowNote =
-      nowAt >= 0 ? (
-        <Box key="cmp-now-note">
-          <Text dimColor wrap="wrap">
-            {isTerminal
-              ? L(`바탕 줄 = 지금 컨텍스트 ${num(ctxNow!)} · (고름) = 고른 컴팩트 구간`, `Highlighted row = context now ${num(ctxNow!)} · (chosen) = the compact range you picked`)
-              : [
-                  <Text key="m" color={ACCENT}>
-                    ●
-                  </Text>,
-                  L(` = 지금 컨텍스트 ${num(ctxNow!)} · 테두리 = 고른 컴팩트 구간`, ` = context now ${num(ctxNow!)} · border = the compact range you picked`),
-                ]}
-          </Text>
-        </Box>
-      ) : isBelowFirst ? (
+    const nowNote = isBelowFirst ? (
         <Box key="cmp-now-note" marginTop={1}>
           <Text dimColor wrap="wrap">
-            {L(`지금 ${num(ctxNow!)} — 첫 구간(${num(bands[0]![0])})보다 작음`, `Now ${num(ctxNow!)} — below the first range (${num(bands[0]![0])})`)}
+            {L(`지금 컨텍스트 ${num(ctxNow!)} 는 첫 구간(${num(bands[0]![0])})보다 작습니다`, `Now ${num(ctxNow!)}, below the first range (${num(bands[0]![0])})`)}
           </Text>
         </Box>
       ) : null
-    // 크기 구간 칸은 지금 줄 ● 만큼 넓게(머리 · 줄 모두 — 열이 어긋나지 않게)
-    const cw = (c: Col) => colW(c) + (c.id === 'band' ? nowMarkW : 0)
+    const cw = (c: Col) => colW(c)
+    // 끝 칸 꼬리표(위 tagW) — 왼쪽 맞춤, 없는 줄은 빈 칸(열이 어긋나지 않게). 고른 구간 · 오토 · 지금 순서로 다 보인다
+    const tagCell = (i: number, isChosen: boolean, isAuto: boolean) => {
+      if (tagW === 0) return null
+      const tags: unknown[] = []
+      const dot = (k: string) => (tags.length > 0 ? <Text key={k} dimColor>·</Text> : null)
+      if (isChosen) tags.push(<Text key="t-chosen" dimColor>{chosenTag}</Text>)
+      if (isAuto) {
+        tags.push(dot('t-dot-a'))
+        tags.push(
+          <Box key="t-auto" columnGap={1} alignItems="center">
+            {autoIcon(ui, surface, 't-auto-icon', 12)}
+            <Text dimColor>{autoTag}</Text>
+          </Box>,
+        )
+      }
+      if (nowAtBand(i)) {
+        tags.push(dot('t-dot-n'))
+        tags.push(
+          <Text key="t-now" bold {...(isTerminal ? { inverse: true } : { backgroundColor: '#4c9be8', color: '#06121f' })}>
+            {` ${nowTagText} `}
+          </Text>,
+        )
+      }
+      return (
+        <Box key={`${i}-tag`} width={tagW} flexShrink={0} paddingLeft={1} columnGap={1} alignItems="center">
+          {tags.filter(t => t !== null)}
+        </Box>
+      )
+    }
     const gridBox = (
       <Box key="cmp-grid" flexDirection="column" marginTop={isBelowFirst ? 0 : 1}>
-        <Box key="cmp-grid-h">{shownCols.map(c => gcell(`h-${c.id}`, cw(c), <Text dimColor>{c.head}</Text>))}</Box>
+        <Box key="cmp-grid-h">
+          {shownCols.map(c => gcell(`h-${c.id}`, cw(c), <Text dimColor>{c.head}</Text>))}
+          {tagW > 0 ? <Box key="h-tag" width={tagW} flexShrink={0} /> : null}
+        </Box>
         {rangeBands().map(([a, b], i) => {
           const cells = shownCols.map(c => {
             const col = cellColor(c, i)
@@ -1163,7 +1220,6 @@ export function drawCompactTiming(
               `${i}-${c.id}`,
               cw(c),
               <Text {...(isOnBand(a, b) ? { bold: true } : {})} {...(col ? { color: col } : {})}>
-                {c.id === 'band' && i === nowAt && nowMarkW > 0 ? <Text color={ACCENT}>{'● '}</Text> : null}
                 {c.cells[i]!}
               </Text>,
             )
@@ -1174,10 +1230,12 @@ export function drawCompactTiming(
           return isOnBand(a, b) && !isTerminal ? (
             <Box key={`cmp-grid-${i}`} alignSelf="flex-start" borderStyle="round" borderColor={SEG_ON_EDGE} paddingX={0} paddingY={0} {...bg}>
               {cells}
+              {tagCell(i, true, isAutoBand(a, b))}
             </Box>
           ) : (
             <Box key={`cmp-grid-${i}`} alignSelf="flex-start" {...bg}>
               {cells}
+              {tagCell(i, isOnBand(a, b), isAutoBand(a, b))}
             </Box>
           )
         })}
@@ -1187,7 +1245,6 @@ export function drawCompactTiming(
       <Box key="cmp-grid-unit" flexDirection="column">
         {isBelowFirst ? nowNote : null}
         {gridBox}
-        {nowAt >= 0 ? nowNote : null}
       </Box>
     )
     const tableUnit = isLean ? null : (
@@ -1202,14 +1259,14 @@ export function drawCompactTiming(
               <Box key="cmp-legend-s" flexDirection="column">
                 <Text wrap="wrap">
                   {L(
-                    `최적보다 = 예상 최적보다 요청당 더 드는 비율 · +${PEN_WARN_PCT}%까지 좋음 · +${PEN_BAD_PCT}%까지 보통 · 넘으면 비추천`,
-                    `Over best = extra cost per request vs the estimated best · up to +${PEN_WARN_PCT}% good · up to +${PEN_BAD_PCT}% fair · beyond: not advised`,
+                    `'최적보다'는 예상 최적보다 요청당 더 드는 비율입니다. +${PEN_WARN_PCT}%까지 좋음, +${PEN_BAD_PCT}%까지 보통, 그보다 크면 비추천입니다.`,
+                    `"Over best" is the extra cost per request vs the estimated best: up to +${PEN_WARN_PCT}% good, up to +${PEN_BAD_PCT}% fair, beyond that not advised.`,
                   )}
                 </Text>
                 <Text wrap="wrap">
-                  {L(`질문 1개 = 요청 ${Q_STEPS}회 가정 · 캐시 식으면 = ${ttlName(ttl)} 넘게 쉬어 다시 쓰기 · ${model} 요율`, `Question = ${Q_STEPS} requests assumed · Cold cache = rewritten after ${ttlName(ttl)} idle · ${model} rates`)}
+                  {L(`질문 1개는 요청 ${Q_STEPS}회로 잡았습니다. 캐시가 식으면(${ttlName(ttl)} 넘게 쉬었을 때) 다시 쓰는 값으로 셉니다. ${model} 요율입니다.`, `One question is taken as ${Q_STEPS} requests. A cold cache (idle over ${ttlName(ttl)}) counts as a rewrite. ${model} rates.`)}
                 </Text>
-                {badDesc ? <Text wrap="wrap">{`${L('비추천', 'Not advised')} = ${badDesc}`}</Text> : null}
+                {badDesc ? <Text wrap="wrap">{`${L('비추천', 'Not advised')}: ${badDesc}`}</Text> : null}
               </Box>,
               toggleOf('cmp-table-tip'),
             )}
@@ -1271,7 +1328,7 @@ export function drawCompactTiming(
           <Text>
             {pct >= 1
               ? L(`최적 ${fmtTokens(opt.at)}보다 요청당`, `Per request vs best ${fmtTokens(opt.at)}:`)
-              : L(`최적 ${fmtTokens(opt.at)} — 차이 거의 없음`, `Best ${fmtTokens(opt.at)} — almost no difference`)}
+              : L(`최적(${fmtTokens(opt.at)})과 거의 차이가 없습니다`, `Almost no difference from the best (${fmtTokens(opt.at)})`)}
           </Text>
           {pct >= 1 ? (
             <Text bold {...(penColorOf(pen) ? { color: penColorOf(pen) } : {})}>
@@ -1281,7 +1338,7 @@ export function drawCompactTiming(
           {/* 판정 말(좋음 · 보통 · 비추천). 비추천은 알리기만 — 적용은 막지 않는다 */}
           {pct >= 1 && penVerdict(pen) ? (
             <Text bold color={penVerdict(pen)!.color}>
-              {penVerdict(pen)!.color === 'error' ? L('· 비추천(적용은 됩니다)', '· not advised (still applies)') : `· ${penVerdict(pen)!.word}`}
+              {penVerdict(pen)!.color === 'error' ? L('· 비추천이지만 적용됩니다', '· not advised, but it applies') : `· ${penVerdict(pen)!.word}`}
             </Text>
           ) : null}
         </Box>
@@ -1293,7 +1350,7 @@ export function drawCompactTiming(
     const sizeRow = row(
       'cmp-size',
       L('컴팩트 크기', 'Compact size'),
-      L(`컨텍스트가 이 크기에 닿으면 빨강 · 그 ${Math.round(WARN_RATIO * 100)}%부터 주황 — Enter 로 바로 모든 세션에 적용`, `Red once the context reaches this size · orange from ${Math.round(WARN_RATIO * 100)}% of it — Enter applies to all sessions`),
+      L(`컨텍스트가 이 크기에 닿으면 빨강, 그 ${Math.round(WARN_RATIO * 100)}%부터 주황입니다.`, `Red once the context reaches this size, orange from ${Math.round(WARN_RATIO * 100)}% of it.`),
       [
         allNote,
         rangeSelect('manual'),
@@ -1304,10 +1361,10 @@ export function drawCompactTiming(
           placeholder="300k"
           onSubmit={v => {
             const n = parseTokens(v)
-            if (n === null) return act.sizeError(L('크기를 못 읽었습니다 — 예: 300k', 'Could not read the size — e.g. 300k'))
+            if (n === null) return act.sizeError(L('크기를 읽지 못했습니다. 예: 300k', 'Couldn’t read the size. Example: 300k'))
             if (n > compactMax()) return act.sizeError(L(`최대 컨텍스트(${fmtTokens(compactMax())})보다 커서 저장하지 않았습니다`, `Larger than the max context (${fmtTokens(compactMax())}) — not saved`))
             // 가장 작은 크기 = COMPACT_MIN(setCompactAt 이 그 아래를 올려 버려 50k~99k 가 말없이 100k 로 저장됐다 — 시험 점검에서 찾음)
-            if (n < COMPACT_MIN) return act.sizeError(L(`너무 작습니다 — ${fmtTokens(COMPACT_MIN)} 이상`, `Too small — ${fmtTokens(COMPACT_MIN)} or more`))
+            if (n < COMPACT_MIN) return act.sizeError(L(`너무 작습니다. ${fmtTokens(COMPACT_MIN)} 이상으로 정하세요.`, `Too small. Use ${fmtTokens(COMPACT_MIN)} or more.`))
             act.sizeError(null)
             edit({ ...d, follow: false, compactAt: setCompactAt(s, n).compactAt, sizeText: undefined })
           }}
@@ -1328,7 +1385,7 @@ export function drawCompactTiming(
               '',
               L(`${fmtTokens(dt.ctxWarn)}부터 주황`, `orange from ${fmtTokens(dt.ctxWarn)}`),
               L(`${fmtTokens(dt.ctxCut)}부터 빨강`, `red from ${fmtTokens(dt.ctxCut)}`),
-              L(`(주황 = 정한 크기의 ${Math.round(WARN_RATIO * 100)}%)`, `(orange = ${Math.round(WARN_RATIO * 100)}% of the set size)`),
+              L(`(주황은 정한 크기의 ${Math.round(WARN_RATIO * 100)}%부터)`, `(orange starts at ${Math.round(WARN_RATIO * 100)}% of the set size)`),
             ),
           )}
           {starLine}
@@ -1370,6 +1427,8 @@ export function drawSettingsView(
   tab: SettingsTab = 'bar',
   /** 0.9.1 U6: 일반 탭 진단 카드(그 자리에 열려 있을 때만) */
   diag: DiagView | null = null,
+  /** 컴팩트 탭 컴팩트 구간 칸의 직접 입력 오류 */
+  sizeErr: string | null = null,
 ) {
   const { Box, Text } = ui
   const look = phaseLook(phase, kind)
@@ -1410,8 +1469,8 @@ export function drawSettingsView(
           ) : null}
           <Text color={look.color} wrap="wrap">
             {L(
-              `${phase === 'tidying' ? '지금 저장 중입니다 — 끝나면 컴팩트.' : `지금 ${typeof kind === 'string' && kind ? kind : '컴팩트'} 중입니다.`} 컴팩트 문구를 바꾸면 다음 [이지 컴팩트]부터 쓰입니다.`,
-              `${phase === 'tidying' ? 'Saving now — compacts when done.' : `${typeof kind === 'string' && kind ? kind : 'Compact'} in progress.`} A changed compact text is used from the next [Easy Compact].`,
+              `${phase === 'tidying' ? '지금 저장 중입니다. 끝나면 컴팩트합니다.' : `지금 ${typeof kind === 'string' && kind ? kind : '컴팩트'} 중입니다.`} 컴팩트 문구를 바꾸면 다음 [이지 컴팩트]부터 쓰입니다.`,
+              `${phase === 'tidying' ? 'Saving now. It compacts when done.' : `${typeof kind === 'string' && kind ? kind : 'Compact'} in progress.`} A changed compact text is used from the next [Easy Compact].`,
             )}
           </Text>
         </Box>
@@ -1421,7 +1480,7 @@ export function drawSettingsView(
         </Text>
       )}
       {/* 업데이트 칸은 뺐다 — 탭 줄 업데이트 버튼 · 서랍(U4, 0.6.1 피드백: 늘 보이는 칸이 불편 · 위쪽 버튼으로) */}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow])}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow], sizeErr)}
     </Box>
   )
 }
@@ -1475,8 +1534,8 @@ export function updateButton(ui: Ui, upd: UpdateState, isOpen: boolean, onPress:
               ? L('업데이트 확인 못 함', 'Update check failed')
               : upd.updatedTo
                 ? L(`${upd.updatedTo} 바뀐 것`, `What's new in ${upd.updatedTo}`)
-                : upd.phase === 'dev' && upd.own
-                  ? L(`v${upd.own} 개발본`, `v${upd.own} dev`)
+                : upd.phase === 'dev' && upd.own && !upd.devOff
+                  ? L(`v${upd.own} 개발자 모드`, `v${upd.own} dev mode`)
                   : upd.own
                     ? `v${upd.own}`
                     : L('버전', 'Version')
@@ -1528,7 +1587,7 @@ export function drawDiagCard(act: SettingsActions, ui: Ui, v: DiagView, surface:
   return (
     <Box key="diag-card" flexDirection="column" marginTop={1} {...CARD}>
       <Text key="diag-title" bold>
-        {L('진단 내용 — 공유 전에 확인하세요', 'Diagnostics — check before you share')}
+        {L('공유하기 전에 진단 내용을 확인하세요', 'Check the diagnostics before you share')}
       </Text>
       <Text key="diag-sum" dimColor wrap="wrap">
         {diagSummary(v)}
@@ -1536,7 +1595,7 @@ export function drawDiagCard(act: SettingsActions, ui: Ui, v: DiagView, surface:
       {settingRow(ui, 'diag-redact-row', L('질문 · 동작 글 빼기', 'Leave out questions and step names'), null, onOffControl(ui, 'diagRedact', v.redact, isOn => act.diagRedact(isOn)))}
       {v.redact ? (
         <Text key="diag-redact-use" dimColor wrap="wrap">
-          {L('질문 글 · 답 끝 글 · 동작 이름(파일 이름 · 명령) · 직접 쓴 문구를 (뺌)으로 바꿉니다 — 글자 수만 남습니다.', 'Questions, answer endings, step names (file names, commands) and your custom texts become (removed) — only their length stays.')}
+          {L('내가 쓴 글(질문 · 답 끝 · 동작 이름 · 직접 쓴 문구)은 (뺌)으로 바꿉니다.', 'Your own text (questions, answer endings, step names, custom texts) becomes (removed).')}
         </Text>
       ) : (
         <Box key="diag-own" flexDirection="column">
@@ -1575,7 +1634,7 @@ export function drawDiagCard(act: SettingsActions, ui: Ui, v: DiagView, surface:
         <Code key="diag-code" source={head} language="json" startLine={1} wrap="truncate-end" />
       </Box>
       <Text key="diag-more" dimColor wrap="wrap">
-        {L(`처음 ${shownLines}줄 · 전체 ${v.lines.toLocaleString()}줄 — 복사 · 파일엔 전체가 들어갑니다`, `First ${shownLines} of ${v.lines.toLocaleString()} lines — Copy and the file take all of it`)}
+        {L(`처음 ${shownLines}줄만 보입니다(전체 ${v.lines.toLocaleString()}줄). 복사하거나 파일로 저장하면 전체가 들어갑니다.`, `Showing the first ${shownLines} of ${v.lines.toLocaleString()} lines. Copy and Save as file take all of it.`)}
       </Text>
     </Box>
   )
@@ -1630,7 +1689,7 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
       // U3(0.6.1 피드백): 앱을 다시 켜지 않아도 곧 새 판이 뜨는 일이 많다 — 뜨면(지금 판 = 받은 판) 최신으로 바뀐다
       state = [
         <Text key="upd-state" color="success" wrap="wrap">
-          {L(`${upd.market ?? ''} 받음 — 곧 적용됩니다(그대로면 앱을 다시 켜세요)`, `${upd.market ?? ''} downloaded — it applies shortly (restart the app if it does not)`)}
+          {L(`${upd.market ?? ''} 판을 받았습니다. 곧 적용되고, 그대로면 앱을 다시 켜세요.`, `Downloaded ${upd.market ?? ''}. It applies shortly; restart the app if it doesn’t.`)}
         </Text>,
       ]
       buttons = [checkBtn]
@@ -1639,15 +1698,18 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
       // 앤트로픽 디렉터리에서 받은 판 — 마켓 명령이 안 맞아 버튼 없이(0.6.0). 새 판은 Claude Code 를 켤 때 계정 동기화로
       state = [
         <Text key="upd-state" dimColor wrap="wrap">
-          {L('claude.ai 디렉터리에서 받은 버전 — 새 버전은 Claude Code 를 켤 때 저절로 받습니다', "Installed from Anthropic's directory — Claude Code picks up new versions by itself when it starts")}
+          {L('claude.ai 디렉터리에서 받은 버전입니다. 새 버전은 Claude Code 를 켤 때 저절로 받습니다.', "Installed from Anthropic's directory. Claude Code picks up new versions by itself when it starts.")}
         </Text>,
       ]
       break
     case 'dev':
-      // 0.9.1 U5: 폴더로 불러온 개발본 — 업데이트 명령(claude plugin)은 마켓 설치본 것이라 버튼 없이
+      // 0.9.1 U5: 폴더로 불러온 개발본 — 업데이트 명령(claude plugin)은 마켓 설치본 것이라 버튼 없이. 2026-10-17: 말을 "개발자 모드" 로,
+      // 스위치가 꺼졌으면(devOff — 공개판처럼 보는 중) 그것부터
       state = [
         <Text key="upd-state" dimColor wrap="wrap">
-          {L('폴더에서 불러온 개발본이라 업데이트 버튼이 없습니다 — 저장소에서 받으세요', 'Loaded from a folder (dev copy), so there is no Update button — pull it from the repository')}
+          {upd.devOff
+            ? L('개발자 모드가 꺼져 공개판처럼 보이는 중입니다. 폴더에서 불러온 판이라 업데이트 버튼은 없습니다.', 'Dev mode is off, so it looks like the public build. Loaded from a folder, so there is no Update button.')
+            : L('개발자 모드입니다. 폴더에서 불러온 판이라 업데이트 버튼이 없으니 저장소에서 받으세요.', 'Dev mode. Loaded from a folder, so there is no Update button. Pull it from the repository.')}
         </Text>,
       ]
       break
@@ -1655,12 +1717,12 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
       state = [
         <Text key="upd-state" color="error" wrap="wrap">
           {!upd.error
-            ? L('claude 명령을 못 찾았습니다 — README 의 업데이트 받기를 보세요', 'claude command not found — see Updating in the README')
+            ? L('claude 명령을 찾지 못했습니다. README 의 업데이트 받기를 보세요.', 'Couldn’t find the claude command. See Updating in the README.')
             : upd.isTimeout
-              ? L('응답이 없어 멈췄습니다 — 다시 시도하세요(git · 네트워크도 확인)', 'No response, so it stopped — try again (check git and your network too)')
+              ? L('응답이 없어 멈췄습니다. 다시 시도하고, git과 네트워크도 확인하세요.', 'No response, so it stopped. Try again, and check git and your network too.')
               : upd.failedOn === 'apply'
-                ? L('업데이트 못 함 — git · 네트워크를 확인하세요', 'Update failed — check git and your network')
-                : L('확인 못 함 — git · 네트워크를 확인하세요', 'Check failed — check git and your network')}
+                ? L('업데이트하지 못했습니다. git과 네트워크를 확인하세요.', 'Update failed. Check git and your network.')
+                : L('확인하지 못했습니다. git과 네트워크를 확인하세요.', 'Couldn’t check for updates. Check git and your network.')}
         </Text>,
       ]
       buttons = [
@@ -1703,8 +1765,8 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
           {canCheck ? (
             <Text key="upd-net" dimColor wrap="wrap">
               {L(
-                '[업데이트 확인] 을 누를 때만 Claude Code 가 GitHub 에서 마켓을 받아 옵니다 — easy-compact 는 스스로 통신하지 않습니다.',
-                'Only when you press [Check for updates] does Claude Code fetch the marketplace from GitHub — easy-compact itself never goes online.',
+                '[업데이트 확인]을 누를 때만 Claude Code 가 GitHub 에서 마켓을 받아 옵니다. easy-compact 는 스스로 통신하지 않습니다.',
+                'Claude Code fetches the marketplace from GitHub only when you press [Check for updates]. easy-compact itself never goes online.',
               )}
             </Text>
           ) : null}

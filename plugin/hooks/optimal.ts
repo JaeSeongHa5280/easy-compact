@@ -20,7 +20,7 @@
 // 바꿔 다시 돌리면 150k 가 최저 $71.0, 175k +1.4%, 200k +6.1%, 300k +30%, 500k +80%(작성자 기록, 1시간 넘는 쉼 · 늦을수록 커지는
 // 요약 몫 포함). 정확한 점보다 크게 미루지 않는 게 수십 %짜리 일이고, 구간 안 어디서 할지는 하던 일이 끊기기 좋은 때로.
 
-import type { CompactInputs, Optimal, Thresholds } from '../types'
+import type { CompactInputs, Optimal, Thresholds, Usage } from '../types'
 import { compactPayoff, longTierOver, modelKey, ratesFor } from './cost'
 import type { Flow } from './flow'
 
@@ -143,4 +143,10 @@ export function thresholdsFor(at: number, model: string, cacheWarnMin: number): 
   const warn = roundStep(ctxCut * WARN_RATIO)
   const ctxWarn = over === null ? warn : Math.min(warn, Math.round(over * LONG_WARN))
   return { ctxWarn: Math.min(ctxWarn, ctxCut), ctxCut, cacheWarnMin }
+}
+
+/** /context 분류에서 기본 적재(시스템 지시 · 도구 · 메모리 · 스킬 등) — 대화 · 요약 · 빈칸 · 버퍼는 뺀다. 모르면 null */
+export function baseOfCategories(categories: Usage['categories']): number | null {
+  const sum = categories.filter(c => c.kind === 'used' && !/message|summary|compact/i.test(c.name)).reduce((s, c) => s + c.tokens, 0)
+  return sum > 0 ? sum : null
 }

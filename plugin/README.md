@@ -4,7 +4,8 @@ easy-compact shows what your Claude Code session costs while you work, and tells
 
 - **Bar**: this session's cost, context size, cache time left and plan limits, with one button that says when it's time to compact.
 - **Pane**: what each question and request cost, the context over time, the compact range that costs least for this session, and what earlier compacts saved.
-- **Easy Compact**: one click asks Claude to save what isn't written down yet, then runs `/compact`. When the cache has gone cold, **Plain compact** runs `/compact` straight away. **Clear** runs `/clear`.
+- **Easy Compact**: one click asks Claude to save what isn't written down yet, then runs `/compact`. When the cache has gone cold, **Plain compact** runs `/compact` straight away. **Clear** runs `/clear` after you confirm.
+- **Easy Auto** (off until you turn it on, per session): when the context passes a range you set, it does the Easy Compact steps by itself — and if a long task was running, it stops that turn between requests, compacts, then asks Claude to carry on.
 - **Optional**: today's and this month's usage across all your sessions.
 
 Costs are estimates from Anthropic's published API prices, worked out on your computer.
@@ -29,27 +30,31 @@ easy-compact is a Claude Code mod (`modules` in `hooks/hooks.json`), so it runs 
   Their arguments are only those file paths and that time. They read files on this computer, print back to easy-compact, and don't connect anywhere. They need Node.js 14.8 or later. Without it those parts are skipped, and the pane says so.
 - **Not run by the plugin:** `tools/rate-fit.mjs` is a manual check for maintainers — `node tools/rate-fit.mjs --usage <this month on Claude's usage page>` reruns `scan-spend.mjs` on this computer's session records and prints this month's total for each date a changed rate could take effect from, to find the date that matches Claude's usage page. It only reads local files and prints to the terminal.
 - **Claude Code's own `claude` command** — the one on your PATH, or else the copy inside the Claude desktop app — and only these two, written as fixed text in the code: `claude plugin marketplace update easy-compact` when you press **Check for updates**, and `claude plugin update easy-compact@easy-compact` when you press **Update**. Claude Code then fetches this repository from GitHub. These buttons don't appear when you installed from Anthropic's directory.
-- **`/compact`**, in your session, only when you press **Easy Compact** (after Claude answers the save message) or **Plain compact**; **`/clear`** only when you press **Clear**.
+- **`/compact`**, in your session, only when you press **Easy Compact** (after Claude answers the save message) or **Plain compact**, or — in a session where you turned Easy Auto on — when the context passes the Easy Auto range (after Claude answers Easy Auto's save message); **`/clear`** only when you press **Clear** and confirm.
+- **Stopping a turn**, only in a session where you turned Easy Auto on, when a long task passes the end of the Easy Auto range: it stops the running turn between two requests (as the stop button does), so the save message can go next.
 
 ## What it sends
 
 - easy-compact itself sends nothing over the network: no telemetry and no requests of its own. Everything it measures stays on your computer. The diagnostics card's **Open an issue** is a plain link that opens this repository's new-issue page in your browser; nothing is attached to it.
-- **Easy Compact** sends one message to Claude in your session, as part of your normal conversation. The message asks Claude to check what compacting would lose, to save decisions, progress and next steps that aren't in files yet (memory, work notes), and to reply with what to do next. It includes the text you set in Settings under Compact text. Nothing else goes into it: no text from your conversation or files, and no costs. The text you set for "after /compact" is added to the `/compact` command as instructions for the summary.
+- **Easy Compact** sends one message to Claude in your session, as part of your normal conversation. The message asks Claude to check what compacting would lose, to save decisions, progress and next steps that aren't in files yet (memory, work notes), and to reply with what to do next. It includes the message you picked in the compact popup (one of the presets, or your own text). Nothing else goes into it: no text from your conversation or files, and no costs. The text for "after /compact" is added to the `/compact` command as instructions for the summary.
+- **Easy Auto**, only in a session where you turned it on, sends two kinds of messages to Claude in that session, as part of your normal conversation: `[Easy Auto · summary]` followed by the same save message as Easy Compact's Normal preset (with the range it passed — nothing from your conversation or files, no costs), and, only after it stopped a long task and compacted, `[Easy Auto · continue] Compacting is done. Please continue what you were doing.`
 
 ## What it writes
 
-- Its settings, to Claude Code's plugin store on this computer.
+- Its settings, to Claude Code's plugin store on this computer — including, for each session, whether Easy Auto is on and which step of its save → compact → continue chain it is at.
 - Each session's question history (question text, cost, the end of each answer), each session's running cost (so it survives an app restart), each session's cost by day of requests that aren't in the session records (compact summaries, Claude Code's own background requests — so today and this month include them) with the size and cost of each compact it measured, and its own small caches, to its data folder under `~/.claude/plugins/data`.
 - A diagnostics file, `debug-<session>.json` in that same folder (version, this session's settings, pane state, usage and question history), only when you press **Save as file** in the diagnostics card (**Report a problem** → **Show diagnostics** — in the pane's version drawer or the Settings General tab). The card shows the content first; question text, answer endings, step names and custom texts are left out unless you turn that off. It stays on your computer; you attach it to a bug report yourself.
 - The same diagnostics text to your clipboard, only when you press **Copy** in that card.
 
 ## What its hooks do
 
-The hooks watch and draw. They never change Claude's permissions, your prompts, tool calls or tool results.
+The hooks watch and draw. Apart from Easy Auto stopping a turn (above), they never change Claude's permissions, your prompts, tool calls or tool results.
 
-- `session.start`, `turn.start`, `turn.step`, `turn.complete`, `session.measure` and `session.compact`: read token counts and timings to keep the costs and the context size up to date.
+- `session.start`, `turn.start`, `turn.step`, `turn.complete`, `session.measure` and `session.compact`: read token counts and timings to keep the costs and the context size up to date. With Easy Auto on, `turn.step` is where it sees a long task pass the range and stops the turn.
+- `prompt.submit`: notes where a prompt came from (you, another session or a notification — so Easy Auto waits for you), and its text and number of images, to name the question. Passed on unchanged.
 - `prompt.suggest`: notes that Claude Code made its own suggestion request, so that cost is labelled. Passed on unchanged.
-- `ui.render`, `ui.message`, `ui.close`: draw the bar, the pane, the cost chip under answers, the running cost next to the working indicator and the folded bar's button, and handle their buttons.
+- `session.attach`, `session.detach`: when you switch into a session, the bar's values flash once; leaving clears that.
+- `ui.render`, `ui.message`, `ui.close`: draw the bar, the pane, the cost chip under answers, the running question strip above the input, the running cost next to the terminal's working indicator and the folded bar's button, and handle their buttons.
 
 It adds no slash command. With **Line below the input** turned on in Settings, it also keeps one line of text (the gist of the bar) in the footer below the input.
 

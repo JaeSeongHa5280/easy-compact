@@ -102,18 +102,26 @@ export function diagHead(text: string): { head: string; lines: number } {
 /** 카드 맨 위 한 줄 — 무엇이 들어 있나 */
 export function diagSummary(v: Pick<DiagView, 'turns'>): string {
   return L(
-    `버전 · 설정 · 사용량 · 질문 기록 ${v.turns}개 · 패널 기록이 들어 있습니다. 금액 · 모델 이름도 들어갑니다. easy-compact 는 아무 데도 보내지 않습니다.`,
-    `Contains the version, settings, usage, ${v.turns} question records and the pane log — costs and model names too. easy-compact sends nothing anywhere.`,
+    `버전 · 설정 · 사용량 · 질문 기록 ${v.turns}개 · 패널 기록(금액 · 모델 이름 포함)이 들어 있습니다. 이지 컴팩트는 아무 데도 보내지 않습니다.`,
+    `Contains the version, settings, usage, ${v.turns} question records and the pane log (with costs and model names). Easy Compact sends nothing anywhere.`,
   )
 }
 
 /** 빼기를 끈 때 나갈 내 글 한 줄 */
 export function diagOwnText(c: DiagCounts): string {
   return L(
-    `나갈 내 글 — 질문 ${c.prompts}개 · 답 끝 ${c.answers}개 · 동작 이름 ${c.labels}개 · 직접 쓴 문구 ${c.custom}개`,
-    `Your own text going out — ${c.prompts} questions, ${c.answers} answer endings, ${c.labels} step names, ${c.custom} custom texts`,
+    `나갈 내 글: 질문 ${c.prompts}개 · 답 끝 ${c.answers}개 · 동작 이름 ${c.labels}개 · 직접 쓴 문구 ${c.custom}개`,
+    `Your own text going out: ${c.prompts} questions, ${c.answers} answer endings, ${c.labels} step names, ${c.custom} custom texts`,
   )
 }
 
 /** 제보할 곳 — 공개 저장소 새 이슈 */
 export const ISSUE_URL = 'https://github.com/JaeSeongHa5280/easy-compact/issues/new'
+
+/** 덤프 글 + 짝 없는 서로게이트 · 제어 문자 수(데스크톱이 그리기를 통째로 거부하는 글 후보) */
+export function dumpText(state: Record<string, unknown>): { text: string; lone: number; ctrl: number } {
+  const text = JSON.stringify(state, null, 2)
+  const lone = (text.match(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g) ?? []).length
+  const ctrl = (text.match(/\u00[01][0-9a-f]/gi) ?? []).length
+  return { text, lone, ctrl }
+}

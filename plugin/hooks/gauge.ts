@@ -10,7 +10,7 @@ import type { Level } from './cost'
  * 색 = 지금 크기 단계로 통째로(levelOf — 숫자와 같은 순간): 아직 = 글자색(currentColor) .8 · 주황 #d9722b · 빨강 #e05555.
  * 깜빡임 = 권함 + 누를 수 있을 때만 — 빨강 구간 위치 t 로 1.6 → 0.7초 · 굵기 8 → 9.8 · 밝은 쪽 #ea7c7c → #ffe2e2, 꽉 찬 뒤 최대 유지
  * (초당 3번 아래). 키프레임 색은 고정 hex — color-mix(currentColor) 를 넣으면 Chromium 렌더러가 죽는다(2026-10-14 실측).
- * 움직임은 OS 동작 줄이기 · 설정 "모션 줄임" 이면 없다. 데스크톱 Svg 는 <img>(data URI) · 움직일 땐 샌드박스 틀 — 앱이 뿌리에
+ * 움직임은 OS 동작 줄이기 · 설정 "애니메이션" 끔이면 없다. 데스크톱 Svg 는 <img>(data URI) · 움직일 땐 샌드박스 틀 — 앱이 뿌리에
  * 그 자리 글자색을 넣어 currentColor 가 테마를 따른다
  */
 export const GAUGE_HEX = { warn: '#d9722b', cut: '#e05555' } as const
@@ -74,7 +74,7 @@ export type GaugeLook = {
   fromLevel?: Level
   /** 깜빡임 세기(빨강 구간 위치 0~1, redDepth) — null · 없음이면 깜빡이지 않는다 */
   blink?: number | null
-  /** 움직임(미끄러짐 · 깜빡임) — 설정 "모션 줄임" 이면 false */
+  /** 움직임(미끄러짐 · 깜빡임) — 설정 "애니메이션" 끔이면 false */
   motion?: boolean
   /**
    * 컴팩트 · 저장 중(0.9.1 B11 — 사용자 "게이지 모양별 컴팩트 중 · 완료 깜빡임, 없으면 현황 컴팩트 시점 · 컨텍스트처럼"): 진행 파랑(BUSY_HEX —
@@ -86,7 +86,15 @@ export type GaugeLook = {
   busy?: boolean
   /** 컴팩트 끝 줄어듦을 진행 파랑에서 시작(컴팩트 중이 파랑이었으니 — 앞 단계 색 대신) */
   fromBusy?: boolean
+  /**
+   * 글자 강조와 같이 깜빡이는 켜진 칸(1.0 — 사용자 2026-10-18 "글자 강조될 때 다시 그려서 그런 거라면 게이지도 애니 틀지 말고 같이 깜빡임 처리하다가
+   * 나중에 애니 틀어"): 채움을 빨강 깜빡임의 밝은 쪽 색으로 — 움직임 CSS 없이 그림만(다시 그릴 때마다 바뀐다)
+   */
+  lit?: boolean
 }
+
+/** 켜진 칸 색 — 빨강 깜빡임(gp)이 가는 밝은 쪽 */
+const LIT_HEX = '#f5afaf'
 
 /** 컴팩트 · 저장 중 게이지 색(진행 파랑 — ui-common LIVE_HEX · PHASE_HEX 와 같은 계열) */
 export const BUSY_HEX = '#4c9be8'
@@ -109,7 +117,7 @@ export function gaugeSvg(g: GaugeLook): string {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${g.px}" height="${g.px}" viewBox="0 0 64 64" fill="none">${track}${arc}</svg>`
   }
   const fromPct = g.from !== undefined && motion && Math.abs(g.from - f) > 0.005 ? Math.max(0.01, Math.min(1, Math.max(0, g.from)) * 100) : null
-  const stroke = g.level === 'ok' ? 'currentColor' : GAUGE_HEX[g.level]
+  const stroke = g.lit === true ? LIT_HEX : g.level === 'ok' ? 'currentColor' : GAUGE_HEX[g.level]
   // 0 이면 바탕 고리만 — 앱 고리처럼 빈 원(둥근 끝이 12시에 점으로 남지 않게)
   const opacity = f === 0 && fromPct === null ? '0' : g.level === 'ok' ? '.8' : '1'
   const t = g.blink === null || g.blink === undefined || !motion ? null : Math.max(0, Math.min(1, g.blink))
@@ -191,7 +199,7 @@ function barGaugeSvg(g: GaugeLook, shape: 'bar' | 'vbar' | 'cells' | 'vcells'): 
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${css ? `<style>${css}${REDUCE}</style>` : ''}${body}</svg>`
   }
   const from = g.from !== undefined && motion && Math.abs(g.from - f) > 0.005 ? clamp(g.from) : null
-  const color = g.level === 'ok' ? 'currentColor' : GAUGE_HEX[g.level]
+  const color = g.lit === true ? LIT_HEX : g.level === 'ok' ? 'currentColor' : GAUGE_HEX[g.level]
   const opacity = f === 0 && from === null ? '0' : g.level === 'ok' ? '.8' : '1'
   const t = g.blink === null || g.blink === undefined || !motion ? null : clamp(g.blink)
   const dur = from !== null && from - f > 0.15 ? 1.3 : 0.5

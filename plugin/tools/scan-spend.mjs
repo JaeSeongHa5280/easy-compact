@@ -12,11 +12,12 @@
 // 캐시: 파일마다 크기 · 수정 시각이 같으면 다시 안 읽는다 — 처음 켤 때만 이번 달 기록을 다 읽는다(기록이 크면 수십 초).
 // 규칙: assistant 줄의 message.usage, 같은 message.id 는 파일마다 첫 줄로 세고(날짜 · 모델 · 크기 묶음), 뒤 줄은 출력만 최댓값으로 —
 //   스트리밍 중 같은 응답이 출력이 늘며 여러 번 적힌다. 첫 줄만 세면 출력이 모자랐다(N1: 이 PC 이번 달 출력 약 243만 토큰 ≈ $49 빠짐).
-//   날짜는 첫 줄 timestamp(UTC).
+//   날짜는 첫 줄 timestamp(UTC). 줄의 sessionId 가 그 파일의 세션과 다르면(갈라 온 · 이어 받은 기록이 복사한 앞 세션 줄) 안 센다(1.0).
+//   지운 세션의 기록은 파일이 없어도 캐시에 남은 몫을 그달 끝까지 센다(gone, 1.0) — 캐시 판을 올릴 땐 gone 몫을 버리지 말고 옮길 것(다시 읽을 파일이 없다)
 //   쓰기는 usage.cache_creation 의 ephemeral_5m · 1h 로 가르고, 그 칸이 없으면 메인은 1시간 · 하위 에이전트는 5분(엔진 기본).
 //   앱 자체 요청(다음 질문 제안 · 컴팩트 요청 등)은 기록에 없다 — mod 가 잰 값을 extra 로 따로 낸다(0.7.0 피드백 M1). 다른 기기 · 웹은 못 센다("~")
 
-import { createReadStream, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { dirname, join } from 'node:path'
 
@@ -58,7 +59,18 @@ function walk(dir, depth, out) {
   }
 }
 
+/** 세션 id 꼴(uuid) — projects/<프로젝트>/<세션>.jsonl · projects/<프로젝트>/<세션>/subagents/… 의 <세션> */
+const SID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
+function sessionOf(path) {
+  const parts = path.slice(root.length).split(/[\\/]/).filter(Boolean)
+  return SID.exec(parts[1] ?? '')?.[0] ?? null
+}
+
 async function scanFile(f) {
+  // 1.0: 갈라 온(fork) · 이어 받은 기록은 앞 세션 대화를 줄째 복사해 담는다(복사한 줄의 sessionId = 앞 세션 — 하위 에이전트 기록도 복사된다).
+  // 그 줄을 이 파일 몫으로 또 세면 두 번이다 — 2026-10-18 이 PC 이번 달 약 $629(16%)가 두 번 들었다(갈라 온 세션 하나가 앞 세션 사흘 치를
+  // 담음). 줄의 sessionId 가 이 파일의 세션(메인 = 파일 이름, 하위 에이전트 = 세션 폴더)과 다르면 안 센다 — 앞 세션 기록이 그 몫을 센다
+  const own = sessionOf(f.path)
   const days = {}
   // 컴팩트 경계 [시각 ms, 컴팩트 전 크기, 그 앞 마지막 응답 모델] — 같은 경계가 한 기록에 2~3번 다시 적혀(되감기 · 이어 받기) 시각 · 크기로 한 번만
   const compacts = []
@@ -89,6 +101,7 @@ async function scanFile(f) {
     const m = r.message
     if (r.type !== 'assistant' || !m?.usage || !m.id) continue
     if (typeof m.model === 'string' && m.model !== '<synthetic>') lastModel = m.model
+    if (own && typeof r.sessionId === 'string' && r.sessionId !== own) continue
     const prev = seen.get(m.id)
     if (prev) {
       const more = num(m.usage.output_tokens) - prev.output
@@ -135,8 +148,8 @@ function slot(obj, key, empty) {
 }
 
 // v2(N1): 출력 셈 · UTC 날짜가 바뀌어 v1 캐시는 버린다. v3(M2): 파일마다 컴팩트 경계도 담아 v2 는 버린다(처음 한 번 다시 읽음).
-// v4(0.9.3): 모델 칸을 엔진 판으로 나눠 v3 는 버린다
-const CACHE_V = 4
+// v4(0.9.3): 모델 칸을 엔진 판으로 나눠 v3 는 버린다. v5(1.0): 갈라 온 기록의 복사한 줄을 안 세어 v4 는 버린다(이 PC 처음 한 번 다시 읽기 약 7초)
+const CACHE_V = 5
 let cache = { v: CACHE_V, files: {} }
 try {
   const old = JSON.parse(readFileSync(cacheFile, 'utf8'))
@@ -162,6 +175,21 @@ for (const f of files) {
     // 못 읽은 파일은 다음에 다시
   }
 }
+// 1.0 지운 세션: 앱에서 세션을 지우면 대화 기록 파일(하위 에이전트 폴더까지)도 지워진다 — 보관은 그대로 둔다(2026-10-18 이 PC 실측: 보관 13개는
+// 기록이 다 남았고, 지운 세션은 기록이 사라져 그 몫이 오늘 · 이번 달에서 빠졌다). 쓴 돈은 그대로라 캐시에 남은 그 파일 몫을 들고 간다(gone).
+// 프로젝트 폴더만 다른 같은 자리(<세션>.jsonl · <세션>/subagents/…)에 있으면 옮겨진 것이라 빼고 — 이름만 보면 갈라 온 세션이 복사한 하위
+// 에이전트 기록(세션 폴더가 다름)과 헷갈린다 — 이번 달 날짜가 없는 몫은 버린다(달이 바뀌면 저절로 빠진다). 시작 시각보다 오래돼 걸음에서 빠진
+// 파일(있는 파일)은 예전처럼 뺀다 — 이번 달 요청이 없다
+const firstDay = dayOf(since)
+const placeOf = path => path.slice(root.length).split(/[\\/]/).filter(Boolean).slice(1).join('/')
+const walked = new Set(files.map(f => placeOf(f.path)))
+let gone = 0
+for (const [path, hit] of Object.entries(cache.files)) {
+  if (next.files[path] || walked.has(placeOf(path)) || existsSync(path)) continue
+  if (!Object.keys(hit.days ?? {}).some(day => day >= firstDay)) continue
+  next.files[path] = { ...hit, gone: true }
+  gone++
+}
 try {
   mkdirSync(dirname(cacheFile), { recursive: true })
   writeFileSync(cacheFile, JSON.stringify(next))
@@ -170,7 +198,6 @@ try {
 }
 // 합치기(시작 날짜부터)
 const out = {}
-const firstDay = dayOf(since)
 for (const entry of Object.values(next.files)) {
   for (const [day, byModel] of Object.entries(entry.days ?? {})) {
     if (day < firstDay) continue
@@ -241,15 +268,9 @@ if (dataArg) {
 const retro = {}
 const calib = []
 {
-  const SID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
-  // projects/<프로젝트>/<세션>.jsonl · projects/<프로젝트>/<세션>/subagents/… → 세션
-  const sidOf = path => {
-    const parts = path.slice(root.length).split(/[\\/]/).filter(Boolean)
-    return SID.exec(parts[1] ?? '')?.[0] ?? null
-  }
   const bounds = new Map()
   for (const [path, entry] of Object.entries(next.files)) {
-    const sid = sidOf(path)
+    const sid = sessionOf(path)
     for (const [at, pre, model] of entry.compacts ?? []) {
       if (dayOf(at) < firstDay) continue
       const key = `${at}|${pre}`
@@ -279,4 +300,4 @@ const calib = []
     }
   }
 }
-process.stdout.write(JSON.stringify({ days: out, extra, retro, calib, files: files.length, scanned }))
+process.stdout.write(JSON.stringify({ days: out, extra, retro, calib, files: files.length, scanned, gone }))

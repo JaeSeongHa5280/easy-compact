@@ -1,8 +1,36 @@
 # Changelog
 
-All notable changes to easy-compact. Versions follow [Semantic Versioning](https://semver.org/) (0.x: anything may still change). [한국어](CHANGELOG.ko.md)
+All notable changes to easy-compact. Versions follow [Semantic Versioning](https://semver.org/). [한국어](CHANGELOG.ko.md)
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
+
+## [1.0.0] — 2026-10-19
+
+### Added
+- **Easy Auto compact** — leave it on and easy-compact saves and compacts by itself when the context passes a range you set. If an answer ends past the front of the range, it saves → compacts; if a long task runs past the back of the range, it stops that turn, saves → compacts → picks the work back up. Turn it on or off per session with the **Easy Auto** switch at the top right of the popup the bar's compact button opens (new sessions start with the value you last picked; in the terminal it's 4 in the popup). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k*. Set the range in Settings → **Compact** → **Easy Auto range** (it starts at your compact range). Typing doesn't turn it off; if the cache expires or the model changes, it turns off in that session only (with a one-line note). If compacting doesn't bring the context below the range, or it passes again within 3 requests, it shows *Auto stopped*; when compacting would cost more than it saves (cold cache · little to save) it skips that one time.
+- **Slim screen** — the smallest screen, for when you know your way around. Normally there's just one button below the input (*🟦 120k*); a single alert line appears above the input only at Time to compact, when Overdue, or when a cold cache makes a plain compact cheaper (**[Easy Compact]** · ✕). Press the button for a one-line summary. In the terminal it's one line where the bar was.
+- **Screen preset [Slim | Simple | Detailed | Custom]** — one row at the top of Settings. **Custom** lets you pick the bar layout (Button below · One row · Three rows) and [Off | When needed | Always] for each row of **Shown at the input** (*When needed* = once that cell takes a color). On a set preset the same rows show dimmed, and **Start from** begins Custom from a preset's values. Today, This month and the limits are screen values now, so on a set preset you change them through Custom. Your old settings carry over as they looked.
+- **Running question strip** — while an answer runs, one line right above the input shows this question's cost and request count (a laptop bug works away; an agent picture when agents run). It goes away when the answer ends and the answer chip takes over. The bar's third row is now the **Last question row** — the two turn on and off separately. The desktop app's own working line is left as the app draws it.
+- **Agent characters** — while agents run, a lead bug waves with a blue "!" and small bugs hop along (up to three, then *+N*). When they're all done: a DONE banner and *N agents done*.
+- **A flash when a value goes up** — when the context, session cost, per-request cost or cache-expiry text climbs to the next color, and when you enter a session, its background flashes three times (1.8 s). It rests while the gauge is moving; with Settings **Animations** off you get the color only.
+- **Colors for Today · This month** — Settings **Numbers · colors** has thresholds for Today and This month (to start: Today $50 · $100 · $200, This month $1,000 · $1,500 · $2,000). The bar, Slim and the pane's All sessions row get the color only — no flashing.
+- **[Clear] asks once more** — **[Clear]** in the compact popup no longer clears right away: the same spot asks *Clear the conversation?* with how many questions and how much context Claude forgets, and **[← Back]** (main button) · **[Clear]**. Terminal: 1 Clear · 2 Back.
+- **Pick the compact message in the popup** — the popup has a [Normal | Long-session handoff | Wrap-up | Write my own] toolbar; with **Write my own**, type into two boxes and it saves with that text. The cold-cache popup has the same toolbar. The message card in the Compact settings tab is now a one-line note.
+- **Cost per question [Full text]** — one **[Full text ▾]** per question that has cut-off action rows. Tool names are colored by kind, app tools get plain names (update_plan → *Task list* and so on), and a main request that started agents reads *Start agent*.
+
+### Changed
+- **The gauge is the side pane's door** — on every screen, press the gauge to open the side pane (Overview) and press it again to close it. The summary card the gauge used to open on the regular screens is gone. Slim's button shows ▸ while the Overview pane is open — press it to close the pane.
+- **Question totals cover the whole session** — the question log still keeps 60, but questions pushed out are counted and summed separately (logs from before 1.0 are estimated from the transcript). Requests in the total that no question caught show as *Outside questions $X*.
+- **A forked session counts only its own share** — cost, questions and the context flow count only the requests after the fork. Today and This month no longer count the copied rows of the session it came from twice, and reopening a session no longer counts the cost the engine restores twice. A deleted session's share stays in This month until the month ends.
+- **Right after a compact = the first request after it** — the size the engine reports after a compact counts only the kept conversation (no system prompt, tools or memory), so the size right after compacting read too small (18k in one session vs. 106k for real). It now uses the first request's size, which also corrects the base load, the formula best point and Compact effect; old logs are corrected when read.
+- **Number formats** — the context cell reads *645k (64%) / 1M* (tick labels match), the overdue line *past 300k (30%) · now 577k (58%)*, and anything under a cent shows *under $0.01*. On the Detailed bar each limit keeps its reset time with it as one group.
+- **5-hour and 7-day limits** — chosen as separate rows again (*5-hour limit* · *7-day limit*), and sessions share the most recent values (a session the engine gives no limits to uses what another session got).
+- **Wording and names** — descriptions in Settings, Overview and around the input are short sentences now instead of dash-and-equals fragments. *Screen type* → **Screen preset**, and the tabs below sit under **Detailed settings (chosen screen)**.
+
+### Fixed
+- **Flicker while working** — every request used to redraw the whole app screen; now only the cells that read the state redraw (desktop).
+- **Other plugins above the input** — another plugin's content above the input was hidden behind our bar. It's now drawn above the bar.
+- **Answer chip · question names** — a turn that ends with a wrap-up tool gets its chip too (under the last answer that had text). Question names drop hidden tags, and a question that sent only images reads *🖼 N images*.
 
 ## [0.9.5] — 2026-10-17
 

@@ -106,3 +106,10 @@ export function engineBelow(base: string | undefined, min: string = MIN_ENGINE):
   for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i]! < b[i]!
   return false
 }
+
+/** 서랍에 보일 판의 범위: 새 판이 있으면 지금 판 < v ≤ 새 판, 업데이트 뒤 첫 실행이면 본 판 < v ≤ 지금 판, 그 밖엔 지금 판 하나 */
+export function changeRange(own: string | null, market: string | null, seen: unknown, updatedTo: string | null | undefined): { from: string | null; to: string | null } {
+  if (own && market && versionGt(market, own)) return { from: own, to: market }
+  if (updatedTo) return { from: typeof seen === 'string' && versionGt(updatedTo, seen) ? seen : null, to: updatedTo }
+  return { from: null, to: own }
+}

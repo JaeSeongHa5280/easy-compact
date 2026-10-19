@@ -9,7 +9,7 @@
 // 2026-10-10 실측(이 mod 를 만든 세션 14턴): 턴당 호출 1~39회, 평균 9회 — 턴당 호출 수를 가정하면
 // 3배 틀린다. 그래서 "요청 1회" 값과, 요청마다 API 가 보고한 토큰으로 잰 실제 질문 비용을 보인다.
 
-import type { CompactInputs, CompactMix, CostParts, SaveTurn, StepDetail, Thresholds, Usage } from '../types'
+import type { CompactInputs, CompactMix, CostParts, SaveTurn, StepDetail, Thresholds, TtlConfig, Usage } from '../types'
 import { L } from './i18n'
 
 /** $/MTok. write5m · write1h 는 입력의 1.25배 · 2배 */
@@ -124,10 +124,10 @@ export function isKnownModel(model: string): boolean {
 export function priceWarnings(model: string | null | undefined, window: number | null | undefined): string[] {
   const out: string[] = []
   if (model && ratesFor(model) && !isKnownModel(model)) {
-    out.push(L('가격표에 없는 모델이라 요율 가격이 맞지 않을 수 있음 — 최신 버전에서 반영 예정', 'This model is not in the price table, so prices may be off — to be fixed in a later version'))
+    out.push(L('가격표에 없는 모델이라 금액이 맞지 않을 수 있습니다. 다음 버전에서 반영할 예정입니다', 'This model isn’t in the price table, so prices may be off. A later version will fix it'))
   }
   if (typeof window === 'number' && window > 1_000_000) {
-    out.push(L('최대 컨텍스트 양이 바뀌어 요율 가격이 맞지 않을 수 있음 — 최신 버전에서 반영 예정', 'The maximum context size changed, so prices may be off — to be fixed in a later version'))
+    out.push(L('최대 컨텍스트 양이 바뀌어 금액이 맞지 않을 수 있습니다. 다음 버전에서 반영할 예정입니다', 'The maximum context size changed, so prices may be off. A later version will fix it'))
   }
   return out
 }
@@ -761,7 +761,7 @@ export const CTX_MARK_PAD = 4
 /**
  * 현황 막대 움직임(O4, 0.8.1 사용자 "컴팩트 진행 중일 때 그대로 — 깜빡이거나 맞춰서 감소하는 애니"): pulse = 컴팩트 중 채움이 느리게 숨
  * 쉬듯(밝기만, 초당 1번 아래), fromPercent / fromCtx = 컴팩트 끝 옛 크기에서 지금으로 줄어듦(0.8초 — 바 게이지와 같은 때). 그림 안
- * prefers-reduced-motion 이면 멈춤, 설정 "움직임" 끔이면 부르는 쪽이 안 준다. 움직이는 동안만 샌드박스 틀(isInteractive)로 그린다
+ * prefers-reduced-motion 이면 멈춤, 설정 "애니메이션" 끔이면 부르는 쪽이 안 준다. 움직이는 동안만 샌드박스 틀(isInteractive)로 그린다
  */
 export type BarAnim = { pulse?: boolean; fromPercent?: number }
 
@@ -832,8 +832,21 @@ export function fmtTokens(n: number): string {
 
 /** 금액은 어디서나 센트까지. 예전엔 $10 이상을 소수 한 자리로 줄여 $42.69 가 $42.7 로 보였다(/usage 와 대조하다 발견) */
 export function fmtUsd(usd: number): string {
+  // 1센트가 안 되는 값(반올림하면 $0.00 — Haiku 에이전트 요청 하나 약 $0.004 등)은 "$0.01 이하": 요청이 있었는데 $0.00 이면 안 센 것처럼
+  // 보였다. 영어는 "under $0.01". 0 은 그대로 $0.00
+  if (isSubCent(usd)) return L('$0.01 이하', 'under $0.01')
   // 천 단위 쉼표(0.9.4 uxi 바 A — "$2636.86" 이 다른 금액과 꼴이 달라 읽기 어려웠다). 음수 꼴("$-1.50")은 예전 그대로
   return `$${usd.toFixed(2).replace(/^(-?)(\d+)/, (_m, sign: string, int: string) => sign + int.replace(/\B(?=(\d{3})+(?!\d))/g, ','))}`
+}
+
+/** 1센트가 안 되는(0 은 아닌) 값 — fmtUsd 가 "$0.01 이하" 로 쓴다 */
+export function isSubCent(usd: number): boolean {
+  return usd > 0 && usd < 0.005
+}
+
+/** 어림 금액 "~$X" — 1센트가 안 되는 값은 "$0.01 이하" 그대로(물결을 붙이지 않는다) */
+export function approxUsd(usd: number): string {
+  return isSubCent(usd) ? fmtUsd(usd) : `~${fmtUsd(usd)}`
 }
 
 /** 리셋 시각까지: "2시간 13분", "3일 4시간", "12분" */
@@ -854,4 +867,21 @@ export function average(values: readonly number[]): number | null {
 /** "D:\\Claude" → "D--Claude": ~/.claude/projects/ 아래 폴더 이름 규칙 */
 export function projectSlug(cwd: string): string {
   return cwd.replace(/[^A-Za-z0-9]/g, '-')
+}
+
+/**
+ * 못 쟀을 때의 짐작(분, 화면에 "추정"): 설정 · 환경 변수가 정했으면 그 값, 자동이면 60(0.3.x 까지 늘 쓰던 값). 한도 값이 없다고
+ * API 키(5분)로 보지 않는다 — 구독 세션도 첫 응답 전엔 한도 값이 비어 있다(엔진: "empty when none has a reading"), 근거가 약한
+ * 짐작은 단정과 같다. 첫 턴이 끝나면 기록에서 잰 값으로 바뀐다
+ */
+export function guessTtl(cfg: TtlConfig | null): number {
+  if (cfg?.value) return cfg.value === '5m' ? 5 : 60
+  return 60
+}
+
+/** 캐시 단계: 넉넉 · 모름 0, 곧 만료(바의 노랑 분 — 캐시 경고 기준 아래) 1, 만료 · 모델 바뀜(빨강 "캐시 만료") 2 */
+export function cacheRankOf(u: Usage, nowMs: number): number {
+  const est = estimateFor(u, nowMs)
+  if (est.kind === 'cold') return 2
+  return est.kind !== 'unpriced' && est.minsLeft !== null && est.minsLeft < cacheWarnFor(thresholds(), est.ttlMin) ? 1 : 0
 }

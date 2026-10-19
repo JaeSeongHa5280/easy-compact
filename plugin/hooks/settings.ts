@@ -9,7 +9,7 @@
 // 줄을 고른다, 또는 사람이 ◀ ▶ 로 정한 한 크기 — 두 방식 중 하나. 처음엔 최적에서 폭(5 · 10 · 20%)만큼으로 했는데,
 // 원한 구간은 요금표처럼 0~100만 크기마다 값이 붙은 표에서 고르는 것이었다. 고르는 값은 [적용] 을 눌러야 저장.
 
-import type { BandMode, BandShow, CostShow, InfoLevel, LimitShow, PaneMode, ScreenPreset, ScreenView, Settings, Thresholds, TidyStyleId } from '../types'
+import type { BandMode, BandShow, BarLayout, CostShow, InfoLevel, LimitShow, PaneMode, PartKey, PartLevel, PartShow, ScreenPreset, ScreenView, Settings, Thresholds, TidyStyleId } from '../types'
 import { L, lang } from './i18n'
 import { onTerminal } from './glyph'
 import type { Lang } from './i18n'
@@ -159,9 +159,39 @@ export function compactMax(): number {
   return Math.max(COMPACT_MAX, contextWindow)
 }
 
-/** 엔진 자동 컴팩트가 도는 자리(어림): 창의 96.7%(1M 창이면 약 967k) */
+/**
+ * 엔진 자동 컴팩트 기준값 — /context 분해(autoCompactThreshold · isAutoCompactEnabled, 세션 시작 때 잰다). 모르면 창의 96.7% 어림.
+ * 이지 오토 구간은 이보다 앞만 고른다(엔진 값은 읽기만 — 정본 easy-compact-auto.md §0)
+ */
+let engineAutoAt: number | null = null
+let isEngineAutoOff = false
+
+export function setEngineAuto(at: number | null | undefined, isOn: boolean | undefined): void {
+  engineAutoAt = typeof at === 'number' && Number.isFinite(at) && at > 0 ? at : null
+  isEngineAutoOff = isOn === false
+}
+
+/** 엔진 자동 컴팩트가 도는 자리: 잰 값, 모르면 창의 96.7%(1M 창이면 약 967k) */
 export function autoCompactAt(): number {
-  return Math.round(contextWindow * 0.967)
+  return engineAutoAt ?? Math.round(contextWindow * 0.967)
+}
+
+/** 이지 오토 구간으로 고를 수 있는 띠: 끝이 엔진 자동 컴팩트보다 앞(엔진 자동 컴팩트를 껐으면 다) */
+export function autoBands(): readonly (readonly [number, number])[] {
+  const limit = isEngineAutoOff ? Number.POSITIVE_INFINITY : autoCompactAt()
+  return rangeBands().filter(([, b]) => b < limit)
+}
+
+/** 이지 오토 구간을 값으로(시작 < 끝일 때만) */
+export function setAutoRange(s: Settings, start: number, end: number): Settings {
+  return start < end ? { ...s, autoStart: Math.round(start), autoEnd: Math.round(end) } : s
+}
+
+/** 이지 오토 구간 처음 값 = 그때의 컴팩트 구간(직접 지정이면 그 크기가 든 띠) — 그 뒤는 따로 움직인다 */
+function autoFromCompact(c: Pick<Settings, 'follow' | 'rangeStart' | 'rangeEnd' | 'compactAt'>): Pick<Settings, 'autoStart' | 'autoEnd'> {
+  if (c.follow) return { autoStart: c.rangeStart, autoEnd: c.rangeEnd }
+  const band = rangeBands().find(([a, b]) => c.compactAt > a && c.compactAt <= b)
+  return band ? { autoStart: band[0], autoEnd: band[1] } : { autoStart: DEFAULT_SETTINGS.autoStart, autoEnd: DEFAULT_SETTINGS.autoEnd }
 }
 
 /** 한도 줄 칸 다 켬(처음 값) */
@@ -187,20 +217,49 @@ const ALL_SHOWN: CostShow = {
 export const SESSION_COLORS_DEFAULT: [number, number, number] = [10, 50, 100]
 
 /**
+ * 오늘 · 이번 달 금액 색 기준 처음 값(1.0 — 사용자 2026-10-18 "오늘 값은 50 100 200, 이번 달은 1000 1500 2000"): 넘으면 노랑 · 주황 · 빨강.
+ * 세션 금액 색과 같은 꼴이지만 깜빡이지 않는다 — 한 번 넘으면 그날 · 그달 내내 넘어 있어 볼 때마다 깜빡였을 것
+ */
+export const TODAY_COLORS_DEFAULT: [number, number, number] = [50, 100, 200]
+export const MONTH_COLORS_DEFAULT: [number, number, number] = [1000, 1500, 2000]
+
+/**
  * 화면 프리셋의 보기 값 — 간단 · 자세히 · 커스텀 셋. 0.4.0 의 기본은 뺐다: 바가 자세히와 같고 차이는 패널
  * 보기뿐이었다.
  * - 간단: 처음 쓰는 분 · AI 비용이 낯선 분 · 꼭 필요한 것만 보고 싶은 분. 보이는 정보를 최소로가 기조 — 바 한 줄(이 세션 금액 ·
  *   컨텍스트 · 캐시 · 이지 컴팩트), 패널 간략(질문은 요청 수 · 총액, 모델 견줌 없음), 설정의 컴팩트 시점은 크기 구간과 판정만.
  *   캐시는 넣는다 — 식으면 다음 요청이 전체를 다시 써 처음 쓰는 사람도 알아야 한다
  * - 자세히: AI 비용 구조를 아는 분 — Easy Compact 의 정보를 다(한도 · 요청당 · 컴팩트 구간 · 질문 줄, 패널 자세히, 비용표 전체)
+ * - 슬림(1.0 — 시안 preview-1017d 안 3): 익숙해진 분 · 필요한 것만 — 평소 입력창 위가 비고 아래 버튼 하나, 필요할 때만 위 알림.
+ *   화면 넷 모두 바 꼴 · 칸 단계(끔 · 필요할 때 · 늘) · 정보량을 정하고, 커스텀은 그것을 다 고른다
  */
 export const SCREEN_VIEWS: Record<Exclude<ScreenPreset, 'custom'>, ScreenView> = {
-  simple: {
-    bandShow: { session: true, perRequest: false, context: true, range: false, cache: true, lastTurn: false },
+  // 슬림(1.0 — 사용자 "익숙해진 뒤엔 필요한 내용만 · 정말 최소"): 평소엔 입력창 아래 버튼 하나(컨텍스트), 필요할 때만 위 알림 — 컴팩트
+  // 버튼 · 캐시 · 한도는 필요할 때, 채팅 칸은 그대로
+  slim: {
+    layout: 'button',
+    parts: { ctx: 'on', btn: 'need', cache: 'need', lim5: 'need', lim7: 'need', resets: 'on', sess: 'off', req: 'off', today: 'off', month: 'off', range: 'off', last: 'off', chip: 'on', spin: 'on' },
     info: 'lean',
   },
-  detail: { bandShow: ALL_SHOWN, info: 'full' },
+  simple: {
+    layout: 'one',
+    parts: { ctx: 'on', btn: 'on', cache: 'on', lim5: 'off', lim7: 'off', resets: 'off', sess: 'on', req: 'off', today: 'off', month: 'off', range: 'off', last: 'off', chip: 'on', spin: 'on' },
+    info: 'lean',
+  },
+  // 자세히: 다 늘 — 오늘 · 이번 달도(1.0 — 사용자 2026-10-18 "자세히는 풀로 정보를 보여 주는 건데 오늘 · 이번 달 꺼 둘 필요 있나, 켜 두고 필요하면
+  // 커스텀에서". 2026-10-14 엔 이 PC 모든 세션을 재는 옵션이라 꺼 뒀었다)
+  detail: {
+    layout: 'three',
+    parts: { ctx: 'on', btn: 'on', cache: 'on', lim5: 'on', lim7: 'on', resets: 'on', sess: 'on', req: 'on', today: 'on', month: 'on', range: 'on', last: 'on', chip: 'on', spin: 'on' },
+    info: 'full',
+  },
 }
+
+/**
+ * 슬림의 정해 둔 칸 — 늘 = 컨텍스트, 필요할 때 = 컴팩트 버튼 · 캐시 · 한도, 나머지 끔, 채팅 칸은 그대로 켬. 필요할 때 = 지금 색이 바뀌는
+ * 문턱(컨텍스트 · 요청당 · 컴팩트 버튼 = 컴팩트할 때부터, 캐시 = 경고 분 아래 · 만료, 한도 = 70%, 세션 = 금액 색 첫 기준)
+ */
+export const SLIM_DEFAULT: PartShow = SCREEN_VIEWS.slim.parts
 
 export const DEFAULT_SETTINGS: Settings = {
   // 직접 지정의 처음 값. 25만 = 컴팩트 직후 3만~12만 어느 환경에서도 최적보다 +11% 안(hooks/optimal.ts 계산)
@@ -226,17 +285,14 @@ export const DEFAULT_SETTINGS: Settings = {
   screen: 'detail',
   custom: null,
   sessionColors: SESSION_COLORS_DEFAULT,
-  // 한도 줄은 처음부터 켬 — 구독 사용자에게 5시간 · 7일 한도는 늘 볼 값(API 키 세션은 엔진이 한도를 안 줘 줄이 없다)
-  limitShow: ALL_LIMITS,
+  todayColors: TODAY_COLORS_DEFAULT,
+  monthColors: MONTH_COLORS_DEFAULT,
   // 질문 강조(칩에 마우스를 올리면 그 답변이 회색)는 처음엔 끔(0.9.2 — 사용자 2026-10-16 "기본옵션 꺼둔 걸로"). 0.9.1 까지는 켬
   // (2026-10-13) — 설정을 한 번이라도 저장한 사람은 저장값(켬) 그대로, 바꾼 적 없는 사람 · 새 설치는 끔
   questionHover: false,
   paneAutoOpen: false,
   // 같이 열고 닫기는 처음부터 켬
   paneShared: true,
-  // 오늘 · 이번 달 사용량은 처음엔 끔 — 늘 볼 값이 아니라 옵션
-  spendToday: false,
-  spendMonth: false,
   bandOrder: ['session', 'today', 'month', 'perRequest', 'context', 'range', 'cache'],
   motion: 'system',
   ctxUnit: 'size',
@@ -245,6 +301,192 @@ export const DEFAULT_SETTINGS: Settings = {
   gaugeShape: 'cells',
   // B10: 입력창 아래 한 줄은 기본 끔(바와 같은 내용이 두 번 — 바가 빠질 때만 쓸모)
   statusLine: false,
+  // 이지 오토 구간 — 저장값이 없으면 그때의 컴팩트 구간을 처음 값으로(normalizeSettings · register loadSettings 가 한 번 적어 둔다)
+  autoStart: 200_000,
+  autoEnd: 250_000,
+}
+
+// ── 슬림 화면(1.0 — 시안 3판 "보기는 위, 공부는 옆, 행동은 한 자리"): 평소엔 입력창 아래 버튼 하나, 필요할 때만 위 알림 · 누르면 요약 카드 ──
+
+/** 슬림 칸 — 설정 탭 차례(입력창 칸 → 채팅 칸)와 칸마다 고를 수 있는 단계 */
+export const PARTS: readonly { key: PartKey; group: 'bar' | 'chat'; states: readonly PartLevel[]; layouts: readonly BarLayout[] }[] = [
+  { key: 'ctx', group: 'bar', states: ['need', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'btn', group: 'bar', states: ['off', 'need', 'on'], layouts: ['button'] },
+  // 한도는 5시간 · 7일 따로(0.2.0 ~ 0.9.5 처럼 — 1.0 안 3 에서 한 칸으로 묶었다가 사용자 2026-10-18 "원래 나눠서 가능했던 거 아니야?" 로 되돌림)
+  { key: 'lim5', group: 'bar', states: ['off', 'need', 'on'], layouts: ['button', 'three'] },
+  { key: 'lim7', group: 'bar', states: ['off', 'need', 'on'], layouts: ['button', 'three'] },
+  { key: 'resets', group: 'bar', states: ['off', 'on'], layouts: ['button', 'three'] },
+  { key: 'sess', group: 'bar', states: ['off', 'need', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'req', group: 'bar', states: ['off', 'need', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'cache', group: 'bar', states: ['off', 'need', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'today', group: 'bar', states: ['off', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'month', group: 'bar', states: ['off', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'range', group: 'bar', states: ['off', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'last', group: 'bar', states: ['off', 'on'], layouts: ['three'] },
+  { key: 'chip', group: 'chat', states: ['off', 'on'], layouts: ['button', 'one', 'three'] },
+  { key: 'spin', group: 'chat', states: ['off', 'on'], layouts: ['button', 'one', 'three'] },
+]
+export const PART_KEYS: readonly PartKey[] = PARTS.map(p => p.key)
+/** 1.0 전 이름(같은 표) */
+export const SLIM_PARTS = PARTS
+
+/** 칸 이름(설정 탭) */
+export function partName(key: PartKey): string {
+  const names: Record<PartKey, [string, string]> = {
+    ctx: ['컨텍스트', 'Context'],
+    btn: ['컴팩트 버튼', 'Compact button'],
+    cache: ['캐시 남은 시간', 'Cache time left'],
+    lim5: ['5시간 한도', '5-hour limit'],
+    lim7: ['7일 한도', '7-day limit'],
+    resets: ['리셋까지 남은 시간', 'Time to reset'],
+    sess: ['이 세션 금액', 'Session cost'],
+    req: ['요청당', 'Per request'],
+    today: ['오늘', 'Today'],
+    month: ['이번 달', 'This month'],
+    range: ['컴팩트 구간', 'Compact range'],
+    last: ['지난 질문 줄', 'Last question row'],
+    chip: ['답변 끝 칩', 'Answer chip'],
+    spin: ['진행 중 질문 칸', 'Running question strip'],
+  }
+  return L(...names[key])
+}
+
+/**
+ * 칸 풀이(설정 탭) — "필요할 때" 가 언제인지, 단계가 둘뿐인 칸은 무엇인지. 문턱은 색 이름 + 단계 이름으로. 색 이름은 설정 금액 색 줄과 같다(warning = 노랑 ·
+ * #d9722b = 주황 · error = 빨강) — 컨텍스트 "컴팩트할 때" 는 주황(LEVEL_TEXT). 문장은 보통 말로
+ */
+export function partUse(key: PartKey): string {
+  const uses: Record<PartKey, [string, string]> = {
+    ctx: ["'필요할 때'면 컨텍스트가 주황(컴팩트할 때)이 된 뒤부터 숫자가 보입니다. 게이지는 늘 보입니다.", "With 'When needed', the number appears once the context turns orange (time to compact). The gauge always shows."],
+    btn: ["'필요할 때'면 컨텍스트가 주황(컴팩트할 때)이 되거나, 캐시가 만료돼 기본 컴팩트가 더 쌀 때 입력창 위 알림에 나옵니다.", "With 'When needed', it shows in the alert above the input once the context turns orange (time to compact), or when the cache expired and a plain compact is cheaper."],
+    cache: ["'필요할 때'면 남은 시간이 경고 분 아래로 줄거나(노랑) 캐시가 만료됐을 때(빨강) 보입니다.", "With 'When needed', it shows once the time left drops below the warning minutes (yellow) or the cache expires (red)."],
+    lim5: ["'필요할 때'면 70%(노랑)를 넘은 뒤에 보입니다.", "With 'When needed', it shows once it passes 70% (yellow)."],
+    lim7: ["'필요할 때'면 70%(노랑)를 넘은 뒤에 보입니다.", "With 'When needed', it shows once it passes 70% (yellow)."],
+    resets: ["한도 옆에 'N 후 리셋'을 붙입니다.", "Adds 'resets in N' next to a limit."],
+    sess: ["'필요할 때'면 세션 금액이 첫 색(노랑) 기준을 넘은 뒤에 보입니다.", "With 'When needed', it shows once the session cost passes the first color (yellow)."],
+    req: ["'필요할 때'면 컨텍스트가 주황(컴팩트할 때)이 된 뒤에 보입니다.", "With 'When needed', it shows once the context turns orange (time to compact)."],
+    today: ['이 PC 모든 세션의 오늘 금액입니다(API 정가로 셈한 추정).', "Today's cost across all sessions on this PC (estimated at API list prices)."],
+    month: ['이 PC 모든 세션의 이번 달 금액입니다(API 정가로 셈한 추정).', "This month's cost across all sessions on this PC (estimated at API list prices)."],
+    range: ['고른 컴팩트 구간입니다.', 'Your compact range.'],
+    last: ['바 셋째 줄에 지난 질문의 금액과 요청 수를 보입니다(세 줄 꼴). 대답하는 동안에도 지난 질문이고, 진행 중 질문 칸과는 따로입니다.', "Shows the last question's cost and requests on the bar's third row (three rows). It stays on the last question while answering, separate from the running strip."],
+    chip: ["채팅 답변 끝에 '이 질문 $ · 요청 N회'를 붙입니다.", "Adds 'This question $ · N requests' under each answer."],
+    spin: ['대답하는 동안 입력창 바로 위에 이 질문의 금액과 요청 수를 보입니다. 끝나면 답변 아래 칩이 이어받습니다. 터미널은 앱 작업 줄 옆에 나옵니다.', "While answering, shows this question's cost and requests right above the input; the answer chip takes over when done. On the terminal it sits next to the working line."],
+  }
+  return L(...uses[key])
+}
+
+/** 단계 이름: 끔 · 필요할 때 · 늘 */
+export function levelName(_key: PartKey, v: PartLevel): string {
+  if (v === 'off') return L('끔', 'Off')
+  if (v === 'need') return L('필요할 때', 'When needed')
+  return L('늘', 'Always')
+}
+/** 1.0 전 이름(같은 함수) */
+export const slimPartName = partName
+export const slimPartUse = partUse
+export const slimLevelName = levelName
+
+/** 저장값 → 칸(모르는 칸 · 그 칸에 없는 단계는 base 값). 한 칸이던 때(1.0 로컬 — lim)의 저장값은 5시간 · 7일 둘에 같은 값 */
+export function normalizeParts(raw: unknown, base: PartShow): PartShow {
+  const old = objectOf(raw)
+  const r = typeof old.lim === 'string' ? { lim5: old.lim, lim7: old.lim, ...old } : old
+  const out: PartShow = { ...base }
+  for (const p of PARTS) if (p.states.includes(r[p.key] as PartLevel)) out[p.key] = r[p.key] as PartLevel
+  return out
+}
+
+/** 1.0 전 슬림 커스텀 저장값(slimShow) → 칸 — lim 은 한도, spend(오늘 · 이번 달 같이) 는 둘로 */
+function partsFromOldSlim(raw: unknown): PartShow {
+  const r = objectOf(raw)
+  const out = normalizeParts({ ...r, today: undefined, month: undefined }, SCREEN_VIEWS.slim.parts)
+  if (r.spend === 'on') return { ...out, today: 'on', month: 'on' }
+  return out
+}
+
+/** 지금 화면이 아래 버튼 꼴(슬림 · 커스텀의 아래 버튼)인가 */
+export function isSlim(s: Pick<Settings, 'screen' | 'custom'>): boolean {
+  return viewOf(s).layout === 'button'
+}
+
+/** 지금 화면의 칸 */
+export function slimViewOf(s: Pick<Settings, 'screen' | 'custom'>): PartShow {
+  return viewOf(s).parts
+}
+export const partsOf = slimViewOf
+
+/** 칸 하나 고르기 — 프리셋이었으면 그 값에서 커스텀으로 옮겨 바꾼다 */
+export function setPart(s: Settings, key: PartKey, v: PartLevel): Settings {
+  return editView(s, view => ({ ...view, parts: { ...view.parts, [key]: v } }))
+}
+export const setSlimPart = setPart
+
+/** 칸 단계 말(명령): 켜기 · 늘 = 늘, 끄기 · 끔 = 끔, 필요할 때 = 필요할 때. 못 읽으면 null */
+export function parsePartLevel(text: string): PartLevel | null {
+  const t = text.replace(/\s+/g, '').toLowerCase()
+  if (['need', 'needed', 'whenneeded', '필요할때', '필요시', '필요할때만'].includes(t)) return 'need'
+  if (['늘', 'always'].includes(t)) return 'on'
+  const on = parseOnOff(t)
+  return on === null ? null : on ? 'on' : 'off'
+}
+
+/** 칸 이름(명령 — 영 · 한, 띄어쓰기 없이 소문자) */
+const PART_WORDS: Record<PartKey, readonly string[]> = {
+  ctx: ['ctx', 'context', '컨텍스트'],
+  btn: ['button', 'btn', '컴팩트버튼', '버튼'],
+  cache: ['cache', '캐시'],
+  lim5: ['5h', '5시간', '5시간한도', 'fivehour'],
+  lim7: ['7d', '7일', '7일한도', 'sevenday'],
+  resets: ['reset', 'resets', '리셋'],
+  sess: ['session', '세션', '이세션', '세션금액'],
+  req: ['request', '요청당', '요청'],
+  today: ['today', '오늘'],
+  month: ['month', 'thismonth', '이번달'],
+  range: ['range', '구간', '컴팩트구간'],
+  last: ['question', '질문', '지난질문'],
+  chip: ['chip', '칩', '답변칩'],
+  spin: ['spinner', 'working', '작업중', '작업중금액'],
+}
+
+/** 칸 이름 → 칸. 못 읽으면 null */
+export function parsePartKey(text: string): PartKey | null {
+  const t = text.replace(/\s+/g, '').toLowerCase()
+  return PART_KEYS.find(k => PART_WORDS[k].includes(t)) ?? null
+}
+
+/** 바 꼴 */
+export const LAYOUTS: readonly BarLayout[] = ['button', 'one', 'three']
+
+export function layoutName(l: BarLayout): string {
+  return l === 'button' ? L('아래 버튼', 'Button below') : l === 'one' ? L('한 줄', 'One row') : L('세 줄', 'Three rows')
+}
+
+export function layoutUse(l: BarLayout): string {
+  return l === 'button'
+    ? L('평소엔 입력창 아래 버튼 하나만 있고, 필요할 때만 위에 알림이 뜹니다.', 'Just one button below the input, and an alert above only when needed.')
+    : l === 'one'
+      ? L('입력창 위 바 한 줄(간단과 같은 꼴)', 'One row above the input (like Simple)')
+      : L('한도 · 비용 · 질문을 세 줄로 보입니다.', 'Limits, cost and question in three rows.')
+}
+
+/** "슬림 커스텀": 아래 버튼 꼴의 커스텀(슬림에서 오면 슬림 칸, 아래 버튼 꼴 커스텀이면 그대로) */
+export function slimCustom(s: Settings): Settings {
+  const base = s.screen === 'custom' && s.custom ? s.custom : viewOf(s)
+  return { ...s, screen: 'custom', custom: { ...base, layout: 'button', parts: base.layout === 'button' ? base.parts : SCREEN_VIEWS.slim.parts } }
+}
+
+/** 오늘 · 이번 달(이 PC 모든 세션 재기)을 켰나 — 지금 화면의 칸 */
+export function spendOf(s: Pick<Settings, 'screen' | 'custom'>): { today: boolean; month: boolean } {
+  const p = viewOf(s).parts
+  return { today: p.today !== 'off', month: p.month !== 'off' }
+}
+
+/** "슬림" · "slim" · "슬림 커스텀" · "슬림 끄기" → 명령(on = 슬림 화면 · custom = 아래 버튼 꼴 커스텀 · off = 간단으로), 못 읽으면 null */
+export function parseSlim(text: string): 'on' | 'off' | 'custom' | null {
+  const t = text.replace(/\s+/g, '').toLowerCase()
+  if (['슬림', 'slim', '슬림켜기', '슬림켬', 'slimon'].includes(t)) return 'on'
+  if (['슬림끄기', '슬림끔', 'slimoff'].includes(t)) return 'off'
+  if (['슬림커스텀', 'slimcustom'].includes(t)) return 'custom'
+  return null
 }
 
 /** 바 비용 줄 칸 순서의 기본(0.5 묶음 2 N15) — 세션 · 오늘 · 이번 달(돈) → 요청당 · 컨텍스트 · 컴팩트 구간 · 캐시 */
@@ -297,11 +539,11 @@ export const UPDATE_SCREEN: ScreenPreset = 'simple'
 
 // ── 화면 프리셋(설정 탭 맨 위 "화면"): 보이는 것만 묶는다 — 컴팩트 기준은 프리셋이 없다(개인 기록 기반이라 없앤 것) ──
 
-export const SCREEN_PRESETS: readonly ScreenPreset[] = ['simple', 'detail', 'custom']
+export const SCREEN_PRESETS: readonly ScreenPreset[] = ['slim', 'simple', 'detail', 'custom']
 
 /** 프리셋 이름: 간단 · 자세히 · 커스텀 */
 export function screenName(p: ScreenPreset): string {
-  return p === 'simple' ? L('간단', 'Simple') : p === 'detail' ? L('자세히', 'Detailed') : L('커스텀', 'Custom')
+  return p === 'slim' ? L('슬림', 'Slim') : p === 'simple' ? L('간단', 'Simple') : p === 'detail' ? L('자세히', 'Detailed') : L('커스텀', 'Custom')
 }
 
 /**
@@ -310,7 +552,9 @@ export function screenName(p: ScreenPreset): string {
  * 비용 구조를 아는 분
  */
 export function screenUse(p: ScreenPreset): string {
-  return p === 'simple'
+  return p === 'slim'
+    ? L('익숙해진 뒤 · 필요할 때만 알림', 'Once you know your way around · alerts only when needed')
+    : p === 'simple'
     ? L('처음 쓸 때 · 꼭 필요한 것만', 'For starting out · essentials only')
     : p === 'detail'
       ? L('AI 비용 구조를 아는 분 · 전부 보기', 'If you know how AI costs work · everything')
@@ -320,6 +564,7 @@ export function screenUse(p: ScreenPreset): string {
 /** "간단" · "basic" · "커스텀" 등 → 화면 프리셋. 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
 export function parseScreen(text: string): ScreenPreset | null {
   const t = text.replace(/\s+/g, '').toLowerCase()
+  if (['슬림', 'slim'].includes(t)) return 'slim'
   if (['간단', 'simple', '처음', 'beginner', '초보'].includes(t)) return 'simple'
   // 0.4.0 의 기본은 자세히로(바가 같았다)
   if (['자세히', 'detail', 'detailed', '전문가', 'expert', '기본', 'basic', 'default'].includes(t)) return 'detail'
@@ -327,9 +572,14 @@ export function parseScreen(text: string): ScreenPreset | null {
   return null
 }
 
-/** 바를 그릴 칸 = 한도 줄(따로 켜고 끔) + 화면 보기 값의 비용 · 질문 줄 칸 */
-export function bandShowOf(s: Pick<Settings, 'screen' | 'custom' | 'limitShow'>): BandShow {
-  return { ...s.limitShow, ...viewOf(s).bandShow }
+/**
+ * 바를 그릴 칸(켬/끔) — 지금 화면의 칸 단계에서: 끔이 아니면 켬(필요할 때도). 바를 그릴 때는 지금 값으로 필요할 때를 가린다(ui-band
+ * bandShowNow). 설정 견본 · 명령 답이 이것
+ */
+export function bandShowOf(s: Pick<Settings, 'screen' | 'custom'>): BandShow {
+  const p = viewOf(s).parts
+  const on = (k: PartKey) => p[k] !== 'off'
+  return { fiveHour: on('lim5'), sevenDay: on('lim7'), resets: (on('lim5') || on('lim7')) && on('resets'), session: on('sess'), perRequest: on('req'), context: on('ctx'), range: on('range'), cache: on('cache'), lastTurn: on('last') }
 }
 
 /** 지금 보이는 값 — 프리셋이면 정해 둔 값, 커스텀이면 저장한 값(아직 없으면 기본) */
@@ -353,16 +603,17 @@ export function editView(s: Settings, change: (v: ScreenView) => ScreenView): Se
 
 /** 커스텀을 프리셋 값으로 되돌린다(커스텀 칸의 [간단 · 자세히에서 가져오기]) */
 export function resetCustom(s: Settings, from: Exclude<ScreenPreset, 'custom'>): Settings {
+  // 바 꼴 · 칸 · 정보량을 그 화면 값으로
   return { ...s, screen: 'custom', custom: SCREEN_VIEWS[from] }
 }
 
 /** 화면 한 줄(설정 탭 "화면" 아래 · 접힌 제목): "바 최대 · 칸 9개 · 패널 간략" */
 export function screenStateText(s: Settings): string {
   const v = viewOf(s)
-  const show = bandShowOf(s)
-  const shown = BAND_PARTS.filter(p => show[p.key]).length
+  const shown = PARTS.filter(p => p.group === 'bar' && p.layouts.includes(v.layout) && v.parts[p.key] !== 'off').length
+  const bar = v.layout === 'three' ? bandModeName(s.band) : layoutName(v.layout)
   return [
-    L(`바 ${bandModeName(s.band)}`, `Bar ${bandModeName(s.band)}`),
+    L(`바 ${bar}`, `Bar ${bar}`),
     L(`칸 ${shown}개`, `${shown} parts`),
     L(`정보량 ${infoName(v.info)}`, `detail ${infoName(v.info)}`),
   ].join(' · ')
@@ -376,17 +627,27 @@ export function fmtUsd0(v: number): string {
 /** 세션 금액 색 기준의 −/+ 칸(달러) */
 export const SESSION_COLOR_STEPS: readonly number[] = [1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 500, 1000]
 
+/** 금액 색 기준 셋(1.0 — 세션 · 오늘 · 이번 달)의 설정 칸과 고를 값(달러) — 처음 값이 다 들어 있게 */
+export type MoneyColorKey = 'sessionColors' | 'todayColors' | 'monthColors'
+export const MONEY_COLOR_STEPS: Record<MoneyColorKey, readonly number[]> = {
+  sessionColors: SESSION_COLOR_STEPS,
+  todayColors: [5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 500, 1000],
+  monthColors: [100, 200, 300, 500, 750, 1000, 1250, 1500, 2000, 2500, 3000, 5000, 10000],
+}
+
 /**
- * 색 기준 하나를 한 칸 옮긴다(i = 0 노랑 · 1 주황 · 2 빨강). 오름차순을 지킨다 — 이웃 값을 넘지 못한다. 화면 프리셋과 상관없이
+ * 색 기준 하나를 한 칸 옮긴다(i = 0 노랑 · 1 주황 · 2 빨강). 오름차순을 지킨다 — 이웃 값을 넘지 못한다. 화면 프리셋과 상관없이.
+ * key = 어느 금액(1.0 — 오늘 · 이번 달도, 터미널 − / + 칸)
  */
-export function nudgeSessionColor(s: Settings, i: 0 | 1 | 2, dir: 1 | -1): Settings {
-  const c = [...s.sessionColors] as [number, number, number]
+export function nudgeSessionColor(s: Settings, i: 0 | 1 | 2, dir: 1 | -1, key: MoneyColorKey = 'sessionColors'): Settings {
+  const steps = MONEY_COLOR_STEPS[key]
+  const c = [...s[key]] as [number, number, number]
   const cur = c[i]
-  const next = dir > 0 ? SESSION_COLOR_STEPS.find(x => x > cur) : [...SESSION_COLOR_STEPS].reverse().find(x => x < cur)
+  const next = dir > 0 ? steps.find(x => x > cur) : [...steps].reverse().find(x => x < cur)
   if (next === undefined) return s
   if ((i > 0 && next <= c[i - 1]!) || (i < 2 && next >= c[i + 1]!)) return s
   c[i] = next
-  return { ...s, sessionColors: c }
+  return { ...s, [key]: c }
 }
 
 export function infoName(i: InfoLevel): string {
@@ -396,13 +657,16 @@ export function infoName(i: InfoLevel): string {
 /** 정보량 한 줄 풀이(설정 탭 세부) */
 export function infoUse(i: InfoLevel): string {
   return i === 'lean'
-    ? L('꼭 필요한 것만: 패널은 간단으로 시작, 설정의 컴팩트 시점은 크기 구간 · 판정만, 캐시 칸 없음, 컴팩트 문구는 고르기만, 답변 끝 질문 비용은 금액 · 요청 수 한 줄, 에이전트는 개수만(답변 끝 · 작업 중 줄).', 'Essentials only: the pane starts Simple, compact timing shows sizes and verdicts, no cache section, compact text shows the choices, the question cost after each answer as one line (cost and request count), agents as a count (after answers and while working).')
-    : L('Easy Compact 가 아는 것을 모두: 패널은 자세히로 시작(그래프 · 컴팩트 효과 · 질문 동작별), 비용표 · 계산 값, 캐시 유지 시간 · 정하는 곳 · 대가, 컴팩트 단계 · 보내는 글 전체, 에이전트 금액, 답변 끝 질문 비용의 [▸ 자세히]로 그 질문의 나눔 · 동작별 값까지.', 'Everything Easy Compact knows: the pane starts Detailed (graphs, compact effects, per-step questions), the cost table and inputs, cache lifetime, source and trade-offs, the compact steps and full text, agent costs, and [▸ Details] on the question cost after each answer for its split and per-step costs.')
+    ? L('처음 쓰는 분께 맞습니다. 꼭 필요한 것만 보입니다.', 'For first-time users. Shows only the essentials.')
+    : L('비용 구조를 아는 분께 맞습니다. 이지 컴팩트가 아는 것을 모두 보입니다.', 'For those who know how the costs work. Shows everything Easy Compact knows.')
 }
 
-/** 사용량 패널의 처음 보기 — 정보량을 따른다(최소 = 간략, 전부 = 자세히). 패널 위 탭으로 이 세션만 바꿀 수 있다 */
-export function paneModeOf(v: Pick<ScreenView, 'info'>): PaneMode {
-  return v.info === 'full' ? 'detail' : 'simple'
+/**
+ * 사용량 패널의 처음 보기 — 정보량을 따른다(최소 = 간단, 전부 = 자세히). 패널 위 탭으로 바꾸면 그 보기를 기억한다(화면 종류를 바꾸면
+ * 지움 — register saveSettings)
+ */
+export function paneModeOf(s: Pick<Settings, 'screen' | 'custom'>): PaneMode {
+  return viewOf(s).info === 'full' ? 'detail' : 'simple'
 }
 
 /**
@@ -413,9 +677,9 @@ export function paneModeName(m: PaneMode): string {
   return m === 'simple' ? L('간단', 'Simple') : L('자세히', 'Detailed')
 }
 
-/** 한도 묶음(5시간 · 7일 · 리셋까지 남은 시간) 한꺼번에 켜고 끄기 — 설정 탭 한도 줄 [✓ 한도 전체]. 화면 프리셋은 그대로 */
+/** 한도(5시간 · 7일 · 리셋까지 남은 시간) 한꺼번에 켜고 끄기 — 명령 · 칸. 1.0: 지금 화면의 칸(프리셋이면 커스텀으로 옮겨) */
 export function setLimits(s: Settings, on: boolean): Settings {
-  return { ...s, limitShow: on ? ALL_LIMITS : NO_LIMITS }
+  return editView(s, v => ({ ...v, parts: { ...v.parts, lim5: on ? 'on' : 'off', lim7: on ? 'on' : 'off', resets: on ? 'on' : 'off' } }))
 }
 
 // ── 사용량 패널: 새 세션에서 자동으로 열기 · 모든 세션 같이 열고 닫기(따로 켠다) ───────────────
@@ -423,17 +687,17 @@ export function setLimits(s: Settings, on: boolean): Settings {
 /** 새 세션에서 자동으로 열기 한 줄 풀이(설정 탭 · 명령 답) */
 export function paneAutoUse(isOn: boolean): string {
   return isOn
-    ? L('새 세션은 이지 컴팩트 패널을 연 채로 시작합니다. 그 뒤 닫으면 닫힌 채로 둡니다.', 'New sessions start with the Easy Compact pane open. Once you close it, it stays closed.')
+    ? L('새 세션은 패널을 연 채로 시작합니다.', 'New sessions start with the pane open.')
     : L(
-        `새 세션은 패널이 닫힌 채로 시작합니다. ${onTerminal() ? '바의 [패널 ▸] 버튼으로 엽니다' : '바의 게이지(동그라미)를 누르면 열립니다'}.`,
-        `New sessions start with the pane closed. ${onTerminal() ? 'Open it with the [Pane ▸] button on the bar' : 'Click the gauge (the ring) on the bar to open it'}.`,
+        `새 세션은 패널을 닫은 채로 시작합니다.`,
+        `New sessions start with the pane closed.`,
       )
 }
 
 /** 모든 세션 같이 열고 닫기 한 줄 풀이(설정 탭 · 명령 답) */
 export function paneSyncUse(isOn: boolean): string {
   return isOn
-    ? L('한 세션에서 열거나 닫으면 떠 있는 다른 데스크톱 세션도 같이 열고 닫습니다(CLI 는 따로).', 'Opening or closing it in one session does the same in the other open desktop sessions (the CLI stays separate).')
+    ? L('한 세션에서 열고 닫으면 다른 세션도 같이 열고 닫힙니다.', 'Opening or closing it in one session does the same in the others.')
     : L('세션마다 따로 열고 닫습니다.', 'Each session opens and closes it on its own.')
 }
 
@@ -445,6 +709,7 @@ export function paneStateText(s: Settings): string {
 
 // ── 띠: 보이기 · 필요할 때만 · 크기 · 칸 ──────────────────────────────
 
+// 0.10.0: 개발 중 셋째 크기 아이콘을 뒀다가 화면 종류 한눈으로 옮겼다 — 크기는 전체 · 한 줄 둘
 export const BAND_MODES: readonly BandMode[] = ['full', 'min']
 
 /**
@@ -458,8 +723,8 @@ export function bandModeName(m: BandMode): string {
 /** 띠 크기 한 줄 풀이(설정 탭) — 한 줄 바는 한도 · 컴팩트 구간 · 질문 줄을 빼고 캐시는 남긴다(ui-band minShowOf) */
 export function bandModeUse(m: BandMode): string {
   return m === 'full'
-    ? L('전체: 한도 · 비용 · 질문 줄과 컴팩트 버튼. 칸은 아래 "바에 보일 칸" 에서 뺄 수 있습니다.', 'Full: limits, cost and question rows with the Compact button. Hide parts under "What the bar shows" below.')
-    : L('한 줄: 이 세션 · 요청당 · 컨텍스트 · 캐시 한 줄과 컴팩트 · 패널 버튼.', 'One line: session, per request, context and cache, plus the Compact and pane buttons.')
+    ? L('한도 · 비용 · 질문 줄과 컴팩트 버튼을 모두 보입니다.', 'Limits, cost and question rows with the Compact button.')
+    : L('세션 · 요청당 · 컨텍스트 · 캐시를 한 줄로 보입니다.', 'Session, per request, context and cache in one line.')
 }
 
 /**
@@ -473,9 +738,23 @@ export function bandModeUse(m: BandMode): string {
  */
 export const REVEAL_SQUARE: Record<Level, string> = { ok: '🟦', warn: '🟧', cut: '🟥' }
 
-export function revealLabel(isClosed: boolean, level: Level | null = null): string {
+/**
+ * 0.10.0 접힘 C: 데스크톱은
+ * 이름 대신 지금 컨텍스트 값(value — 설정 숫자 꼴). 게이지 그림은 못 넣는다 — 앱 버튼은 그림을 안 그리고(버튼 안 Svg 안 됨), 버튼 밖
+ * 그림 · 글은 이 줄 끝으로 밀린다(위 규칙) — 그래서 단계 색 네모가 게이지 몫. 값을 모르면(첫 응답 전) 이름 그대로, 닫혔으면 뒤에 "닫힘".
+ * 터미널은 바 자리 버튼이라 이름 그대로
+ */
+export function revealLabel(isClosed: boolean, level: Level | null = null, value: string | null = null): string {
   const name = isClosed ? L('이지 컴팩트 닫힘', 'Easy Compact closed') : L('이지 컴팩트', 'Easy Compact')
-  return onTerminal() ? `⇱ ${name}` : `${REVEAL_SQUARE[level ?? 'ok']} ${name}`
+  if (onTerminal()) return `⇱ ${name}`
+  if (value !== null) return `${REVEAL_SQUARE[level ?? 'ok']} ${value}${isClosed ? L(' · 닫힘', ' · closed') : ''}`
+  return `${REVEAL_SQUARE[level ?? 'ok']} ${name}`
+}
+
+/** 접힌 바 버튼을 글에서 부르는 이름(값을 모르는 자리 — 도움말 · 설정 풀이 · 토스트): 데스크톱 "🟦 컨텍스트" 꼴(0.10.0 접힘 C) */
+export function revealName(isClosed = false): string {
+  if (onTerminal()) return revealLabel(isClosed)
+  return isClosed ? L('🟦 컨텍스트 · 닫힘', '🟦 context · closed') : L('🟦 컨텍스트', '🟦 context')
 }
 
 /**
@@ -495,12 +774,12 @@ function revealKeys(): string {
 export function bandAutoUse(isOn: boolean): string {
   return isOn
     ? L(
-        `✕ 로 접어 둔 바가 컴팩트 구간 시작(주황) · 캐시 만료에 닿으면 저절로 펴지고, 컴팩트하면 다시 접힙니다. 펴진 바를 ✕ 로 접으면 더 급해질 때(빨강 · 캐시 만료)까지 기다립니다.`,
-        `A bar folded with ✕ opens by itself at the start of the compact range (yellow) or when the cache expires, and folds again after a compact. Fold it again with ✕ and it waits until things get more urgent (red · cache expired).`,
+        `접어 둔 바가 컴팩트할 때가 되면 저절로 펴지고, 컴팩트하면 다시 접힙니다.`,
+        `A folded bar opens by itself when it’s time to compact, and folds again after a compact.`,
       )
     : L(
-        `✕ 로 접은 바는 ${revealWhere()} [${revealLabel(true)}]${revealKeys()} 를 누를 때까지 접힌 채입니다.`,
-        `A bar folded with ✕ stays folded until you press [${revealLabel(true)}] ${revealWhere()}${revealKeys() ? ` ${revealKeys()}` : ''}.`,
+        `접은 바는 다시 펼 때까지 접힌 채입니다.`,
+        `A folded bar stays folded until you open it.`,
       )
 }
 
@@ -532,10 +811,12 @@ export function foldName(folded: boolean): string {
 }
 
 /** 접은 바를 다시 펴는 법 — 그 버튼(0.9.0: 공개 · 마켓 판엔 단축 명령이 없어 두 판 다 버튼만 알린다) */
-function turnBackOn(isAuto: boolean): string {
+function turnBackOn(isAuto: boolean, label: string | null = null): string {
+  // 0.10.0: 접는 순간 버튼 글(네모 + 컨텍스트 — revealLabel)을 알면 그대로, 모르면 이름 꼴(revealName)
+  const name = label ?? revealName(!isAuto)
   return L(
-    `다시 펴기: ${revealWhere()} [${revealLabel(!isAuto)}]${revealKeys()}`,
-    `open it again with [${revealLabel(!isAuto)}] ${revealWhere()}${revealKeys() ? ` ${revealKeys()}` : ''}`,
+    `다시 펴기: ${revealWhere()} [${name}]${revealKeys()}`,
+    `open it again with [${name}] ${revealWhere()}${revealKeys() ? ` ${revealKeys()}` : ''}`,
   )
 }
 
@@ -543,10 +824,10 @@ function turnBackOn(isAuto: boolean): string {
  * 바를 접은 직후 알림 — 접는 길(바의 ✕ · 설정 탭 · 개발본 단축 명령)이 같은 말로 다시 펴는 법을 알린다. 컴팩트할 때
  * 저절로 펴지는지도(설정 "컴팩트할 때 자동으로 펴기"). 0.9.0: 다시 펴는 법을 앞에 — 터미널 알림은 한 줄이라 뒤가 잘렸다(실제 CLI)
  */
-export function hiddenNote(s: Pick<Settings, 'bandAutoOpen'>): string {
+export function hiddenNote(s: Pick<Settings, 'bandAutoOpen'>, label: string | null = null): string {
   return s.bandAutoOpen
-    ? L(`이지 컴팩트 바를 접었습니다 — ${turnBackOn(true)} · 컴팩트할 때 저절로 펴집니다`, `Easy Compact bar folded — ${turnBackOn(true)} · it opens by itself when it is time to compact`)
-    : L(`이지 컴팩트 바를 모든 세션에서 접었습니다 — ${turnBackOn(false)}`, `Easy Compact bar is folded in every session — ${turnBackOn(false)}`)
+    ? L(`이지 컴팩트 바를 접었습니다. ${turnBackOn(true, label)} · 컴팩트할 때 저절로 펴집니다.`, `Easy Compact bar folded; ${turnBackOn(true, label)}. It opens by itself when it’s time to compact.`)
+    : L(`이지 컴팩트 바를 모든 세션에서 접었습니다. ${turnBackOn(false, label)}`, `Easy Compact bar is folded in every session; ${turnBackOn(false, label)}.`)
 }
 
 /** 끈 직후 토스트가 떠 있는 시간 — 기본 4초는 다시 켜는 법을 읽기에 짧다 */
@@ -554,7 +835,9 @@ export const HIDDEN_NOTE_MS = 10_000
 
 /** 바 상태 한 줄(명령 답 · 설정 탭 접힌 제목): "펼침 · 최대" · "접음 · 컴팩트할 때 펴기 · 최대" */
 export function bandStateText(s: Settings): string {
-  return [foldName(s.bandFolded), s.bandFolded && s.bandAutoOpen ? L('컴팩트할 때 펴기', 'opens when compacting') : null, bandModeName(s.band)].filter(Boolean).join(' · ')
+  // 슬림 화면은 크기와 상관없이 슬림 꼴(1.0)
+  const size = isSlim(s) ? L('슬림', 'Slim') : bandModeName(s.band)
+  return [foldName(s.bandFolded), s.bandFolded && s.bandAutoOpen ? L('컴팩트할 때 펴기', 'opens when compacting') : null, size].filter(Boolean).join(' · ')
 }
 
 /** "켜기 · on · 끄기 · off" → true / false, 못 읽으면 null(띄어쓰기 · 대소문자 무시) */
@@ -590,7 +873,7 @@ export function bandPartName(key: keyof BandShow): string {
     range: ['컴팩트 구간', 'Compact range'],
     // "남은 분" → "남은 시간"(동료 피드백 2026-10-16 "보통 이런 건 남은 시간(time)이라고 표현함 — hour 말고 time") · 위 리셋 칸과 같은 말
     cache: ['캐시 남은 시간', 'Cache time left'],
-    lastTurn: ['지난 · 진행 중 질문', 'Last · running question'],
+    lastTurn: ['지난 질문', 'Last question'],
   }
   return L(...names[key])
 }
@@ -614,15 +897,18 @@ export function parseBandPart(text: string): keyof BandShow | null {
   return BAND_PARTS.find(p => p.names.includes(t))?.key ?? null
 }
 
-/** 칸 하나 켜고 끄기 — 한도 줄 칸은 그대로(화면과 따로), 그 밖은 커스텀으로 옮겨 바꾼다 */
+/** 바 칸(명령 이름) → 칸 — 5시간 · 7일은 따로 */
+const BAND_TO_PART: Record<keyof BandShow, PartKey> = { fiveHour: 'lim5', sevenDay: 'lim7', resets: 'resets', session: 'sess', perRequest: 'req', context: 'ctx', range: 'range', cache: 'cache', lastTurn: 'last' }
+
+/** 칸 하나 켜고 끄기(명령) — 커스텀으로 옮겨 바꾼다. 컨텍스트는 끔 대신 필요할 때 */
 export function setBandPart(s: Settings, key: keyof BandShow, on: boolean): Settings {
-  if (isLimitKey(key)) return { ...s, limitShow: { ...s.limitShow, [key]: on } }
-  return editView(s, v => ({ ...v, bandShow: { ...v.bandShow, [key]: on } }))
+  const pk = BAND_TO_PART[key]
+  return setPart(s, pk, on ? 'on' : pk === 'ctx' ? 'need' : 'off')
 }
 
-/** 이 칸을 바꾸면 화면이 커스텀이 되나(한도 줄 칸은 아님) */
-export function isViewPart(key: keyof BandShow): boolean {
-  return !isLimitKey(key)
+/** 이 칸을 바꾸면 화면이 커스텀이 되나 — 1.0 부터 모든 칸이 화면 값 */
+export function isViewPart(_key: keyof BandShow): boolean {
+  return true
 }
 
 // ── 컴팩트 시점 ──────────────────────────────────────────────────
@@ -666,7 +952,7 @@ export function customName(): string {
 }
 /** 직접의 "언제 쓰나" 줄 */
 export function customUse(): string {
-  return L('원하는 방식이 따로 있을 때 씁니다. 칸에 쓰고 Enter를 누르면 아래 글이 바뀝니다.', 'When you want your own way. Type in the box and press Enter to change the text below.')
+  return L('원하는 방식이 따로 있을 때 씁니다.', 'When you want your own way.')
 }
 
 /**
@@ -757,9 +1043,6 @@ export function normalizeSettings(raw: unknown): Settings {
   const paneAutoOpen = typeof r.paneAutoOpen === 'boolean' ? r.paneAutoOpen : false
   const paneShared = typeof r.paneShared === 'boolean' ? r.paneShared : DEFAULT_SETTINGS.paneShared
   const questionHover = typeof (r as { questionHover?: unknown }).questionHover === 'boolean' ? (r as { questionHover: boolean }).questionHover : DEFAULT_SETTINGS.questionHover
-  // 오늘 · 이번 달 사용량(0.5.0 새 칸) — 없으면 끔
-  const spendToday = (r as { spendToday?: unknown }).spendToday === true
-  const spendMonth = (r as { spendMonth?: unknown }).spendMonth === true
   const bandOrder = normalizeOrder((r as { bandOrder?: unknown }).bandOrder)
   const motion = (r as { motion?: unknown }).motion === 'reduce' ? 'reduce' : 'system'
   // B1(0.6.1 피드백): 컨텍스트 · 컴팩트 구간 숫자 꼴 — 크기(281k) · %(최대 컨텍스트 대비 28%) · 둘 다
@@ -769,45 +1052,81 @@ export function normalizeSettings(raw: unknown): Settings {
   const rawShape = (r as { gaugeShape?: unknown }).gaugeShape
   const gaugeShape = rawShape === 'ring' || rawShape === 'vbar' || rawShape === 'bar' || rawShape === 'cells' || rawShape === 'vcells' ? rawShape : DEFAULT_SETTINGS.gaugeShape
   const statusLine = (r as { statusLine?: unknown }).statusLine === true
-  const custom = normalizeView((r as { custom?: unknown }).custom)
-  // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)
-  const rawScreen = (r as { screen?: unknown }).screen
-  const screen = rawScreen === 'basic' ? 'simple' : SCREEN_PRESETS.includes(rawScreen as ScreenPreset) ? (rawScreen as ScreenPreset) : null
   // 세션 금액 색: 0.4.0 은 커스텀 보기 값 안에 있었다 — 밖으로 옮긴다(어느 화면에서나 바꾼다)
   const rawColors = (r as { sessionColors?: unknown }).sessionColors ?? ((r as { custom?: { sessionColors?: unknown } }).custom ?? {}).sessionColors
   const sessionColors = isColors(rawColors) ? rawColors : SESSION_COLORS_DEFAULT
-  // 한도 줄: 따로 저장한 값, 없으면 0.4.0 저장값(보기 값 안의 5시간 · 7일 · 리셋 — 간단은 다 끔, 커스텀은 그 값)에서 옮긴다
-  const rawCustomShow = objectOf(objectOf((r as { custom?: unknown }).custom).bandShow)
+  // 1.0 오늘 · 이번 달 금액 색 — 없으면(1.0 전 저장값) 처음 값
+  const rawToday = (r as { todayColors?: unknown }).todayColors
+  const rawMonth = (r as { monthColors?: unknown }).monthColors
+  const todayColors = isColors(rawToday) ? rawToday : TODAY_COLORS_DEFAULT
+  const monthColors = isColors(rawMonth) ? rawMonth : MONTH_COLORS_DEFAULT
+  // 이지 오토 구간(2026-10-19): 없으면 그때의 컴팩트 구간
+  const hasAuto = isCount(r.autoStart) && isCount(r.autoEnd) && r.autoStart < r.autoEnd
+  const auto = hasAuto ? { autoStart: r.autoStart!, autoEnd: r.autoEnd! } : autoFromCompact({ follow, rangeStart, rangeEnd, compactAt })
+  const rest = { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, sessionColors, todayColors, monthColors, questionHover, paneAutoOpen, paneShared, bandOrder, motion, ctxUnit, gaugeShape, statusLine, ...auto }
+  return { ...rest, ...screenFrom(r as Record<string, unknown>) }
+}
+
+/**
+ * 1.0 화면(시안 preview-1017d 안 3 — 사용자 "나머진 추천방향으로"): 화면 = 바 꼴 · 칸 단계 · 정보량. 옛 저장값(슬림이 따로 · 한도 줄 ·
+ * 오늘 · 이번 달이 화면과 따로 · 커스텀 칸 켬/끔)은 보이던 그대로 옮긴다 — 프리셋과 다르게 바꿔 둔 분은 그 값으로 커스텀
+ */
+function screenFrom(r: Record<string, unknown>): Pick<Settings, 'screen' | 'custom'> {
+  const rawScreen = r.screen
+  const rawCustom = objectOf(r.custom)
+  // 이미 1.0 꼴(화면이 슬림이거나 커스텀에 바 꼴이 있음)
+  if (rawScreen === 'slim' || typeof rawCustom.layout === 'string') {
+    const screen = SCREEN_PRESETS.includes(rawScreen as ScreenPreset) ? (rawScreen as ScreenPreset) : 'simple'
+    return { screen, custom: normalizeView(r.custom) }
+  }
+  // ── 옛 꼴 ──
   const limitFrom = (from: Record<string, unknown>, base: LimitShow): LimitShow => {
     const out = { ...base }
     for (const k of LIMIT_KEYS) if (typeof from[k] === 'boolean') out[k] = from[k] as boolean
     return out
   }
-  const rawLimits = (r as { limitShow?: unknown }).limitShow
-  if (screen !== null) {
-    const limitShow =
-      typeof rawLimits === 'object' && rawLimits !== null
-        ? limitFrom(rawLimits as Record<string, unknown>, ALL_LIMITS)
-        : screen === 'simple'
-          ? NO_LIMITS
-          : screen === 'custom'
-            ? limitFrom(rawCustomShow, ALL_LIMITS)
-            : ALL_LIMITS
-    return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, screen, custom, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit, gaugeShape, statusLine }
+  const rawLimits = r.limitShow
+  const savedLimits = typeof rawLimits === 'object' && rawLimits !== null ? limitFrom(rawLimits as Record<string, unknown>, ALL_LIMITS) : null
+  const today = r.spendToday === true
+  const month = r.spendMonth === true
+  const lv = (on: boolean): PartLevel => (on ? 'on' : 'off')
+  // 보기 하나에 옛 값을 얹는다 — 세 줄 꼴은 한도 줄, 어느 꼴이든 오늘 · 이번 달, 칸(bandShow)이 있으면 그 켬/끔
+  // spendOff = 오늘 · 이번 달을 안 켰던 분의 값(프리셋으로 옮길 땐 그 화면 처음 값 — 1.0 자세히는 둘 다 늘, 사용자 2026-10-18 "자세히는 풀로")
+  const withOld = (base: ScreenView, limits: LimitShow, show: CostShow | null, spendOff: PartLevel = 'off'): ScreenView => ({
+    ...base,
+    parts: {
+      ...base.parts,
+      ...(show ? { sess: lv(show.session), req: lv(show.perRequest), ctx: show.context ? ('on' as const) : ('need' as const), range: lv(show.range), cache: lv(show.cache), last: lv(show.lastTurn) } : {}),
+      ...(base.layout === 'three' ? { lim5: lv(limits.fiveHour), lim7: lv(limits.sevenDay), resets: lv(limits.resets) } : {}),
+      today: today ? 'on' : spendOff,
+      month: month ? 'on' : spendOff,
+    },
+  })
+  const same = (a: ScreenView, b: ScreenView) => a.layout === b.layout && a.info === b.info && PART_KEYS.every(k => a.parts[k] === b.parts[k])
+  // 프리셋 + 옛 값 — 프리셋과 같으면 프리셋, 다르면 그 값으로 커스텀(화면이 그대로 보이게)
+  const presetOr = (p: 'simple' | 'detail', limits: LimitShow): Pick<Settings, 'screen' | 'custom'> => {
+    const v = withOld(SCREEN_VIEWS[p], limits, null, SCREEN_VIEWS[p].parts.today)
+    return same(v, SCREEN_VIEWS[p]) ? { screen: p, custom: null } : { screen: 'custom', custom: v }
   }
-  // 화면이 없는 저장값 = 0.4.0 전부터 쓰던 사람: 칸(bandShow) · 패널 보기(paneMode — 없으면 자세히)를 옮긴다. 한도 칸은 한도 줄로,
-  // 비용 · 질문 줄 칸을 다 켰으면(손대지 않음) 간단 — 업데이트 뒤 첫 화면. 하나라도 껐으면 고른 것이라 그 칸 ·
-  // 패널 그대로 커스텀. 새 칸(이 세션 금액)은 켠다
-  const shown = objectOf((r as { bandShow?: unknown }).bandShow)
+  // 슬림 켬(개발본의 화면 'glance' 도) → 슬림, 슬림 커스텀 → 아래 버튼 꼴 커스텀
+  if (r.slim === 'on' || rawScreen === 'glance') return { screen: 'slim', custom: null }
+  if (r.slim === 'custom') return { screen: 'custom', custom: { ...SCREEN_VIEWS.slim, parts: partsFromOldSlim(r.slimShow) } }
+  if (rawScreen === 'custom') {
+    const old = normalizeOldView(r.custom)
+    return { screen: 'custom', custom: withOld({ ...SCREEN_VIEWS.detail, info: old?.info ?? 'full' }, savedLimits ?? limitFrom(objectOf(rawCustom.bandShow), ALL_LIMITS), old?.bandShow ?? ALL_SHOWN) }
+  }
+  // 0.4.0 의 기본 화면 → 간단(기본은 뺐다 · 업데이트 뒤 첫 화면은 간단)
+  if (rawScreen === 'simple' || rawScreen === 'basic') return presetOr('simple', savedLimits ?? NO_LIMITS)
+  if (rawScreen === 'detail') return presetOr('detail', savedLimits ?? ALL_LIMITS)
+  // 화면이 없는 저장값 = 0.4.0 전부터 쓰던 사람: 칸(bandShow) · 패널 보기(paneMode — 없으면 자세히)를 옮긴다. 비용 · 질문 줄 칸을 다
+  // 켰으면(손대지 않음) 간단 — 업데이트 뒤 첫 화면. 하나라도 껐으면 고른 것이라 그 칸 · 패널 그대로 커스텀(세 줄 꼴)
+  const shown = objectOf(r.bandShow)
   const oldShow: CostShow = { ...ALL_SHOWN }
   for (const k of Object.keys(oldShow) as (keyof CostShow)[]) if (typeof shown[k] === 'boolean') oldShow[k] = shown[k] as boolean
-  const limitShow = limitFrom(shown, ALL_LIMITS)
-  const rawPane = (r as { paneMode?: unknown }).paneMode
-  const oldPane: PaneMode = rawPane === 'simple' ? 'simple' : 'detail'
   const allOn = (Object.keys(oldShow) as (keyof CostShow)[]).every(k => oldShow[k])
-  const migrated: Pick<Settings, 'screen' | 'custom'> =
-    allOn ? { screen: 'simple', custom } : { screen: 'custom', custom: { ...SCREEN_VIEWS.detail, bandShow: oldShow, info: oldPane === 'simple' ? 'lean' : 'full' } }
-  return { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, ...migrated, sessionColors, limitShow, questionHover, paneAutoOpen, paneShared, spendToday, spendMonth, bandOrder, motion, ctxUnit, gaugeShape, statusLine }
+  if (allOn) return presetOr('simple', NO_LIMITS)
+  const info: InfoLevel = r.paneMode === 'simple' ? 'lean' : 'full'
+  return { screen: 'custom', custom: withOld({ ...SCREEN_VIEWS.detail, info }, limitFrom(shown, ALL_LIMITS), oldShow) }
 }
 
 /** 저장값 안의 객체(아니면 빈 객체) */
@@ -820,19 +1139,25 @@ function isColors(c: unknown): c is [number, number, number] {
   return Array.isArray(c) && c.length === 3 && c.every(x => isCount(x) && x > 0) && c[0] < c[1] && c[1] < c[2]
 }
 
-/** 저장된 커스텀 값을 관대하게: 빠진 칸은 기본 프리셋 값. 없거나 깨졌으면 null(0.4.0 의 sessionColors · sessionAvg 는 버린다 — 색은 normalizeSettings 가 밖으로) */
+/** 저장된 커스텀 값(1.0 꼴)을 관대하게: 빠진 칸은 그 바 꼴 프리셋 값. 없거나 깨졌으면 null */
 function normalizeView(raw: unknown): ScreenView | null {
   if (typeof raw !== 'object' || raw === null) return null
-  const v = raw as Partial<Record<keyof ScreenView, unknown>>
-  const base = SCREEN_VIEWS.detail
+  const v = objectOf(raw)
+  const layout = LAYOUTS.includes(v.layout as BarLayout) ? (v.layout as BarLayout) : 'three'
+  const base = layout === 'button' ? SCREEN_VIEWS.slim : layout === 'one' ? SCREEN_VIEWS.simple : SCREEN_VIEWS.detail
+  return { layout, parts: normalizeParts(v.parts, base.parts), info: v.info === 'lean' || v.info === 'full' ? v.info : base.info }
+}
+
+/** 1.0 전 커스텀 값(칸 켬/끔 · 정보량). 없거나 깨졌으면 null(0.4.0 의 sessionColors · sessionAvg 는 버린다 — 색은 normalizeSettings 가 밖으로) */
+function normalizeOldView(raw: unknown): { bandShow: CostShow; info: InfoLevel } | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const v = objectOf(raw)
   const shown = objectOf(v.bandShow)
-  const bandShow = { ...base.bandShow }
+  const bandShow = { ...ALL_SHOWN }
   for (const k of Object.keys(bandShow) as (keyof CostShow)[]) if (typeof shown[k] === 'boolean') bandShow[k] = shown[k] as boolean
-  return {
-    bandShow,
-    // 정보량 — 없으면 0.4.0 의 패널 보기(paneMode)에서(간략 → 최소, 자세히 → 전부)
-    info: v.info === 'lean' || v.info === 'full' ? v.info : (v as { paneMode?: unknown }).paneMode === 'simple' ? 'lean' : (v as { paneMode?: unknown }).paneMode === 'detail' ? 'full' : base.info,
-  }
+  // 정보량 — 없으면 0.4.0 의 패널 보기(paneMode)에서(간략 → 최소, 자세히 → 전부)
+  const info: InfoLevel = v.info === 'lean' || v.info === 'full' ? v.info : v.paneMode === 'simple' ? 'lean' : 'full'
+  return { bandShow, info }
 }
 
 /** "30만" · "300k" · "300000" → 토큰, "10분" · "10" → 분. 못 읽으면 null */

@@ -3,17 +3,19 @@
  * $ 를 받지 않는다(엔진은 $ 를 import 너머로 따라가지 않는다): register.tsx 의 AbovePrompt 훅이 $ 로 읽은 값(BarData)과 버튼 동작
  * 묶음(barActs → BarActions)을 넘긴다. register.tsx 가 디렉터리 파일 한도(256 KiB)에 붙어 훅에서 떼어 냈다(0.8.0 뒤)
  */
-import type { CompactEvent, CompactInputs, CompactPhase, LiveTurn, PaneView, Settings, TurnSummary, Usage } from '../types'
-import { average, coldFor, compactPayoff, estimateFor, fmtTokens, fmtUsd, isLittleToSave, LEVEL_HEX, LEVEL_TEXT, levelOf, thresholds } from './cost'
+import type { CompactEvent, CompactInputs, CompactPhase, PaneView, Settings, TurnSummary, Usage } from '../types'
+import { approxUsd, average, coldFor, compactPayoff, estimateFor, fmtTokens, fmtUsd, isLittleToSave, LEVEL_HEX, LEVEL_TEXT, levelOf, thresholds } from './cost'
+import { flashAnyOn, isFlashBusy } from './flash'
 import { withIcon } from './glyph'
 import { L } from './i18n'
-import { bandShowOf, revealLabel, TIDY_IDS, tidySteps, tidyStyles } from './settings'
+import { isSlim, revealLabel, slimViewOf, TIDY_IDS, tidySteps, tidyStyles, viewOf } from './settings'
 import { cellsOf, ctxNumText, fitCells, paneTitle, rangeNumText, textCh, widthOf } from './text'
 import { directKeep } from './tidy'
-import { afterCells, bandGrid, costGroups, drawLimitsLine, fitEstimateLine, fitLastTurnLine, fitLine, lastTurnCells, minShowOf, setCtxUnit } from './ui-band'
+import { afterCells, bandGrid, costGroups, drawLimitsLine, fitEstimateLine, fitLastTurnLine, fitLine, lastTurnCells, minShowOf, setCtxUnit, SLIM_BUTTON_PARTS, slimButtonText, slimParts, slimSummaryCells, bandShowNow } from './ui-band'
 import type { SpendShown } from './ui-band'
-import { ACCENT, CH_PX, choiceControl, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, nameColW, phaseLook, pulseDot } from './ui-common'
+import { ACCENT, CH_PX, segChoice, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, nameColW, phaseLook, pulseDot, stageText } from './ui-common'
 import { gaugeWidth } from './gauge'
+import { autoBarChip, autoBarChipW, autoToggleEl } from './ui-auto'
 import type { IconName, Ui } from './ui-common'
 
 /** 바가 쓰는 훅 이벤트 몫 — 표면 · 답이 도는 중인가 · 바 폭(칸) · 바 높이 한도(줄) */
@@ -28,8 +30,6 @@ export type BarData = {
   isConfirming: boolean
   nowMs: number
   sums: readonly TurnSummary[]
-  /** 답이 도는 중의 진행 질문 */
-  now: LiveTurn | null
   /** 컴팩트 직후 크기 · 입력 몫 등 계산식 재료(measureOptimal) — 모르면 null */
   inputs: CompactInputs | null
   phase: CompactPhase
@@ -40,6 +40,21 @@ export type BarData = {
   /** 컴팩트 끝 게이지 줄어듦(shrinkNow) */
   shrink: { from: number; to: number } | null
   spendNow: SpendShown | null
+  /** 1.0 슬림 알림을 ✕ 로 닫아 둠 — 더 급해질 때까지(autoDismissed, 접힌 바 자동 펴기와 같은 규칙) */
+  isSlimDismissed: boolean
+  /** 1.0 슬림 요약 한 줄이 열림(아래 버튼 · 게이지로 — 슬림은 카드 대신 알림 자리에 한 줄) */
+  isSlimSummary: boolean
+  /** 1.0 확인 팝업 직접 쓰기 두 칸에 친 글(아직 저장 안 함 — [▶ 이지 컴팩트]를 누를 때 저장) */
+  tidyDraft: string | null
+  compactDraft: string | null
+  /** 확인 카드 [클리어]를 눌러 경고 카드로 바뀜 — 지울 질문 수(밀린 질문 포함, 모르면 null). 아니면 null */
+  clearAsk: { questions: number | null } | null
+  /**
+   * 이지 오토(이 세션 — 2026-10-19 사용자 "활성화되면 기존 컴팩트 버튼이랑 교체 · 누르면 활성화"): isOn(켬 · 안 멈춤)이면 컴팩트 버튼 자리를 오토
+   * 버튼(label, 칩 tip = 구간)이 맡고 사람을 부르는 깜빡임 · 슬림 알림은 오토에 맡긴다. 팝업 버튼 줄 왼쪽 끝 [오토 켜기 | 오토 끄기](캐시가 식은
+   * 카드엔 없다). 없으면 오토 없음(설정 견본 등)
+   */
+  auto?: { isOn: boolean; label: string; tip: string } | null
 }
 
 /** 바 버튼 동작 — register.tsx barActs 가 $ 로 묶어 넘긴다. 약속을 돌려줘 누른 일이 끝날 때까지 기다릴 수 있다(옮기기 전과 같다) */
@@ -51,7 +66,10 @@ export type BarActions = {
   cancelTidy: () => Promise<unknown>
   tidyThenCompact: () => Promise<unknown>
   compactNow: (keep: string) => Promise<unknown>
-  /** 확인 카드 [클리어] — /clear(0.8.1 B9) */
+  /** 확인 카드 [클리어] → 같은 자리 경고 카드 · [← 돌아가기] → 앞 카드 */
+  askClear: () => Promise<unknown>
+  backFromClear: () => Promise<unknown>
+  /** 경고 카드 [지우기] — /clear(0.8.1 B9) */
   clearNow: () => Promise<unknown>
   /** 확인 카드에서 문구 고르기 — 설정 값이 바뀐다(모든 세션) */
   pickTidy: (id: string) => Promise<unknown>
@@ -59,12 +77,23 @@ export type BarActions = {
   setBand: (band: Settings['band']) => Promise<unknown>
   /** 창 버튼 ✕ */
   foldBand: () => Promise<unknown>
+  /** 1.0 슬림 요약 줄 열고 닫기(아래 버튼 · 요약 줄 ✕) */
+  toggleSummary: () => Promise<unknown>
+  /** 1.0 슬림 알림 ✕ — 더 급해질 때까지 닫아 둠 */
+  dismissSlim: () => Promise<unknown>
+  /** 1.0 확인 팝업 직접 쓰기 두 칸: 칠 때마다 초안 · Enter 면 저장 */
+  typeTidy: (text: string) => Promise<unknown>
+  typeCompact: (text: string) => Promise<unknown>
+  saveTidy: (text: string) => Promise<unknown>
+  saveCompact: (text: string) => Promise<unknown>
+  /** 이지 오토 켜고 끄기(팝업 버튼 줄 왼쪽 끝 — 누르면 팝업을 닫고 켠다) */
+  toggleAuto?: () => Promise<unknown>
 }
 
 /** 바 하나(최소 = 한 줄, 최대 = 한도 · 비용 · 지난 질문 줄 + 확인 카드) */
 export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const { Box, Button, Text } = ui
-  const { sNow, u, view, isConfirming, nowMs, sums, now, inputs, phase, kind, just, shrink, spendNow } = d
+  const { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, tidyDraft, compactDraft, clearAsk } = d
   // 버튼엔 크기를 안 붙인다 — 바로 왼쪽 줄에 컨텍스트 · 컴팩트 구간이 있다. 이름은 mod 이름 "이지 컴팩트":
   // 띠에 mod 이름이 따로 없고, 앱 기본 컴팩트(진행 글 "클로드 기본 compact")와 갈린다
   // 0.5 묶음 2(N10): 쉬는 때 이름도 "컴팩트" — 한 줄 바의 "컴팩트" 통일이 좋다(동료 s09), mod 이름은 옆 게이지 · 패널 이름이 말한다
@@ -80,8 +109,9 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 최대가 이미 한 줄이면(한도 줄 · 질문 줄 없음 — 간단 등) 최소와 같은 것: 최소여도 최대 한 줄을 그리고 [—] 를 뺀다. 예전엔
   // 최소가 줄은 그대로 캐시 칸만 빼 "캐시 보이기 · 안 보이기" 처럼 동작했다
   // 간단 화면은 한 줄 고정 — 한도 줄을 그리지 않고 [—] 도 없다
-  const isLean = sNow.screen === 'simple'
-  const fullShow = bandShowOf(sNow)
+  // 1.0: 한 줄 꼴(간단 등) · 칸은 지금 값으로 필요할 때를 가린다(bandShowNow — 필요할 때 칸은 그 문턱부터)
+  const isLean = viewOf(sNow).layout === 'one'
+  const fullShow = bandShowNow(slimViewOf(sNow), u, nowMs, sNow.sessionColors)
   const hasLimitsRow = !isLean && (u?.rateLimits ?? []).some(r => (r.kind === 'five_hour' ? fullShow.fiveHour : r.kind === 'seven_day' ? fullShow.sevenDay : true))
   const isOneRow = isLean || (!hasLimitsRow && !fullShow.lastTurn)
   const mode = isOneRow ? 'full' : sNow.band
@@ -157,8 +187,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         ...(justPay && justPay.saveCallUsd > 0
           ? [
               justPay.saveQuestionUsd !== null
-                ? L(`질문마다 ~${fmtUsd(justPay.saveQuestionUsd)} 아낌`, `saves ~${fmtUsd(justPay.saveQuestionUsd)} per question`)
-                : L(`요청마다 ~${fmtUsd(justPay.saveCallUsd)} 아낌`, `saves ~${fmtUsd(justPay.saveCallUsd)} per request`),
+                ? L(`질문마다 ${approxUsd(justPay.saveQuestionUsd)} 아낌`, `saves ${approxUsd(justPay.saveQuestionUsd)} per question`)
+                : L(`요청마다 ${approxUsd(justPay.saveCallUsd)} 아낌`, `saves ${approxUsd(justPay.saveCallUsd)} per request`),
             ]
           : []),
       ].join(' · ')
@@ -177,12 +207,12 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     est?.kind === 'cold' && !isColdWin
       ? cold
         ? L(
-            `${isSwitched ? '모델 바뀜' : '캐시 만료'} · 다음 요청 ~${fmtUsd(cold.continueUsd)} · 기본 컴팩트하면 ~${fmtUsd(cold.compactUsd - cold.continueUsd)} 더 듦 — 그냥 이어 가는 편이 쌈`,
-            `${isSwitched ? 'Model switched' : 'Cache expired'} · next request ~${fmtUsd(cold.continueUsd)} · a plain compact costs ~${fmtUsd(cold.compactUsd - cold.continueUsd)} more — continuing as is is cheaper`,
+            `${isSwitched ? '모델이 바뀌었습니다' : '캐시가 만료됐습니다'}. 다음 요청은 ${approxUsd(cold.continueUsd)} 이고, 기본 컴팩트는 ${approxUsd(cold.compactUsd - cold.continueUsd)} 더 들어 그냥 이어 가는 편이 쌉니다`,
+            `${isSwitched ? 'Model switched' : 'The cache has expired'}. The next request is ${approxUsd(cold.continueUsd)}, and a plain compact costs ${approxUsd(cold.compactUsd - cold.continueUsd)} more, so continuing as is is cheaper`,
           )
         : L(
-            `${isSwitched ? '모델 바뀜' : '캐시 만료'} · 다음 요청 ~${fmtUsd(est.rewriteUsd)} — 캐시를 다시 씀`,
-            `${isSwitched ? 'Model switched' : 'Cache expired'} · next request ~${fmtUsd(est.rewriteUsd)} — it rewrites the cache`,
+            `${isSwitched ? '모델이 바뀌었습니다' : '캐시가 만료됐습니다'}. 다음 요청은 캐시를 다시 써 ${approxUsd(est.rewriteUsd)} 듭니다`,
+            `${isSwitched ? 'Model switched' : 'The cache has expired'}. The next request rewrites the cache: ${approxUsd(est.rewriteUsd)}`,
           )
       : null
   // 구간 숫자는 칩 첫 줄(ctxTip)이 늘 말한다 — 여기선 상태만
@@ -190,8 +220,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     coldTip ??
     justTip ??
     (isLittle
-      ? L('지금 컴팩트하면 손해 — 아낄 게 거의 없음(컨텍스트가 이미 작음)', 'Compacting now is a loss — little to save, the context is already small')
-      : L('아직 컴팩트할 때가 아님', 'Not time to compact yet'))
+      ? L('컨텍스트가 이미 작아 지금 컴팩트하면 손해입니다', 'The context is already small, so compacting now is a loss')
+      : L('아직 컴팩트할 때가 아닙니다', 'Not time to compact yet'))
   // B1(0.6.1 피드백 "호버 때 지금 걸린 컨텍스트 범위 값"): 게이지 · 컴팩트 버튼 칩 첫 줄 = 지금 컨텍스트 · 걸린 컴팩트 구간(숫자 꼴은 설정
   // — 크기 · % · 둘 다). 예전엔 노랑 · 빨강(가장 중요한 때)에 "누르면 컴팩트할까요?" 만이라 숫자가 없었고 게이지엔 칩이 없었다
   setCtxUnit(sNow.ctxUnit)
@@ -217,22 +247,37 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         : compactCore
   // 식은 캐시에 바로 컴팩트가 쌀 때: 비용 줄 맨 앞이 이미 "캐시 만료" · "모델 바뀜" 을 말해 버튼은 할 일만(같은 말 두 번 없앰,
   // 2026-10-14 uxi B1 안 A). 얼마나 덜 드는지는 설명 칩 · 확인 카드 · 패널에
-  const compactLabel = isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : compactText
+  // 이지 오토가 켜져 있으면 이 자리는 오토 버튼(글 = 오토 상태, 누르면 같은 팝업 — 왼쪽 끝이 [오토 끄기])
+  const autoOn = d.auto?.isOn === true
+  const compactLabel = autoOn ? d.auto!.label : isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : compactText
   // 게이지: 색 = 크기 단계(levelOf — 숫자와 같은 순간), 깜빡임 = 빨강 구간 + 권함 + 누를 수 있을 때만(일하는 중 · 확인창 열림 ·
   // 저장 · 컴팩트 중 · 식은 캐시 비권함 · 아낄 게 적음엔 색만 — 사용자 규칙 12). 깜빡이는 점은 뺐다(게이지가 맡는다)
-  const canBlink = !e.props.isWorking && !isConfirming && phase !== 'tidying' && phase !== 'compacting' && !isNotNow && !isLittle && level === 'cut'
+  // 1.0: 게이지는 사이드 패널 문이라 일하는 중에도 누를 수 있다 — 일하는 중에도 늦어짐 + 권함이면 깜빡. 일하는 중엔 요청마다 크기가 바뀌어 그림이 바뀌면 틀이 다시 떠 번쩍이니, 깜빡이는 게이지는
+  // 채움 · 깊이를 단계로 묶는다(ui-common gaugeEl)
+  // 이지 오토가 켜져 있으면 깜빡이지 않는다 — 사람을 부르는 알림은 오토에 맡긴다(색은 그대로 컴팩트 구간)
+  const canBlink = !isConfirming && phase !== 'tidying' && phase !== 'compacting' && !isNotNow && !isLittle && level === 'cut' && !autoOn
   const motion = sNow.motion !== 'reduce'
   // B11(0.9.1): 컴팩트 · 저장 중엔 게이지가 진행 파랑으로 움직인다(꼴마다) — 옆 깜빡이는 점은 뺀다(게이지가 맡는다, 아래 compactRow)
   const isBusy = phase === 'compacting' || phase === 'tidying'
-  const gaugeBox = (blink: boolean) => {
-    const isBlink = blink && Boolean(u) && !shrink
+  // frame = 움직일 때 틀(iframe)로 — 늘 있는 바는 틀(다시 그려도 이어짐), 열고 닫히는 슬림 줄은 그림(img)으로 움직인다(틀은 뜰 때 빈 상자가
+  // 번쩍 — 사용자 실물 "닫았다 열 때 박스 모양 · 점멸". 그림은 다시 그릴 때 처음부터지만 쉬는 슬림 줄은 거의 다시 안 그린다)
+  const gaugeBox = (blink: boolean, frame = true) => {
+    // 값 강조(글자 깜빡)가 도는 동안엔 빨강 애니메이션(틀)을 틀지 않는다 — 강조가 0.3초마다 바를 다시 그려 틀이 그때마다 처음부터 재생됐다
+    //. 그동안 게이지는 그림으로 글자와 같은 칸에 켜고 끄다가(켜진 칸 = 밝은 색), 강조가 끝나면
+    // 애니메이션을 튼다
+    const isHold = blink && Boolean(u) && !shrink && isFlashBusy(nowMs)
+    const isBlink = blink && Boolean(u) && !shrink && !isHold
     const busy = isBusy && !shrink
+    // 값 강조(flash.ts) 때 게이지는 그대로 — 글자만 깜빡
     const el = gaugeEl(ui, e.surface, shrink ? shrink.to : (u?.contextTokens ?? 0), {
       key: 'compact-icon-svg',
+      // 깜빡이는 게이지는 설명도 단계 글로(요청마다 숫자가 바뀌면 틀이 다시 뜬다 — 위 canBlink)
       alt: u
         ? busy
           ? L(`컨텍스트 ${fmtTokens(u.contextTokens)} · ${phase === 'tidying' ? '저장 중' : '컴팩트 중'}`, `Context ${fmtTokens(u.contextTokens)} · ${phase === 'tidying' ? 'saving' : 'compacting'}`)
-          : L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`)
+          : isBlink
+            ? L('컨텍스트 · 컴팩트 늦어짐', 'Context · compact overdue')
+            : L(`컨텍스트 ${fmtTokens(u.contextTokens)}`, `Context ${fmtTokens(u.contextTokens)}`)
         : L('컨텍스트 아직 모름', 'Context not known yet'),
       px: 16,
       blink: isBlink,
@@ -241,18 +286,23 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       // B6(0.7.0 피드백 "바를 최소 · 최대로 열 때마다 게이지가 깜빡"): 틀(샌드박스 iframe)은 움직일 때만(깜빡임 · 컴팩트 중 · 컴팩트 끝
       // 줄어듦) — 늘 틀이면 최소 ↔ 최대처럼 게이지가 다른 줄 · 다른 상자로 옮겨 갈 때 앱이 틀을 새로 띄워 빈칸이 번쩍였다. 가만히 있는
       // 게이지는 그림(img)이라 다시 그려도 바로 그려진다(패널 머리 게이지와 같은 규칙)
-      live: motion && (isBlink || busy || Boolean(shrink)),
+      live: frame && motion && (isBlink || busy || Boolean(shrink)),
       ...(shrink ? { fromCtx: shrink.from } : {}),
+      ...(motion && isHold && flashAnyOn() ? { lit: true } : {}),
     })
     return el ? <Box key="compact-icon">{el}</Box> : null
   }
   const brandIcon = gaugeBox(canBlink)
   const offIcon = gaugeBox(false)
+  // 슬림 줄(알림 · 요약) 게이지: 보통 바와 같은 판단으로 깜빡이되 그림으로(위 frame). 예전엔 늘 offIcon 이라 늦어짐에도 가만히 있었다
+  const slimIcon = isSlim(sNow) ? gaugeBox(canBlink, false) : null
+  // 값 강조(flash.ts)는 게이지가 움직여도 그대로 — 노랑 이상 값이 오를 때 · 그런 세션에 들어올 때. 0f21cd7 은 게이지가 움직이면 글자를 쉬게 했는데, 사용자 말 "막대 애니메이션이랑
+  // 원래 애니메이션이 싸운다" 는 글자 대 게이지가 아니라 다시 그릴 때마다 게이지가 처음부터 재생되는 것이었다("재갱신 재갱신 재생 같은 느낌")
   const coldWinTip =
     isColdWin && cold
       ? L(
-          `${isSwitched ? '모델 바뀜' : '캐시 만료'} · 다음 요청 ~${fmtUsd(cold.continueUsd)} · 기본 컴팩트하면 ~${fmtUsd(cold.continueUsd - cold.compactUsd)} 덜 듦`,
-          `${isSwitched ? 'Model switched' : 'Cache expired'} · next request ~${fmtUsd(cold.continueUsd)} · a plain compact costs ~${fmtUsd(cold.continueUsd - cold.compactUsd)} less`,
+          `${isSwitched ? '모델이 바뀌었습니다' : '캐시가 만료됐습니다'}. 다음 요청은 ${approxUsd(cold.continueUsd)} 이고, 기본 컴팩트하면 ${approxUsd(cold.continueUsd - cold.compactUsd)} 덜 듭니다`,
+          `${isSwitched ? 'Model switched' : 'The cache has expired'}. The next request is ${approxUsd(cold.continueUsd)}, and a plain compact costs ${approxUsd(cold.continueUsd - cold.compactUsd)} less`,
         )
       : null
   // ── 폭 맞춤(2026-10-14 uxi D1 — 렌더러 보정 1칸 = 1ch): 줄마다 오른쪽 버튼 묶음 폭을 어림해 왼쪽 글 칸을 뺀다(비용 줄: 컴팩트
@@ -266,7 +316,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 게이지 칸 폭(칸) = 그림 폭 + 사이 한 칸 — 고리 · 세로 막대 16px = 4칸, 가로 · 칸 막대 26px = 5칸(B8)
   const gaugePx = gaugeWidth(gaugeShapeNow(), 16)
   const ICON_W = isTerm ? 0 : Math.ceil(gaugePx / CH_PX) + 1
-  const shortLabel = L('컴팩트', 'Compact')
+  const shortLabel = autoOn ? L('오토', 'Auto') : L('컴팩트', 'Compact')
   // 진행 점(+2칸)은 게이지가 없는 표면(터미널)에만 — B11 데스크톱은 게이지가 맡는다
   const dotW = ICON_W > 0 ? 0 : 2
   const compactW = (label: string) =>
@@ -274,7 +324,9 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       ? ICON_W + dotW + txtW(look.text)
       : phase === 'tidying' && look
         ? ICON_W + dotW + txtW(look.text) + 1 + btnW(L('취소', 'Cancel'))
-        : e.props.isWorking
+        : autoOn
+          ? ICON_W + autoBarChipW(isConfirming ? `${label} ▾` : label, isTerm)
+          : e.props.isWorking
           ? ICON_W + txtW(isTerm ? `[ ${label} ]` : label)
           : isConfirming
             ? ICON_W + btnW(`${label} ▾`)
@@ -297,14 +349,14 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     const cw = compactW(mode === 'min' && !isTerm ? shortLabel : label)
     if (isRegroup && u) {
       const g = costGroups(ui, u, nowMs, show, sNow.sessionColors, false, spendNow)
-      const q = showLastLine ? afterCells(ui, lastTurnCells(ui, lastSum, now) ?? []) : []
+      const q = showLastLine ? afterCells(ui, lastTurnCells(ui, lastSum) ?? []) : []
       const last = fitLine(ui, [...g.now, ...q], availOf(cw))
       return { cost: fitLine(ui, g.money, availOf(0)), last, isOver: last.over }
     }
     // 비용 줄 오른쪽: 최소 바 = 이지 컴팩트 + 창 버튼, 한도 줄이 있으면 이지 컴팩트(질문 줄 없는 화면)뿐, 없으면 창 버튼(+ 이지 컴팩트)
     const costRight = mode === 'min' ? cw + 2 + controlsW : hasLimitsLine ? (onCost ? cw : 0) : onCost ? cw + 2 + controlsW : controlsW
     const cost = u ? fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', availOf(costRight), spendNow) : null
-    const last = showLastLine ? fitLastTurnLine(ui, lastSum, now, availOf(onCost ? 0 : cw)) : null
+    const last = showLastLine ? fitLastTurnLine(ui, lastSum, availOf(onCost ? 0 : cw)) : null
     const isOver = onCost || mode === 'min' ? (cost?.over ?? false) : (last?.over ?? false)
     return { cost, last, isOver }
   }
@@ -321,7 +373,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 답 도는 중 자리: 버튼과 같은 이름을 흐리게(누를 수 없음) — 자리 폭이 끝난 뒤 버튼과 같다(원칙: 자리 고정). 예전 긴 흐린 글
   // "이지 컴팩트 · 답이 끝나면 누를 수 있음" 은 터미널에서 칸을 많이 먹고 끝나면 폭이 바뀌었다(2026-10-14 진단 T3).
   // 터미널은 버튼이 "[ 이름 ]" 로 그려져 같은 꼴 글로
-  const busyTip = L('답이 끝나면 누를 수 있음', 'Available when the answer ends')
+  const busyTip = L('답이 끝나면 누를 수 있습니다', 'Available when the answer ends')
   // 칩 자리(B2): 이름 폭 + 1 만큼 왼쪽 — 감싼 상자 = 버튼(B5 부터 게이지는 제 칸 · 제 칩)
   const tipRight = (nameW: number) => nameW + 1
   // B5(0.7.0 피드백 "버튼이 복잡 · ◔ 가 작아 안 보임 · 게이지를 누르면 뭔가 열려야 할 것 같음"): 게이지 = 이지 컴팩트 패널 문 — 앱 입력창
@@ -332,8 +384,12 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 그려 게이지가 "버튼 뒤에" 보였다(둘째 실물 캡처) — 예전 ◔(plain + dimColor)는 바탕이 없었다. 열린 동안 게이지 뒤 옅은 바탕도 같은
   // 꼴이라 뺐다(열림은 옆 패널이 보이고 칩이 "닫기" 라 말한다). 무엇인지는 칩이 말한다: 지금 컨텍스트 · 걸린 구간 / 누르면 패널 열기 ·
   // 닫기. 그림을 못 그리는 표면(터미널 등)은 게이지가 없어 창 버튼 줄의 패널 버튼 그대로
+  // 1.0 이동 흐름 A "패널 문 하나": 게이지 = 사이드 패널(현황)
+  // 문, 어느 화면 · 어느 줄(바 · 슬림 알림 줄 · 요약 줄)에서나 한 걸음 — 0.7.0 B5 ~ 0.9 에 익힌 길. 1.0 시안 3판의 "게이지 → 요약 카드 →
+  // [패널에서 보기]" 는 숨은 두 걸음이라(누를 수 있어 보이지 않는 게이지 · 자세히에선 카드가 바보다 덜 보임) 되돌렸다. 슬림 요약 줄은 아래 버튼으로
+  // 열고, 그 줄의 패널 문도 게이지 하나 — [패널에서 보기 →] 는 같은 일을 하는 둘째 문이라 뺐다
   const isPaneOpen = view === 'usage'
-  const doorTip = isPaneOpen ? L(`누르면 ${paneTitle()} 패널 닫기`, `Click to close the ${paneTitle()} pane`) : L(`누르면 ${paneTitle()} 패널 열기`, `Click to open the ${paneTitle()} pane`)
+  const doorTip = isPaneOpen ? L('누르면 패널이 닫힙니다', 'Click to close the pane') : L('누르면 패널이 열리고, 다시 누르면 닫힙니다', 'Click to open the pane, again to close')
   const gaugeDoor = (icon: unknown) =>
     icon === null || e.surface === 'terminal'
       ? icon
@@ -365,22 +421,34 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 진행 중엔 버튼 대신 글자 — 눌러도 아무 일 없다
   // B11(0.9.1): 게이지가 그려지는 표면(데스크톱)은 게이지가 컴팩트 중을 맡아 깜빡이는 점을 뺀다 — 터미널은 게이지가 없어 점 그대로
   const compactRow =
+    // 단계 글 칸은 줄지 않는다 — 줄면 "… 컴팩 / 트" 로 글이 꺾였다(이지 오토 이름이 붙어 길어짐, 2026-10-19 그림 확인). 왼쪽 칸이 칸 사이에서 꺾인다
     phase === 'compacting' && look ? (
-      <Box columnGap={1} alignItems="center">
+      <Box columnGap={1} alignItems="center" flexShrink={0}>
         {gaugeDoor(brandIcon)}
         {brandIcon ? null : pulse(look.hex, L('컴팩트 중', 'Compacting'))}
         <Text color={look.color}>{look.text}</Text>
       </Box>
     ) : phase === 'tidying' && look ? (
-      <Box columnGap={1} alignItems="center">
+      <Box columnGap={1} alignItems="center" flexShrink={0}>
         {gaugeDoor(brandIcon)}
         {brandIcon ? null : pulse(look.hex, L('저장 중', 'Saving'))}
         <Text color={look.color}>{look.text}</Text>
         <Button key="compact-cancel" label={L('취소', 'Cancel')} variant="secondary" onPress={() => act.cancelTidy()} />
       </Box>
+    ) : autoOn ? (
+      // 이지 오토가 켜져 있으면 컴팩트 버튼 자리에 파란 칩(누르면 같은 팝업 — 오른쪽 위가 [이지 오토 끄기]). 답이 도는 중엔 누르기 없이
+      <Box columnGap={1} alignItems="center">
+        {gaugeDoor(offIcon)}
+        {withTip(
+          `band-auto-chip-${isConfirming ? 'open' : e.props.isWorking ? 'busy' : 'idle'}`,
+          autoBarChip(ui, e.surface, isConfirming ? `${barLabel} ▾` : barLabel, e.props.isWorking ? null : isConfirming ? () => void act.closeConfirm() : () => void act.openConfirm()),
+          tipLines(isConfirming ? L('누르면 확인창 닫기', 'Press to close the card') : d.auto!.tip),
+          tipRight(autoBarChipW(barLabel, isTerm)),
+        )}
+      </Box>
     ) : e.props.isWorking ? (
-      // 턴이 도는 중엔 누를 수 없다(버튼이 아니라 글자) — 끝나면 버튼으로 돌아온다
-      busyName(barLabel, offIcon)
+      // 턴이 도는 중엔 누를 수 없다(버튼이 아니라 글자) — 끝나면 버튼으로 돌아온다. 게이지(패널 문)는 늦어짐이면 그대로 깜빡
+      busyName(barLabel, canBlink ? brandIcon : offIcon)
     ) : isConfirming ? (
       // 확인창이 열린 자리를 다시 누르면 닫힌다(글자였을 땐 눌러도 반응이 없었다)
       // 아이콘은 버튼 밖 — 카드 제목 아이콘과 짝. 권하지 않는 동안 연 확인창이면 닫힌 바처럼 회색(회사 세션: 회색 🗜 를 눌렀더니 파랑으로
@@ -390,7 +458,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         {gaugeDoor(isNotNow ? offIcon : brandIcon)}
         {withTip(
           'band-compact-box-open',
-          <Button key="compact-close" label={`${barLabel} ▾`} {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => act.closeConfirm()} />,
+          <Button key="compact-close" label={`${barLabel} ▾`} {...(autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => act.closeConfirm()} />,
           tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
           tipRight(btnW(`${barLabel} ▾`)),
         )}
@@ -407,18 +475,20 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             0.7.0 B1 은 둘을 한 마우스 올림 칸으로 묶어 칩이 같았다(사용자 "똑같아서 혼란") */}
         {gaugeDoor(isNotNow ? offIcon : brandIcon)}
         {withTip(
-          `band-compact-tip-${isNotNow ? 'not-now' : shownLevel}`,
+          `band-compact-tip-${autoOn ? 'auto' : isNotNow ? 'not-now' : shownLevel}`,
           <Button
             key="compact"
             label={barLabel}
-            {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
+            {...(autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
             onPress={() => act.openConfirm()}
           />,
-          // 둘째 줄 = 지금 상태 · 할 일. 이름을 줄였으면 상태 말을 칩에("컴팩트 늦어짐 · 누르면 …")
+          // 둘째 줄 = 지금 상태 · 할 일. 이름을 줄였으면 상태 말을 칩에("컴팩트 늦어짐 · 누르면 …"). 이지 오토면 구간
           tipLines(
-            isNotNow
-              ? notNowTip
-              : (coldWinTip ?? (isShortLabel ? `${compactLabel} · ${L('누르면 컴팩트할까요?', 'press to open Compact now?')}` : L('누르면 컴팩트할까요?', 'Press to open Compact now?'))),
+            autoOn
+              ? d.auto!.tip
+              : isNotNow
+                ? notNowTip
+                : (coldWinTip ?? (isShortLabel ? `${compactLabel} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}` : L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
           ),
           tipRight(btnW(barLabel)),
         )}
@@ -472,10 +542,12 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 들여 쓴다(가운데 정렬은 긴 줄이 줄바꿈될 때 시작이 들쭉날쭉해 훑기 어렵다). 테두리는 흐린 회색이 잘 안 보여
   // 제목과 같은 파랑(테마 색 suggestion — 밝은 · 어두운 테마 둘 다 맞춘다)
   // 제목은 흰색, 아이콘만 파랑 — 테두리와 이어지고 글은 잘 읽힌다. 권하지 않는 동안(isNotNow)은 아이콘도 바처럼 회색
-  const card = (key: string, icon: IconName, title: string, summary: unknown, rows: unknown[], isColdFirst: boolean) => (
+  // acts = 아래 버튼 줄을 따로 줄 때(클리어 경고 카드) — 없으면 확인 카드 버튼
+  const card = (key: string, icon: IconName, title: string, summary: unknown, rows: unknown[], isColdFirst: boolean, acts?: unknown, headRight: unknown = null) => (
     // 간격 단계(2026-10-14 uxi 1.2): 카드 안쪽 여백 S1(1칸) · 본문 들여 S2(2칸) — 예전 2 · 3 은 다른 카드(1 · 1)와 달랐다
     <Box key={key} flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1}>
-      {/* 아이콘과 글 사이는 공백 문자가 아니라 칸 간격 — 데스크톱은 글 조각 앞뒤 공백을(줄바꿈 없는 공백도) 잘라 붙어 보였다 */}
+      {/* 아이콘과 글 사이는 공백 문자가 아니라 칸 간격 — 데스크톱은 글 조각 앞뒤 공백을(줄바꿈 없는 공백도) 잘라 붙어 보였다. 오른쪽 끝 = 이지 오토 켜기 */}
+      <Box key={`${key}-head`} columnGap={1} justifyContent="space-between" alignItems="center">
       <Box columnGap={1}>
         {/* 캡슐 꼴 Svg — 권하면 파랑, 권하지 않는 동안 회색(바의 🗜 와 짝) */}
         {(() => {
@@ -489,13 +561,15 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         })()}
         <Text bold>{title}</Text>
       </Box>
+      {headRight}
+      </Box>
       <Box paddingLeft={2} marginTop={gapAboveSummary} marginBottom={gapBelowSummary}>
         {summary}
       </Box>
       <Box flexDirection="column" paddingLeft={2}>
         {rows}
       </Box>
-      {actions(isColdFirst)}
+      {acts ?? actions(isColdFirst)}
     </Box>
   )
   // 버튼엔 크기 속성이 없다(높이는 앱이 정한다) — 굵은 글자와 양옆 여백으로 조금 크게 보인다.
@@ -507,6 +581,9 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 막는다: 버튼은 이득인 길을 쉽게 하는 것이고, 손해를 알고도 할 까닭이 있으면 /compact 를 직접 친다(카드에 적음).
   // 손익을 모르면(입력 값 없음) 막지 않는다
   const isLoss = (cold !== null && !isColdWin) || isLittle
+  // 이지 오토 켜기 · 끄기: 카드 제목 줄 오른쪽 끝 버튼 하나,
+  // 식은 캐시 카드 · 클리어 경고 카드엔 없다. 누르면 팝업을 닫고 켠다(구간은 바 칩에 마우스를 올려 본다). 터미널은 4
+  const autoButton = d.auto && act.toggleAuto ? autoToggleEl(ui, e.surface, d.auto.isOn, () => void act.toggleAuto!(), keyOf('4')) : null
   const actions = (isColdFirst: boolean) => (
     <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapAboveActions}>
       {isLoss ? (
@@ -537,7 +614,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
               {wide(numbered('1', L('▶ 이지 컴팩트', '▶ Easy Compact')))}
             </Button>
           ),
-          <Button key="compact-clear" label={pad(numbered('2', L('클리어', 'Clear')))} variant="secondary" {...keyOf('2')} onPress={() => act.clearNow()}>
+          <Button key="compact-clear" label={pad(numbered('2', L('클리어', 'Clear')))} variant="secondary" {...keyOf('2')} onPress={() => act.askClear()}>
             {wide(numbered('2', L('클리어', 'Clear')))}
           </Button>,
           <Button key="compact-no" label={pad(numbered('3', L('✕ 취소', '✕ Cancel')))} variant="secondary" {...keyOf('3')} onPress={() => act.closeConfirm()}>
@@ -557,8 +634,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         </Text>
         <Text>
           {isCold
-            ? L(' — 다음 질문이 캐시를 다시 데웁니다. 컴팩트할 때가 되면 바가 알려 줍니다.', ' — your next question warms the cache again. The bar tells you when it is time to compact.')
-            : L(' — 지금은 아낄 게 거의 없습니다.', ' — there is little to save right now.')}
+            ? L('. 다음 질문이 캐시를 다시 데웁니다. 컴팩트할 때가 되면 바가 알려 줍니다.', '. Your next question warms the cache again. The bar tells you when it is time to compact.')
+            : L('. 지금은 아낄 게 거의 없습니다.', '. There is little to save right now.')}
         </Text>
       </Text>
     </Box>
@@ -572,9 +649,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       // 숫자만 색: 컨텍스트는 수준 색 → 줄어든 크기 초록, 아끼는 값 초록, 드는 값은 금액 기준 색. 글은 흐리게
       <Text wrap="wrap">
         <Text>{L('컨텍스트 ', 'Context ')}</Text>
-        <Text bold color={LEVEL_TEXT[levelOf(u.contextTokens)]}>
-          {fmtTokens(u.contextTokens)}
-        </Text>
+        {stageText(ui, 'ctx', LEVEL_TEXT[levelOf(u.contextTokens)], fmtTokens(u.contextTokens), { noFlash: true })}
         <Text dimColor> → </Text>
         <Text bold color="success">
           ~{fmtTokens(Math.min(afterTokens, u.contextTokens))}
@@ -582,7 +657,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         <Text dimColor>{' · '}</Text>
         {!saves ? (
           // 바 툴팁과 같은 판정 · 같은 색 — 아낄 게 없으면 지금 컴팩트는 손해(빨강)
-          <Text bold color="error">{L('아낄 게 거의 없음 — 지금 컴팩트하면 손해', 'little to save — compacting now is a loss')}</Text>
+          <Text bold color="error">{L('아낄 게 거의 없어 지금 컴팩트하면 손해입니다', 'little to save, so compacting now is a loss')}</Text>
         ) : (
           <Text>
             <Text>{pay.saveQuestionUsd !== null ? L('질문 1개당 ', 'saves ') : L('요청 1회당 ', 'saves ')}</Text>
@@ -602,6 +677,46 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 저장할 것은 여기서 바로 고른다 — 설정 탭에만 있으면 컴팩트할 때 어느 문구인지 안 보이고, 바꾸려면 탭을 오가야 했다
   //. 고르면 설정 값이 바뀐다 — 다음 컴팩트에도 그대로, 모든 세션 공통. 직접은 쓴 글이
   // 있을 때만(쓰기 · 고치기는 설정 탭). 누른 때의 설정 위에 — 그린 뒤 다른 세션이 바꿨을 수 있다
+  // 1.0 컴팩트 문구 고르기: 툴바 — 일반 · 긴 세션 이어가기 · 마무리 · 직접 쓰기.
+  // 고른 것은 설정 값으로 남아 다음 팝업에도 그대로(pickTidy)
+  const tidyPicker = () =>
+    segChoice(
+      ui,
+      'pick-tidy',
+      [...TIDY_IDS.map(id => ({ value: id, label: tidyStyles()[id].name })), { value: 'custom', label: L('직접 쓰기', 'Write my own') }],
+      sNow.tidy,
+      v => void act.pickTidy(v),
+    )
+  // 직접 쓰기 두 칸 — 엔진 입력칸(Input: 입력창 위 자리에서도 초점 고리로 받는다 · 모바일엔 없음). 칠 때마다 초안(typeTidy),
+  // Enter 면 저장, [▶ 이지 컴팩트] · [▶ 기본 컴팩트]를 누르면 초안을 저장하고 그 글로 보낸다(register flushTidyDrafts)
+  const InputEl = (ui as unknown as { Input?: (p: Record<string, unknown>) => unknown }).Input
+  const inputBox = (key: string, el: unknown) => (
+    <Box key={key} {...(isTerm ? { borderStyle: 'round' as const, borderColor: 'promptBorder', paddingX: 1 } : {})}>
+      {el}
+    </Box>
+  )
+  const tidyInput = () =>
+    InputEl ? (
+      <InputEl
+        key="pick-tidy-text"
+        placeholder={tidyStyles().default.body.join(' ')}
+        value={tidyDraft ?? sNow.tidyCustom}
+        submitLabel={L('저장', 'Save')}
+        onInput={(v: string) => void act.typeTidy(v)}
+        onSubmit={(v: string) => void act.saveTidy(v)}
+      />
+    ) : null
+  const compactInput = () =>
+    InputEl ? (
+      <InputEl
+        key="pick-compact-text"
+        placeholder={tidyStyles().default.compact}
+        value={compactDraft ?? (sNow.compactCustom !== '' ? sNow.compactCustom : tidyStyles().default.compact)}
+        submitLabel={L('저장', 'Save')}
+        onInput={(v: string) => void act.typeCompact(v)}
+        onSubmit={(v: string) => void act.saveCompact(v)}
+      />
+    ) : null
   const saveRow = () => (
     <Box key="e-save" columnGap={1}>
       <Box width={choiceW} flexShrink={0}>
@@ -614,20 +729,18 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             N19 안 1: 앞에 붙일 글이 있으면 한 줄 더 */}
         {/* R2: 문구 = 드롭다운(설정 탭과 같은 부품) — 고른 문구가 하는 일은 아래 두 줄. T1(0.7.0): 터미널은 가로 고르기 버튼 */}
         <Box key="e-save-pick" columnGap={1} alignItems="center" flexWrap="wrap">
-          {choiceControl(
-            ui,
-            'pick-tidy',
-            [
-              ...TIDY_IDS.map(id => ({ value: id, label: tidyStyles()[id].name })),
-              // 직접 쓰기는 쓴 글이 있거나 지금 고른 때만 — 카드에선 글을 못 쓴다(설정 탭의 두 칸)
-              ...(sNow.tidy === 'custom' || sNow.tidyCustom !== '' || sNow.compactCustom !== '' ? [{ value: 'custom', label: L('직접 쓰기', 'Write my own') }] : []),
-            ],
-            sNow.tidy,
-            v => act.pickTidy(v),
-          )}
+          {tidyPicker()}
         </Box>
-        {sNow.tidy === 'custom' ? (
-          // 직접 쓰기: ① 컴팩트 전에 보낼 글 앞부분(비었으면 일반 문구)
+        {sNow.tidy === 'custom' && InputEl ? (
+          // 1.0 직접 쓰기: 두 칸에 쓰고 바로 [▶ 이지 컴팩트] — 누를 때 저장
+          <Box key="e-save-custom" flexDirection="column" rowGap={0.5}>
+            <Text key="e-save-pre-name" dimColor>{L('① 컴팩트 전에 보낼 글(저장 턴)', '① Sent before compacting (save turn)')}</Text>
+            {inputBox('e-save-pre', tidyInput())}
+            <Text key="e-save-post-name" dimColor>{L('② /compact 뒤에 붙일 글', '② After /compact')}</Text>
+            {inputBox('e-save-post', compactInput())}
+          </Box>
+        ) : sNow.tidy === 'custom' ? (
+          // 직접 쓰기(입력칸이 없는 표면): ① 컴팩트 전에 보낼 글 앞부분(비었으면 일반 문구)
           <Text key="e-save-custom" wrap="wrap">
             <Text dimColor>{L('보낼 글 ', 'Sends ')}</Text>
             <Text>{L(`「${fitCells(sNow.tidyCustom !== '' ? sNow.tidyCustom : tidyStyles().default.body.join(' '), 44)}」`, `"${fitCells(sNow.tidyCustom !== '' ? sNow.tidyCustom : tidyStyles().default.body.join(' '), 44)}"`)}</Text>
@@ -648,17 +761,34 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     </Box>
   )
   // 기본 컴팩트(식은 캐시 카드만): /compact 뒤에 붙는 글을 그대로 — 무엇을 붙이는지 보인다. 문구는 설정 ② 칸
-  const directRow = explain(
-    'e-direct',
-    numbered('1', L('기본 컴팩트', 'Plain compact')),
-    <Text>
-      <Text bold>{L('/compact 뒤 글로 컴팩트합니다', 'Runs /compact with the text after it')}</Text>
-      <Text dimColor> — </Text>
-      <Text>{L(`「${directKeep(sNow)}」`, `"${directKeep(sNow)}"`)}</Text>
-      <Text dimColor>
-        {L(' · 저장 질문 없이(식은 캐시엔 저장 질문이 전체를 다시 써 더 비쌈) · 글은 설정 → 컴팩트 문구 ②', ' · no save question (on a cold cache it would rewrite everything first) · the text is Settings → Compact text ②')}
-      </Text>
-    </Text>,
+  // 1.0: 기본 컴팩트도 문구를 이 자리에서 고른다(설정 탭 문구 칸은 뺐다) — 고른 문구의 /compact 뒤 글, 직접 쓰기면 ② 칸
+  const directRow = (
+    <Box key="e-direct" columnGap={1}>
+      <Box width={choiceW} flexShrink={0}>
+        <Text bold>{numbered('1', L('기본 컴팩트', 'Plain compact'))}</Text>
+      </Box>
+      <Text dimColor>:</Text>
+      <Box key="e-direct-body" flexDirection="column" flexShrink={1} minWidth={0}>
+        <Box key="e-direct-pick" columnGap={1} alignItems="center" flexWrap="wrap">
+          {tidyPicker()}
+        </Box>
+        {sNow.tidy === 'custom' && InputEl ? (
+          <Box key="e-direct-custom" flexDirection="column">
+            <Text key="e-direct-post-name" dimColor>{L('② /compact 뒤에 붙일 글', '② After /compact')}</Text>
+            {inputBox('e-direct-post', compactInput())}
+          </Box>
+        ) : (
+          <Text key="e-direct-text" wrap="wrap">
+            <Text bold>{L('/compact 뒤 글로 컴팩트합니다', 'Runs /compact with the text after it')}</Text>
+            <Text dimColor> · </Text>
+            <Text>{L(`「${directKeep(sNow)}」`, `"${directKeep(sNow)}"`)}</Text>
+          </Text>
+        )}
+        <Text key="e-direct-note" dimColor wrap="wrap">
+          {L('저장 질문 없이 바로 컴팩트합니다.', 'Compacts right away, without the save question.')}
+        </Text>
+      </Box>
+    </Box>
   )
   // 클리어: /clear — 대화를 비우고 새로 시작(요약 없음). 식은 캐시면 돈도 안 든다
   const clearRow = (isCold: boolean) =>
@@ -667,14 +797,51 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       numbered('2', L('클리어', 'Clear')),
       <Text>
         <Text bold>{L('대화를 비우고 새로 시작(/clear)', 'Start over with an empty conversation (/clear)')}</Text>
-        <Text dimColor> — </Text>
+        <Text dimColor> · </Text>
         <Text>
           {isCold
             ? L('비용 없음 · 요약 없음', 'no cost · no summary')
-            : L('요약 없음 · 아직 안 남긴 결정은 사라짐(남기려면 이지 컴팩트)', 'no summary · anything not saved yet is gone (Easy Compact saves first)')}
+            : L('요약 없이 지웁니다. 남기지 않은 결정은 사라집니다.', 'Clears without a summary. Anything not saved yet is gone.')}
         </Text>
       </Text>,
     )
+  // 클리어 경고 카드: [클리어]를 누르면 같은 자리가 이 카드로 — 무엇을 잃는지 숫자로(질문 수 · 컨텍스트). 기록 파일은 남지만 앱 안에서
+  // 다시 여는 길은 확인하지 않아 "되돌릴 수 없음"은 안 쓴다. 주 버튼은 [← 돌아가기]. 데스크톱은 [지우기]를 오른쪽 끝에 둬 [클리어]를 두 번
+  // 눌러도 [돌아가기]에 닿고, 터미널은 1 지우기 · 2 돌아가기라 [클리어]의 2를 한 번 더 쳐도 안 지운다
+  const clearYes = (
+    <Button key="clear-yes" label={pad(numbered('1', L('지우기', 'Clear')))} variant="secondary" {...keyOf('1')} onPress={() => act.clearNow()}>
+      {wide(numbered('1', L('지우기', 'Clear')))}
+    </Button>
+  )
+  const clearBack = (
+    <Button key="clear-back" label={pad(numbered('2', L('← 돌아가기', '← Back')))} variant="primary" {...keyOf('2')} onPress={() => act.backFromClear()}>
+      {wide(numbered('2', L('← 돌아가기', '← Back')))}
+    </Button>
+  )
+  // 잃는 것: 질문 수(모르거나 0이면 "대화") · 컨텍스트(모르면 뺌) — 조사는 앞 글자를 따른다(숫자 뒤 띄움, 한글 뒤 붙임)
+  const lostQ = clearAsk?.questions ? clearAsk.questions : null
+  const lostLead =
+    L('요약 없이 새 대화로 시작합니다. 지금까지의 ', 'Starts a new conversation without a summary. Claude forgets everything so far') +
+    (lostQ !== null ? L('', ': ') : u ? L('대화 ', ': ') : L('대화', ''))
+  const clearAskCard = clearAsk
+    ? card(
+        'confirm-clear',
+        'compact',
+        L('대화를 지울까요?', 'Clear the conversation?'),
+        <Text wrap="wrap">
+          <Text>{lostLead}</Text>
+          {lostQ !== null ? <Text bold>{L(`질문 ${lostQ}개`, `${lostQ} question${lostQ === 1 ? '' : 's'}`)}</Text> : null}
+          {u && lostQ !== null ? <Text dimColor>{' · '}</Text> : null}
+          {u ? stageText(ui, 'ctx', LEVEL_TEXT[levelOf(u.contextTokens)], fmtTokens(u.contextTokens), { noFlash: true }) : null}
+          <Text>{L(u ? ' 를 Claude 가 잊습니다.' : '를 Claude 가 잊습니다.', '.')}</Text>
+        </Text>,
+        [],
+        false,
+        <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapAboveActions}>
+          {isTermCard ? [clearYes, clearBack] : [clearBack, clearYes]}
+        </Box>,
+      )
+    : null
   // 캐시가 식었으면(만료 · 모델 바꿈) 손익과 상관없이 이 카드 — 주 버튼은 ▶ 기본 컴팩트, 저장 질문(이지 컴팩트)은 없다. 예전엔
   // 바로 컴팩트가 손해인 크기면 보통 카드(▶ 저장하고 컴팩트)를 띄워, 회사 세션에서 저장 질문이 전체를 다시 써 $0.43 이 들었다.
   // 손해면 그냥 이어 가는 편이 싸다고 적고, 컴팩트 버튼 대신 "작업을 이어 가세요"(isLoss — 위 actions · keepRow)
@@ -685,17 +852,15 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           isSwitched ? 'switch' : 'cold',
           isSwitched
             ? isLoss
-              ? L('모델을 바꿔 새 모델엔 캐시가 없습니다 — 지금은 컴팩트하지 마세요', 'You switched models and the new one has no cache — hold off on compacting')
-              : L('모델을 바꿔 새 모델엔 캐시가 없습니다 — 기본 컴팩트할까요?', 'You switched models and the new one has no cache — do a plain compact?')
+              ? L('모델을 바꿔 새 모델엔 캐시가 없지만, 지금은 컴팩트하지 않는 편이 낫습니다', 'You switched models and the new one has no cache, but it’s better not to compact now')
+              : L('모델을 바꿔 새 모델엔 캐시가 없습니다. 기본 컴팩트할까요?', 'You switched models and the new one has no cache. Do a plain compact?')
             : isLoss
-              ? L('캐시가 만료됐습니다 — 지금은 컴팩트하지 마세요', 'The cache has expired — hold off on compacting')
-              : L('캐시가 만료됐습니다 — 기본 컴팩트할까요?', 'The cache has expired — do a plain compact?'),
+              ? L('캐시가 만료됐지만 지금은 컴팩트하지 않는 편이 낫습니다', 'The cache has expired, but it’s better not to compact now')
+              : L('캐시가 만료됐습니다. 기본 컴팩트할까요?', 'The cache has expired. Do a plain compact?'),
           <Text wrap="wrap">
             {/* 공통 앞부분을 쟀으면 그만큼은 읽기라 "전체" 가 아니다 — 다시 쓰는 크기를 같이(금액과 말이 맞게) */}
             <Text>{L('그냥 이어 가면 첫 요청이 ', (u.sharedTokens ?? 0) > 0 ? 'Continuing as is, the first request rewrites ' : 'Continuing as is, the first request rewrites all ')}</Text>
-            <Text bold color={LEVEL_TEXT[levelOf(u.contextTokens)]}>
-              {fmtTokens(u.contextTokens)}
-            </Text>
+            {stageText(ui, 'ctx', LEVEL_TEXT[levelOf(u.contextTokens)], fmtTokens(u.contextTokens), { noFlash: true })}
             <Text>
               {(u.sharedTokens ?? 0) > 0
                 ? L(
@@ -721,9 +886,9 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
                 ) : (
                   <Text>
                     <Text bold color="error">
-                      {L(`~${fmtUsd(cold.compactUsd - cold.continueUsd)} 손해`, `~${fmtUsd(cold.compactUsd - cold.continueUsd)} more`)}
+                      {L(`${approxUsd(cold.compactUsd - cold.continueUsd)} 손해`, `${approxUsd(cold.compactUsd - cold.continueUsd)} more`)}
                     </Text>
-                    <Text>{L(' · 그냥 이어 가는 편이 쌈', ' · continuing as is is cheaper')}</Text>
+                    <Text>{L(' · 그냥 이어 가는 편이 쌉니다', ' · continuing as is is cheaper')}</Text>
                   </Text>
                 )}
               </Text>
@@ -734,11 +899,11 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         )
       : null
   // 저장 내용은 컴팩트 문구(일반 · 긴 세션 이어가기 · 마무리 · 직접 쓴 글)를 따른다 — 이 카드에서도 고른다
-  const confirm = !isConfirming ? null : (coldConfirm ??
+  const confirm = !isConfirming ? null : (clearAskCard ?? coldConfirm ??
       (isLoss
         ? // 0.5 묶음 2(N2 글 몫): 바는 크기로 "컴팩트 늦어짐" 인데 카드가 "컴팩트할 때가 아닙니다" 라 엇갈렸다 — 때가 아니라 손익을 말한다
-          card('confirm', 'compact', L('지금 컴팩트하면 손해입니다', 'Compacting now would cost more than it saves'), costLine, [keepRow(false)], false)
-        : card('confirm', 'compact', L('컴팩트할까요?', 'Compact now?'), costLine, [saveRow(), clearRow(false)], false)))
+          card('confirm', 'compact', L('지금 컴팩트하면 손해입니다', 'Compacting now would cost more than it saves'), costLine, [keepRow(false)], false, undefined, autoButton)
+        : card('confirm', 'compact', L('컴팩트할까요?', 'Compact now?'), costLine, [saveRow(), clearRow(false)], false, undefined, autoButton)))
   // 패널 버튼: 버튼 하나에 상태와 동작을 같이 — 닫혀 있으면 "○○ 패널 ▸", 열려 있으면 "○○ 패널 열림 ✕".
   // "비용 닫기" 는 비용을 닫는 것처럼, 글자 + 작은 [닫기] 는 아래 컴팩트 버튼과 줄이 안 맞아 어색했다
   const panelButton = (key: PaneView, name: string) => (
@@ -764,6 +929,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 창 버튼에도 설명 칩(withTip — 위에 정의). 자동 숨김 ⇲ 는 뺐다 — ✕(접기)와 같아 보였다. 접힌 바가
   // 컴팩트할 때 저절로 펴질지는 설정의 "컴팩트할 때 자동으로 펴기"(기본 켬)
   const isAutoShown = sNow.bandFolded
+  // 0.10.0 접힘 C: 접으면 입력창 아래 버튼 글 = 단계 색 네모 + 지금 컨텍스트(register revealLabelOf 와 같은 셈)
+  const foldedLabel = revealLabel(!sNow.bandAutoOpen, u && u.contextTokens > 0 ? levelOf(u.contextTokens) : null, u && u.contextTokens > 0 ? `${u.contextEstimated ? '~' : ''}${ctxNumText(u.contextTokens, u.window, sNow.ctxUnit)}` : null)
   // 크기 버튼(맨 오른쪽 위): 최대 ↔ 최소. 안 보이기는 명령 · 설정 탭으로(바가 없을 때도 되게).
   // 바꾸면 열린 확인창은 닫는다(최소 바엔 자동 숨김이 아니면 확인창이 없다)
   const modeButton = withTip(`band-mode-box-${mode}`, (
@@ -780,8 +947,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const closeButton = withTip(`band-close-box-${isAutoShown ? 'auto' : 'open'}`, (
     <Button key="band-close" label="✕" variant="secondary" dimColor {...(e.surface === 'terminal' ? {} : { role: 'dismiss' as const })} onPress={async () => act.foldBand()} />
   ), isAutoShown
-    ? L('다시 접기 · 더 급해지면(빨강 · 캐시 만료) 다시 펴짐', 'Fold again · reopens when more urgent (red · cache expired)')
-    : L(`접기 · 다시 펴기: 입력창 아래 [${revealLabel(!sNow.bandAutoOpen)}]`, `Fold · reopen: [${revealLabel(!sNow.bandAutoOpen)}] below the input`))
+    ? L('접습니다. 늦어지거나 캐시가 만료되면 다시 펼칩니다', 'Folds it. It opens again if it runs late or the cache expires')
+    : L(`접기 · 다시 펴기: 입력창 아래 [${foldedLabel}]`, `Fold · reopen: [${foldedLabel}] below the input`))
   // 사용량 패널 버튼: 데스크톱은 두 크기 모두 아이콘 📊 하나(열렸으면 밝게, 말은 툴팁)를 창 버튼 묶음 안 맨 앞에 —
   // 아이콘만이면 창 버튼과 같이 묶여야 한다. "열림" 글은 옆에 패널이 보이니 겹치는 말이고, 최대에서 글 버튼
   // (📊 사용량 패널 열림 ✕)을 두니 한도 줄이 두 줄로 밀려 꼴이 안 났다. 터미널은 마우스 올리기가 없어 글 버튼.
@@ -826,6 +993,136 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       {rightEl}
     </Box>
   )
+  // 1.0 슬림 화면(시안 2 · 3판 — 사용자 "필요할 때 보이는 거 좋음 · 가장 기본일 때 빈 공간 안 생기게"): 입력창 위 바는 앱이 열 폭 카드로 그려
+  // 짧은 글이면 빈 카드가 된다 — 그래서 평소엔 위에 아무것도 없고(null → register 가 자리를 엔진에 돌려준다) 입력창 아래 버튼 하나가 값을
+  // 맡는다(컨텍스트 + 두 칸까지). 위엔 그때만 알림 한 줄: 컴팩트할 때 · 늦어짐 · 식은 캐시에 기본 컴팩트가 쌀 때(컴팩트 버튼 "필요할 때"),
+  // 셋째 칸부터(아래 버튼에 안 듦). 앱 알림 카드처럼 왼쪽에 까닭 글 · 오른쪽에 버튼 — 빈 카드로 안 보이게. ✕ = 더 급해질 때까지 닫음.
+  // 터미널은 아래 줄에 키보드가 안 닿아(0.9.0) 바 자리 한 줄: [슬림 글 → 패널] + 컴팩트 버튼
+  if (isSlim(sNow)) {
+    const sv = slimViewOf(sNow)
+    const parts = u ? slimParts(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : []
+    const over = parts.slice(SLIM_BUTTON_PARTS)
+    const isBusyPhase = phase === 'compacting' || phase === 'tidying'
+    // 이지 오토가 켜져 있으면 "필요할 때" 알림은 쉰다 — 상태는 입력창 아래 툴바(터미널은 이 줄의 오토 버튼)가 말한다
+    const wantsButton = sv.btn === 'on' || (sv.btn === 'need' && !isNotNow && !autoOn)
+    if (isTerm) {
+      return (
+        <Box flexDirection="column">
+          <Box key="b-slim" columnGap={1} alignItems="center" flexWrap="wrap" justifyContent="flex-end">
+            <Button key="slim-pane" label={slimButtonText(u, parts, sv, sNow.ctxUnit, view === 'usage', true)} variant="secondary" onPress={async () => void (await act.toggleView('usage'))} />
+            {isBusyPhase || isConfirming || wantsButton || autoOn ? compactRow : null}
+          </Box>
+          {/* 셋째 칸부터(버튼 글에 안 듦): 둘째 줄 — 데스크톱 알림의 둘째 줄과 같은 꼴 */}
+          {over.length === 0 || isBusyPhase ? null : <Box key="b-slim-more">{fitLine(ui, over, W - 2).el}</Box>}
+          {confirm}
+        </Box>
+      )
+    }
+    // 1.0 요약 한 줄(아래 버튼 · 게이지로 엶): 알림과 같은 자리 · 같은 꼴 — 버튼은 첫 줄 오른쪽 끝에 고정, 칸이 늘면 둘째 줄. 행동 버튼은 늘 있다(행동은 한 자리)
+    const isSum = isSlimSummary && u !== null && !isBusyPhase
+    const showBtn = isSum || wantsButton
+    if (!isSum && !isBusyPhase && !isConfirming) {
+      if (!wantsButton && over.length === 0) return null
+      if (isSlimDismissed) return null
+    }
+    const warnAt = u ? ctxNumText(thr.ctxWarn, u.window, sNow.ctxUnit) : ''
+    const cutAt = u ? ctxNumText(thr.ctxCut, u.window, sNow.ctxUnit) : ''
+    // 한 줄 꼴(게이지 · 칸 · 버튼과 한 줄)이라 바 칸처럼 짧은 이름표 — 문장으로 늘리면 폭 100 · 140 에서 옆 칸이 둘째 줄로 밀리거나 리셋 시각이
+    // 빠졌다(2026-10-18 문구 맞추기, QA 화면 비교). 줄표만 " · " 로
+    const coldWhy = isSwitched ? L('모델 바뀜 · 기본 컴팩트가 더 쌈', 'Model switched · a plain compact is cheaper') : L('캐시 만료 · 기본 컴팩트가 더 쌈', 'Cache expired · a plain compact is cheaper')
+    const pastWhy = L(` · ${shownLevel === 'cut' ? cutAt : warnAt} 넘음`, ` · past ${shownLevel === 'cut' ? cutAt : warnAt}`)
+    const roomWhy = u ? L(`${warnAt}까지 ${fmtTokens(Math.max(0, thr.ctxWarn - u.contextTokens))} 남음`, `${fmtTokens(Math.max(0, thr.ctxWarn - u.contextTokens))} left until ${warnAt}`) : ''
+    const isPast = !autoOn && (shownLevel === 'cut' || shownLevel === 'warn')
+    const whyText = isColdWin ? coldWhy : isPast ? `${compactText}${pastWhy}` : showBtn && u ? roomWhy : ''
+    // 까닭 글도 값 강조(flash.ts) — 식은 캐시는 캐시 값, 컴팩트할 때 · 늦어짐은 컨텍스트 값과 같은 때 깜빡. 예전엔 색만이라 슬림 화면에선 깜빡일
+    // 글이 하나도 없었다(아래 버튼 글은 색을 못 내고, 칸 둘은 아래 버튼에 든다 — 사용자 2026-10-18 "문자 깜빡이 들어가는 곳 동작 안 함")
+    const why = isColdWin ? (
+      stageText(ui, 'cache', 'error', coldWhy, { textKey: 'slim-why' })
+    ) : isPast ? (
+      <Text key="slim-why" wrap="truncate-end">
+        {stageText(ui, 'ctx', shownLevel === 'cut' ? 'error' : 'warning', compactText)}
+        <Text dimColor>{pastWhy}</Text>
+      </Text>
+    ) : showBtn && u && !autoOn ? (
+      <Text key="slim-why" dimColor>
+        {roomWhy}
+      </Text>
+    ) : null
+    const btnLabel = autoOn ? d.auto!.label : isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : L('이지 컴팩트', 'Easy Compact')
+    // 이지 오토 버튼은 차분한 보조 버튼 — 권함(채움) · 흐림이 아니다
+    const btnLook = autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const }
+    // 게이지(패널 문)는 [이지 컴팩트] 바로 왼쪽 — 보통 바와 같은 자리. 컴팩트 중 줄(게이지 + 단계)도 같은 자리
+    const right = isBusyPhase ? (
+      <Box key="b-slim-right" columnGap={1} alignItems="center" flexShrink={0}>
+        {compactRow}
+      </Box>
+    ) : (
+      <Box key="b-slim-right" columnGap={1} alignItems="center" flexShrink={0}>
+        {gaugeDoor(slimIcon)}
+        {autoOn && (isConfirming || showBtn) ? (
+          // 이지 오토가 켜져 있으면 버튼 자리에 바와 같은 파란 칩
+          withTip(
+            'band-auto-chip-slim',
+            autoBarChip(ui, e.surface, isConfirming ? `${btnLabel} ▾` : btnLabel, e.props.isWorking ? null : isConfirming ? () => void act.closeConfirm() : () => void act.openConfirm()),
+            tipLines(d.auto!.tip),
+            tipRight(autoBarChipW(btnLabel, false)),
+          )
+        ) : isConfirming ? (
+          withTip(
+            'band-compact-box-open',
+            <Button key="compact-close" label={`${btnLabel} ▾`} {...btnLook} onPress={() => act.closeConfirm()} />,
+            tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
+            tipRight(btnW(`${btnLabel} ▾`)),
+          )
+        ) : showBtn && e.props.isWorking ? (
+          // 턴이 도는 중엔 누를 수 없다(보통 바와 같음 — 글자, 끝나면 버튼으로)
+          withTip('band-compact-box-busy', <Text dimColor>{btnLabel}</Text>, tipLines(busyTip), tipRight(txtW(btnLabel)))
+        ) : showBtn ? (
+          // 보통 바의 컴팩트 버튼과 같은 칩 — 식은 캐시면 다음 요청 금액 · 기본 컴팩트와의 차이(확인 팝업과 같은 값)
+          withTip(
+            `band-compact-tip-${autoOn ? 'auto' : isNotNow ? 'not-now' : shownLevel}`,
+            <Button key="compact" label={btnLabel} {...btnLook} onPress={() => act.openConfirm()} />,
+            tipLines(autoOn ? d.auto!.tip : isNotNow ? notNowTip : (coldWinTip ?? L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
+            tipRight(btnW(btnLabel)),
+          )
+        ) : null}
+        {isSum
+          ? withTip('sc-close-tip', <Button key="sc-close" label="✕" plain dimColor onPress={() => void act.toggleSummary()} />, [L('닫습니다. 아래 버튼으로 다시 열 수 있습니다', 'Closes it. Reopen it with the button below')], 4)
+          : withTip('slim-dismiss-tip', <Button key="slim-dismiss" label="✕" plain dimColor onPress={() => act.dismissSlim()} />, [L('닫습니다. 늦어지거나 캐시가 만료되면 다시 알려 드립니다', 'Closes it. It shows again if it runs late or the cache expires')], 4)}
+      </Box>
+    )
+    const rightW = isBusyPhase ? 0 : ICON_W + (showBtn || isConfirming ? btnW(`${btnLabel} ▾`) + 1 : 0) + btnW('✕')
+    // 요약이면 칸 = 컨텍스트 · 다음 요청 · 캐시 + 고른 칸 전부, 알림이면 아래 버튼에 안 든 칸(셋째부터)
+    const lineCells = isSum && u ? slimSummaryCells(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : over
+    // 넘친 칸: 까닭 글 옆에 다 들면 한 줄(b-slim-cells — 한도는 리셋 시각을 먼저 뺀다), 안 들면 둘째 줄(b-slim-more — 줄 폭 전부, 그래도
+    // 넘치면 칸 사이에서 꺾임). 사용자 "더 공간 필요하면 한 줄 늘리는 방식" — 렌더 확인(2026-10-17)에서 60칸이면 칸이 까닭 옆에 세로로 쌓였다
+    // 여유 3칸: 데스크톱 글은 고정폭이 아니라 어림이 조금 모자랄 수 있다 — 딱 맞게 들면 칸 묶음이 통째로 다음 줄로 꺾여 "· " 로
+    // 시작했다(렌더 130칸, [패널에서 보기] 를 뺀 뒤 — 2026-10-17). 여유가 모자라면 한도 리셋 시각부터 빠진다
+    const sideW = availOf(rightW + 2) - (whyText ? txtW(`${whyText} · `) + 1 : 0) - 3
+    const side = lineCells.length > 0 ? fitLine(ui, lineCells, Math.max(0, sideW), null) : null
+    const isBelow = side !== null && side.over
+    const cells = side === null || isBelow ? null : side.el
+    const more = isBelow ? fitLine(ui, lineCells, W - 2).el : null
+    return (
+      <Box flexDirection="column">
+        <Box key={isSum ? 'b-slim-sum' : 'b-slim'} columnGap={2} alignItems="center" justifyContent="space-between" flexWrap="nowrap">
+          <Box key="b-slim-left" columnGap={1} alignItems="center" flexShrink={1} minWidth={0} flexWrap="wrap">
+            {/* 슬림 줄은 열고 닫히는 줄이라 게이지를 틀로 안 띄운다 — 틀은 뜰 때 빈 상자가 번쩍. 깜빡임은 그림 안(slimIcon) */}
+            {isBusyPhase ? null : why}
+            {isBusyPhase || cells === null ? null : (
+              <Box key="b-slim-cells" flexShrink={1} minWidth={0}>
+                {why ? <Text dimColor>· </Text> : null}
+                {cells}
+              </Box>
+            )}
+          </Box>
+          {right}
+        </Box>
+        {more === null || isBusyPhase ? null : <Box key={isSum ? 'b-slim-sum-more' : 'b-slim-more'}>{more}</Box>}
+        {confirm}
+      </Box>
+    )
+  }
   // 최소(한 줄): 왼쪽 요청당 · 컨텍스트 · 컴팩트 구간, 오른쪽 이지 컴팩트 → 창 버튼 묶음(📊 · ⇲ · □ · ✕).
   // 이지 컴팩트는 최소에서도 늘 둔다 — 처음엔 뺐는데 최소로 하면 컴팩트할 길이 안 보였다. 확인창도 그대로
   if (mode === 'min') {
@@ -834,7 +1131,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     // 글자는 앱 버튼 색이라 🗜 가 흰색이었다 — 🗜 를 버튼 밖으로 빼고 버튼엔 짧은 이름. 저장 · 컴팩트 중 글과
     // [취소]는 그대로(보고 눌러야 한다), 터미널은 마우스 올리기가 없어 글 그대로
     const isShort = e.surface !== 'terminal'
-    const miniName = L('컴팩트', 'Compact')
+    const miniName = autoOn ? L('오토', 'Auto') : L('컴팩트', 'Compact')
+    const miniLook = autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const }
     const compactTip = isColdWin
       ? (coldWinTip ?? (isSwitched ? L('모델 바뀜 · 기본 컴팩트 권장', 'Model switched · plain compact advised') : L('캐시 만료 · 기본 컴팩트 권장', 'Cache expired · plain compact advised')))
       : shownLevel === 'cut'
@@ -847,17 +1145,17 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             : L('곧 컴팩트할 때', 'Compact soon')
           : L('컴팩트', 'Compact')
     const compactMini =
-      !isShort || phase === 'compacting' || phase === 'tidying' ? (
+      !isShort || autoOn || phase === 'compacting' || phase === 'tidying' ? (
         compactRow
       ) : e.props.isWorking ? (
-        // 못 누르는 동안은 게이지 · 이름 둘 다 색 없이 흐리게(버튼 자리 폭은 그대로)
-        busyName(miniName, offIcon)
+        // 못 누르는 동안은 이름을 흐리게(버튼 자리 폭은 그대로) — 게이지(패널 문)는 늦어짐이면 그대로 깜빡
+        busyName(miniName, canBlink ? brandIcon : offIcon)
       ) : isConfirming ? (
         <Box columnGap={1} alignItems="center">
           {gaugeDoor(isNotNow ? offIcon : brandIcon)}
           {withTip(
             'band-compact-box-open',
-            <Button key="compact-close" label={`${miniName} ▾`} {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => act.closeConfirm()} />,
+            <Button key="compact-close" label={`${miniName} ▾`} {...miniLook} onPress={() => act.closeConfirm()} />,
             tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
             tipRight(btnW(`${miniName} ▾`)),
           )}
@@ -873,10 +1171,10 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             <Button
               key="compact"
               label={miniName}
-              {...(isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })}
+              {...miniLook}
               onPress={() => act.openConfirm()}
             />,
-            tipLines(isNotNow ? notNowTip : `${compactTip} · ${L('누르면 컴팩트할까요?', 'press to open Compact now?')}`),
+            tipLines(autoOn ? `${d.auto!.label} · ${d.auto!.tip}` : isNotNow ? notNowTip : `${compactTip} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}`),
             tipRight(btnW(miniName)),
           )}
         </Box>
@@ -903,7 +1201,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   // 이지 컴팩트(셋째 줄) 중 넓은 쪽
   const grid =
     isRegroup && limitsLine && !isNarrowTerminal && u
-      ? bandGrid(ui, e.surface, u, nowMs, show, sNow.sessionColors, spendNow, showLastLine ? lastSum : null, showLastLine ? now : null, availOf(Math.max(controlsW, compactW(barLabel))))
+      ? bandGrid(ui, e.surface, u, nowMs, show, sNow.sessionColors, spendNow, showLastLine ? lastSum : null, availOf(Math.max(controlsW, compactW(barLabel))))
       : null
   if (grid) {
     return (
