@@ -287,7 +287,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionColors: SESSION_COLORS_DEFAULT,
   todayColors: TODAY_COLORS_DEFAULT,
   monthColors: MONTH_COLORS_DEFAULT,
-  // 질문 강조(칩에 마우스를 올리면 그 답변이 회색)는 처음엔 끔(0.9.2 — 사용자 2026-10-16 "기본옵션 꺼둔 걸로"). 0.9.1 까지는 켬
+  // 질문 강조(칩에 마우스를 올리면 그 답변에 파란 테두리 — 1.0.1 까지 회색 바탕)는 처음엔 끔(0.9.2 — 사용자 2026-10-16 "기본옵션 꺼둔 걸로"). 0.9.1 까지는 켬
   // (2026-10-13) — 설정을 한 번이라도 저장한 사람은 저장값(켬) 그대로, 바꾼 적 없는 사람 · 새 설치는 끔
   questionHover: false,
   paneAutoOpen: false,

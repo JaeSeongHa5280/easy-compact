@@ -90,6 +90,15 @@ export type BarActions = {
   toggleAuto?: () => Promise<unknown>
 }
 
+/** 바의 파란 오토 칩 누르기: 팝업이 열렸으면 닫기, 답이 도는 중이면 이 세션 오토 끄기(팝업의 컴팩트는 그때 못 한다), 아니면 팝업 */
+function autoPress(act: BarActions, isConfirming: boolean, isWorking: boolean): (() => void) | null {
+  if (isConfirming) return () => void act.closeConfirm()
+  if (isWorking) return act.toggleAuto ? () => void act.toggleAuto!() : null
+  return () => void act.openConfirm()
+}
+
+const autoOffTip = () => L('누르면 이 세션의 이지 오토를 끕니다', 'Press to turn Easy Auto off in this session')
+
 /** 바 하나(최소 = 한 줄, 최대 = 한도 · 비용 · 지난 질문 줄 + 확인 카드) */
 export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const { Box, Button, Text } = ui
@@ -436,13 +445,14 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         <Button key="compact-cancel" label={L('취소', 'Cancel')} variant="secondary" onPress={() => act.cancelTidy()} />
       </Box>
     ) : autoOn ? (
-      // 이지 오토가 켜져 있으면 컴팩트 버튼 자리에 파란 칩(누르면 같은 팝업 — 오른쪽 위가 [이지 오토 끄기]). 답이 도는 중엔 누르기 없이
+      // 이지 오토가 켜져 있으면 컴팩트 버튼 자리에 파란 칩(누르면 같은 팝업 — 오른쪽 위가 [이지 오토 끄기]). 답이 도는 중엔 팝업 대신 바로
+      // 끈다
       <Box columnGap={1} alignItems="center">
         {gaugeDoor(offIcon)}
         {withTip(
           `band-auto-chip-${isConfirming ? 'open' : e.props.isWorking ? 'busy' : 'idle'}`,
-          autoBarChip(ui, e.surface, isConfirming ? `${barLabel} ▾` : barLabel, e.props.isWorking ? null : isConfirming ? () => void act.closeConfirm() : () => void act.openConfirm()),
-          tipLines(isConfirming ? L('누르면 확인창 닫기', 'Press to close the card') : d.auto!.tip),
+          autoBarChip(ui, e.surface, isConfirming ? `${barLabel} ▾` : barLabel, autoPress(act, isConfirming, e.props.isWorking)),
+          tipLines(isConfirming ? L('누르면 확인창 닫기', 'Press to close the card') : e.props.isWorking ? autoOffTip() : d.auto!.tip),
           tipRight(autoBarChipW(barLabel, isTerm)),
         )}
       </Box>
@@ -1063,8 +1073,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           // 이지 오토가 켜져 있으면 버튼 자리에 바와 같은 파란 칩
           withTip(
             'band-auto-chip-slim',
-            autoBarChip(ui, e.surface, isConfirming ? `${btnLabel} ▾` : btnLabel, e.props.isWorking ? null : isConfirming ? () => void act.closeConfirm() : () => void act.openConfirm()),
-            tipLines(d.auto!.tip),
+            autoBarChip(ui, e.surface, isConfirming ? `${btnLabel} ▾` : btnLabel, autoPress(act, isConfirming, e.props.isWorking)),
+            tipLines(e.props.isWorking && !isConfirming ? autoOffTip() : d.auto!.tip),
             tipRight(autoBarChipW(btnLabel, false)),
           )
         ) : isConfirming ? (

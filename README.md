@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.1-4c9be8" alt="Version 1.0.1">
+  <img src="https://img.shields.io/badge/version-1.0.2-4c9be8" alt="Version 1.0.2">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-101">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-102">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 ---
@@ -108,6 +108,14 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.0.2
+
+- **Fixed: the bar kept the size from before the compact** — on some computers Claude Code doesn't tell easy-compact about a compact, so the bar changed only after your next request. It now checks the compact marker in the session record right away.
+- **Easy Auto starts off in every new session** — it's on or off per session, and pressing the bar's blue chip while Claude is working turns it off right away.
+- **Easy Auto waits for text in your prompt box** — if you've typed something you haven't sent, it holds its summary and compact (*Auto · waiting for your text*), and after a compact it doesn't send its continue message.
+- **Question highlight is a blue outline** — instead of a gray fill, the answer and its pane row get an outline and the chip's border turns bold.
+- **Diagnostics file: [Open folder] · [Copy path] · how compacts were caught** — open the saved file in your file manager or copy its path; the file now also says how each compact was detected.
 
 ## What's new in 1.0.1
 
@@ -319,7 +327,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 <img src="docs/img/question-cost.png" width="900" alt="The blue question-cost chip under an answer, opened into main requests, agents and steps; hovering it highlights the answer and its row in the Easy Compact pane">
 
-**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and the answer, the chip and the row turn gray together (desktop, with Settings **Answer chip** tab → **Highlight** on — off at first).
+**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and the answer and the row get a blue outline while the chip's border turns bold (desktop, with Settings **Answer chip** tab → **Highlight** on — off at first).
 
 ### 3. Know when to compact
 
@@ -362,17 +370,17 @@ flowchart LR
 
 <img src="docs/img/auto.png" width="900" alt="Easy Auto on: the bar's compact button becomes a blue Auto 200k chip, and the Easy Auto switch at the top right of the Compact now? popup is on">
 
-**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch at the top right of the card the bar's **[Compact]** opens (per session — new sessions start with the value you last picked yourself; in a terminal it's **4** on the card). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k* (press it for that card). The range is **Easy Auto range**, right below the compact range — in the Settings **Compact** tab and in the Overview tab's Compact timing card (it starts at your compact range and is shared by all sessions).
+**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch at the top right of the card the bar's **[Compact]** opens (per session — new sessions start with it off; in a terminal it's **4** on the card). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k* (press it for that card). While Claude is answering, pressing the bar's blue chip turns Easy Auto off in that session right away instead of opening the card. The range is **Easy Auto range**, right below the compact range — in the Settings **Compact** tab and in the Overview tab's Compact timing card (it starts at your compact range and is shared by all sessions).
 
 | When | What it does |
 |---|---|
 | An answer ends past the front of the range | Waits a moment; if you haven't typed, saves → compacts |
 | A long task runs past the back of the range | Stops that turn, saves → compacts → picks the work back up |
 | Compacting doesn't bring it below the range, or it passes again within 3 requests | *Auto stopped* with a one-line note (**[Turn on again]**) |
-| The cache expires or the model changes | Turns Easy Auto off in that session with a one-line note (new sessions use the value you picked) |
+| The cache expires or the model changes | Turns Easy Auto off in that session with a one-line note |
 | Compacting now would cost more (cold cache · little to save) | Skips that one time |
 
-While it runs, the bar and the strip show the current step (*Easy Auto · saving → then compact* · *Easy Auto compact in progress…*). Typing doesn't turn it off — if the save answer doesn't end with *[Compact go]* (you typed in between, or there was something to lose), it doesn't compact that time, and if you typed after the compact it doesn't send the pick-up message. While it's on, a folded bar doesn't open by itself when it's time to compact (Easy Auto handles the alert). What Easy Auto sends starts with *[Easy Auto · summary]* · *[Easy Auto · continue]*, stays in the conversation, and those requests cost tokens.
+While it runs, the bar and the strip show the current step (*Easy Auto · saving → then compact* · *Easy Auto compact in progress…*). Typing doesn't turn it off — if the save answer doesn't end with *[Compact go]* (you typed in between, or there was something to lose), it doesn't compact that time, and if you typed after the compact it doesn't send the pick-up message. If your prompt box holds text you haven't sent, it doesn't send its summary or compact and waits (chip *Auto · waiting for your text*) — send it and it runs after that answer, clear it and it goes on; after a compact with text in the box it doesn't send the pick-up message (from 1.0.2 — it only checks whether the box has text, and neither keeps nor sends it). While it's on, a folded bar doesn't open by itself when it's time to compact (Easy Auto handles the alert). What Easy Auto sends starts with *[Easy Auto · summary]* · *[Easy Auto · continue]*, stays in the conversation, and those requests cost tokens.
 
 ### 6. The Easy Compact pane
 
@@ -418,8 +426,8 @@ Still stuck? See [Something wrong?](#something-wrong--report-it) below.
 
 ## Something wrong? — report it
 
-1. **Show diagnostics** — the Easy Compact pane (the bar's gauge; in a terminal, **[Pane ▸]**) → the version button at the right of the tab row (`v1.0.0 ▸`) → **[Show diagnostics]** under **Report a problem** in the drawer (also in the Settings **General** tab). You see what's inside and the first lines — your questions, answer endings, step names and custom texts are left out from the start (turn the switch off to include them; your own text going out then shows in yellow). Then **[Copy]** (clipboard) or **[Save as file]** (the path shows in the card and a notice — nothing goes into the conversation), exactly what you saw. **[Open an issue ↗]** opens a new issue.
-2. **What's in it** — every setting, the pane's state (open tab, open cards), usage numbers · the running question · compact phase, the question history (question text · cost per question · the end of each answer), the cost cross-check (the engine's total · what easy-compact measured), and counts of unpaired surrogates and control characters (candidates for a pane that doesn't draw at all).
+1. **Show diagnostics** — the Easy Compact pane (the bar's gauge; in a terminal, **[Pane ▸]**) → the version button at the right of the tab row (`v1.0.0 ▸`) → **[Show diagnostics]** under **Report a problem** in the drawer (also in the Settings **General** tab). You see what's inside and the first lines — your questions, answer endings, step names and custom texts are left out from the start (turn the switch off to include them; your own text going out then shows in yellow). Then **[Copy]** (clipboard) or **[Save as file]** (the path shows in the card and a notice — nothing goes into the conversation), exactly what you saw. After saving, **[Open folder]** (your file manager with the file selected; Finder on macOS) and **[Copy path]** appear under the path (from 1.0.2). **[Open an issue ↗]** opens a new issue.
+2. **What's in it** — every setting, the pane's state (open tab, open cards), usage numbers · the running question · compact phase, the question history (question text · cost per question · the end of each answer), the cost cross-check (the engine's total · what easy-compact measured), counts of unpaired surrogates and control characters (candidates for a pane that doesn't draw at all), and how compacts were caught (for each compact in this session, which way it was detected · this run's decision lines — from 1.0.2).
 3. **Where** — `~/.claude/plugins/data/easy-compact-easy-compact/debug-<session id>.json` (`plugins/data/easy-compact-synced/` if you installed from Anthropic's directory). The same session overwrites it.
 4. **It stays on your computer** — easy-compact never sends it. Attach it yourself; it contains your questions and costs, so look it over and remove anything private before you post it.
 5. **Open an [issue](https://github.com/JaeSeongHa5280/easy-compact/issues) with** — what happened, how to reproduce it, which screen (desktop app / terminal), the version (the version button · Claude Code's from `/status`), your OS, and the diagnostics file.

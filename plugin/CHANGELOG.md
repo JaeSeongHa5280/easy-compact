@@ -4,6 +4,19 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.0.2] — 2026-10-21
+
+### Changed
+- **Easy Auto starts off in every new session** — it's on or off per session. In 1.0 a new session started with the value you last picked, so once you turned it on, sessions where you never did had it on too. Restarting the app keeps each session's own value.
+- **Turn Easy Auto off while Claude is working** — pressing the bar's blue *Auto* chip during an answer turns Easy Auto off in that session right away (it couldn't be pressed before).
+- **Easy Auto waits for text in your prompt box** — if your prompt box holds text you haven't sent, Easy Auto doesn't send its summary or compact and waits (bar chip *Auto · waiting for your text*). Send it and Easy Auto runs after that answer; clear it and it goes on. After a compact with text in the box, it doesn't send its *continue* message. We had a report of text being lost when Easy Auto sent its message. It only checks whether the box has text — it neither keeps nor sends it.
+- **Question highlight is a blue outline** — hover a chip or a question row in the pane and the answer and the row get a blue outline while the chip's border turns bold. The gray fill showed as a white block on dark themes and made the answer hard to read.
+- **[Open folder] · [Copy path] for a saved diagnostics file** — after **[Save as file]** in the diagnostics card, two buttons appear under the saved path. **[Open folder]** shows the file in your file manager (Finder on macOS); **[Copy path]** puts the path on the clipboard — text in the pane can't be selected by dragging. Windows paths show with `\`.
+- **How compacts were caught, in the diagnostics file** — for each compact in this session, which way it was detected (Claude Code's notice · the compact marker in the session record · the next request's size), plus this run's decision lines (including the ones it filtered out as false). If a compact shows up late, attach this file to your report.
+
+### Fixed
+- **The bar kept the size from before the compact** — on some computers Claude Code doesn't tell easy-compact about a compact, so from 1.0.1 the bar changed only after your next request (*Context 340k · Compact overdue* stayed). It now checks the compact marker in the session record and shows *just compacted* with the smaller size as soon as the compact ends. A blank with no marker (the false compacts fixed in 1.0.1) is still left out.
+
 ## [1.0.1] — 2026-10-20
 
 ### Changed

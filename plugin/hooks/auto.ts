@@ -3,9 +3,9 @@
  * (긴 일 도중이면) 이어가기. 여기는 순수 판단 · 화면 글만 — $ 와 상태(atom)를 쓰는 사슬은 register.tsx(엔진 규칙: $ · atom 은 그 파일
  * 안에서만), 보내는 글은 tidy.ts, 칩 · 안내 줄 그리기는 ui-auto.tsx.
  *
- * 켜고 끄기는 세션마다(입력창 아래 칩), 새 세션은 마지막으로 직접 고른 값. 구간은 설정 › 컴팩트 탭(모든 세션). 사람이 입력해도 안 꺼진다.
- * 자동 멈춤 둘(이 세션): ① 컴팩트 뒤 첫 요청이 여전히 앞쪽 이상 ② 앞 사슬의 컴팩트 뒤 요청 3번 안에 또 넘음. 손해(바의 isLoss 와 같은
- * 판정)면 이번만 쉬고, 캐시가 만료되거나 모델을 바꾸면 이 세션은 끈다(저절로 꺼진 것은 "고른 값"으로 안 친다)
+ * 켜고 끄기는 세션마다([컴팩트] 팝업 스위치), 새 세션은 늘 꺼진 채. 구간은 설정 ›
+ * 컴팩트 탭(모든 세션). 사람이 입력해도 안 꺼진다. 자동 멈춤 둘(이 세션): ① 컴팩트 뒤 첫 요청이 여전히 앞쪽 이상 ② 앞 사슬의 컴팩트 뒤
+ * 요청 3번 안에 또 넘음. 손해(바의 isLoss 와 같은 판정)면 이번만 쉬고, 캐시가 만료되거나 모델을 바꾸면 이 세션은 끈다
  */
 import type { AutoChain, AutoState, CompactInputs, Settings, TurnSummary, Usage } from '../types'
 import { average, compactPayoff, estimateFor, isLittleToSave } from './cost'
@@ -20,8 +20,7 @@ export const AUTO_AGAIN_REQUESTS = 3
 export const AUTO_STALE_MS = 10 * 60_000
 /** 단계마다 다음 일이 이만큼 안 오면 버린다: 기다림(시계가 다시 불림으로 사라짐) · 요약 턴이 안 시작됨 · 컴팩트가 안 끝남 */
 const STAGE_LIMIT_MS = { wait: 5_000, saving: 60_000, compacting: 5 * 60_000, continuing: 60_000 } as const
-/** $.store 키 — 세션마다 상태(앱을 다시 켜도 이어받는다) · 마지막으로 직접 고른 켬/끔(새 세션의 처음 값) */
-export const AUTO_LAST_KEY = 'autoLast'
+/** $.store 키 — 세션마다 상태(앱을 다시 켜도 이어받는다). 1.0 의 autoLast(마지막으로 고른 값)는 안 읽는다 */
 export const autoKey = (session: string) => `auto:${session}`
 
 /** 새 세션 · 처음 읽은 세션의 상태 */
@@ -90,12 +89,20 @@ export function autoChipText(a: AutoState | null, s: Settings, ctx: number | nul
   const name = L('오토', 'Auto')
   if (!a || !a.on) return name
   if (a.stop !== null) return L('오토 멈춤', 'Auto stopped')
+  if (a.chain?.isDraftHeld) return L('오토 · 입력 칸 글 기다림', 'Auto · waiting for your text')
   const stage = a.chain?.stage
   if (stage === 'saving') return L('오토 · 저장 중', 'Auto · saving')
   if (stage === 'compacting') return L('오토 · 컴팩트 중', 'Auto · compacting')
   if (stage === 'continuing') return L('오토 · 이어가는 중', 'Auto · continuing')
   if (stage === 'wait' || (ctx !== null && ctx >= s.autoStart)) return L('오토 · 답 끝나면 컴팩트', 'Auto · compacts when the answer ends')
   return `${name} ${ctxNumText(s.autoStart, window, s.ctxUnit === 'both' ? 'size' : s.ctxUnit)}`
+}
+
+/** 1.0.2: 입력 칸에 사람이 쓰던 글이 있어 이지 오토가 기다리거나(요약 · 컴팩트) 이어가기를 안 보냈을 때 알림 */
+export function autoDraftNote(step: 'save' | 'compact' | 'continue'): string {
+  if (step === 'save') return L('입력 칸에 쓰던 글이 있어 이지 오토가 기다립니다 — 보내면 그 답이 끝난 뒤, 지우면 바로 이어 갑니다', 'Easy Auto is waiting for the text in your prompt box — send it and it runs after that answer, clear it and it goes on now')
+  if (step === 'compact') return L('입력 칸에 쓰던 글이 있어 이지 오토가 컴팩트를 기다립니다 — 보내거나 지우면 이어 갑니다', 'Easy Auto is holding the compact for the text in your prompt box — send it or clear it and it goes on')
+  return L('컴팩트를 마쳤습니다. 입력 칸에 쓰던 글이 있어 [이지 오토 · 이어가기] 글은 보내지 않았습니다', 'Compact done. You have text in the prompt box, so Easy Auto did not send its continue message')
 }
 
 /** 칩을 누른 뒤 토스트 */

@@ -72,7 +72,7 @@ import { ctxUnitNow, fitLine, rewriteNote } from './ui-band'
 import type { LineCell } from './ui-band'
 import { L, plural } from './i18n'
 import { iconOf, onDesktop, withIcon } from './glyph'
-import { questionScope, rasterOf } from './ui-common'
+import { BRAND_HEX, questionScope, rasterOf } from './ui-common'
 import { flowCells, flowLayout, timingCells } from './cells'
 
 /** 터미널 흐름 그래프 높이(줄) — 8줄은 작은 컨텍스트일 때 거의 빈 칸이라 패널만 길게 했다(2026-10-11 CLI) */
@@ -327,7 +327,8 @@ export function historyRow(
   })
   flush(parts.length)
   return (
-    // 질문 강조: 답변 끝 칩 · 그 답변 위 덮개와 한 hover 묶음 — 이 줄에 올리면 줄 · 칩 · 답변이 함께 회색.
+    // 질문 강조: 답변 끝 칩 · 그 답변 위 덮개와 한 hover 묶음 — 이 줄에 올리면 줄 · 칩 · 답변이 함께 빛난다. 1.0.2:
+    // 회색 바탕 대신 숨은 파란 테두리 덮개(답변과 같은 꼴 — 사용자 "흰색으로 블록 · 파란색 테두리로"), 줄 자체는 묶음 이름만.
     // 펼치지는 않는다(열기 · 닫기는 왼쪽 ▸). 시각을 모르는 옛 기록은 빼고.
     // 묶음은 금액 · 제목 · 아래 줄 칸에만 — ▸ 칸과 펼친 동작 칸(그 안 [글 다 보기])은 뺀다. 앱은 가만히 있는 포인터 아래 그림이 바뀌면
     // 강조를 다시 재서(엔진 문서 BoxHoverProps) 버튼을 누르는 순간 채팅 쪽 강조가 깜빡였다. 누르는 자리가 묶음 밖이면
@@ -343,8 +344,11 @@ export function historyRow(
           alignItems="flex-start"
           flexShrink={1}
           minWidth={0}
-          {...(isHover && Number.isFinite(t.atMs) ? { hover: { scope: questionScope(t.atMs), backgroundColor: 'promptBorder' } } : {})}
+          {...(isHover && Number.isFinite(t.atMs) ? { hover: { scope: questionScope(t.atMs) } } : {})}
         >
+          {isHover && Number.isFinite(t.atMs) ? (
+            <Box key={`${key}-glow`} position="absolute" top={0} left={0} right={0} bottom={0} display="none" borderStyle="round" borderColor={BRAND_HEX} hover={{ scope: questionScope(t.atMs), display: 'flex' }} />
+          ) : null}
           {leadCell(
             ui,
             <Text bold>{fmtUsd(t.cost.usd)}</Text>,

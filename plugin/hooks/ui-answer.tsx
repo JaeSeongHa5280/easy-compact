@@ -1,5 +1,5 @@
 import type { LiveTurn, TurnSummary, Usage } from '../types'
-import { fmtUsd } from './cost'
+import { fmtTokens, fmtUsd, LEVEL_TEXT, levelOf } from './cost'
 import { L, plural } from './i18n'
 import { iconOf } from './glyph'
 import { agentPart, agentSum, answerBreakdown, APP_MIN_USD, callsOf, fitCells, recentSteps } from './text'
@@ -201,6 +201,85 @@ export function answerDetail(ui: Ui, summary: TurnSummary) {
 }
 
 /**
+ * 턴 끝 답변 아래 칩(register AssistantMessage 훅이 읽은 값으로 — 2026-10-20 register.tsx 에서 옮김). theirs = 엔진 몫(답변 글),
+ * isOpen = 그 질문을 폈나(펼 수 있을 때만 읽는다), isHover = 질문 강조(데스크톱 · 설정)
+ */
+export function drawAnswerChip(ui: Ui, d: { theirs: unknown; summary: TurnSummary; isFull: boolean; surface: string; isOpen: boolean; isHover: boolean }, act: { toggle: () => void }) {
+  const { Box, Button, Text } = ui
+  const { theirs, summary, isFull, surface, isOpen, isHover } = d
+  const line = answerLine(ui, summary, isFull, surface)
+  // 정보량 전부면 패널 "자세히" 의 펼친 질문처럼 상세(메인 · 에이전트 · 앱 자체 요청 분해 줄과 동작별 값)를 붙이되 처음엔 접힘 —
+  // 늘 펼쳐 두니 답마다 길었다. 칩 첫 줄 끝 [▸ 자세히] 로 그 질문만 펴고 접는다. 동작 줄은 ├─ 같은 가지 표시
+  // 없이 한 칸 들여 " - " 로. 요청 많은 질문은 비싼 동작 ANSWER_STEPS 개만(순서 그대로), 나머지는 한 줄.
+  // 터미널은 칩 한 줄만 — 지난 대화 줄은 다시 그려지지 않아 누름이 안 먹을 수 있고, 상세는 사용량 패널에 있다
+  const canFold = isFull && surface !== 'terminal'
+  // 버튼은 줄지 않게(flexShrink 0) — 첫 줄 글이 길면 "▸ / 자세히" 로 꺾였다
+  const foldButton = canFold ? (
+    <Box key="q-fold-box" flexShrink={0}>
+      <Button key="q-fold" plain onPress={() => act.toggle()}>
+        <Text color={BRAND_HEX} dimColor>
+          {isOpen ? L('▾ 접기', '▾ Hide') : L('▸ 자세히', '▸ Details')}
+        </Text>
+      </Button>
+    </Box>
+  ) : null
+  const detailEl = isOpen ? answerDetail(ui, summary) : null
+  // 질문 강조: 칩이나 사용량 패널의 그 질문 줄에 마우스를 올리면 칩 · 패널 줄 · 그 답변이 함께 빛난다. 칩 ·
+  // 패널 줄과 답변 밑 숨은 덮개가 한 hover 묶음(questionScope) — 덮개는 묶음이 빛날 때만 드러난다. 덮개(absolute)에 올린 마우스는
+  // 부모에 올린 것이라 답변 글로는 반응 없음. 덮개는 답변보다 앞에 둔다 — absolute 는 앞의 것 위에 칠해진다.
+  // 반투명 배경(8자리 hex)을 깔았을 땐 데스크톱이 답변 아래 그리기를 통째로 받지 않았다(첫 시도 · 되돌림 fab644b). 한 조각씩 실물로
+  // 확인: 칩 배경 → 묶음 이름 → 테두리 덮개 → 회색 덮개. 1.0.2: 회색(promptBorder) 바탕이 어두운 테마에서 흰 덩어리로 보여 답변 글이 안
+  // 읽혔다 — 바탕 없이 칩과 같은 파란 둥근 테두리만. 데스크톱만, 설정으로 끈다
+  const scope = questionScope(summary.atMs)
+  return (
+    <Box flexDirection="column">
+      {isHover ? (
+        <Box key="q-ans" flexDirection="column">
+          <Box key="q-glow" position="absolute" top={0} left={0} right={0} bottom={0} display="none" borderStyle="round" borderColor={BRAND_HEX} hover={{ scope, display: 'flex' }} />
+          {theirs}
+        </Box>
+      ) : (
+        theirs
+      )}
+      {/* 데스크톱은 둥근 파란 테두리 칩(글 폭만큼) — 답변 글과 갈린다. 답변 글에 붙어 보여 한 칸 띄운다.
+          터미널은 테두리가 답마다 두 줄을 늘려 글만. 질문 강조 때 칩은 테두리만 굵게(1.0.2 — 바탕 없음) */}
+      {surface === 'terminal' ? (
+        line
+      ) : (
+        <Box key="q-cost" alignSelf="flex-start" flexDirection="column" marginTop={1} borderStyle="round" borderColor={BRAND_HEX} paddingX={1} {...(isHover ? { hover: { scope, borderStyle: 'bold' } } : {})}>
+          <Box key="q-head" columnGap={2} alignItems="center">
+            {line}
+            {foldButton}
+          </Box>
+          {detailEl}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
+/**
+ * 터미널 작업 줄 끝 이 질문 값(register Spinner 훅 — 데스크톱은 앱 작업 줄 그대로): 엔진 몫 + 금액 · 에이전트 · 컨텍스트. 출력 토큰은
+ * 뺐다 — 판단에 안 쓰였다, 그 자리에 🤖. 에이전트는 간단이면 개수만, 그 밖엔 "$ 포함"(답변 아래 · 패널과 같은 꼴)
+ */
+export function spinnerCost(ui: Ui, theirs: unknown, now: LiveTurn, agents: string | null) {
+  const { Box, Text } = ui
+  return (
+    <Box columnGap={1} alignItems="center">
+      {theirs}
+      <Text>
+        <Text bold>
+          {fmtUsd(now.cost.usd)}
+        </Text>
+        {agents ? <Text>{` · ${agents}`}</Text> : null}
+        <Text dimColor>{L(' · 컨텍스트 ', ' · context ')}</Text>
+        <Text color={LEVEL_TEXT[levelOf(now.contextTokens)]}>{fmtTokens(now.contextTokens)}</Text>
+      </Text>
+    </Box>
+  )
+}
+
+/**
  * 설정 미리보기의 예시 값 — 아직 잰 값 · 끝난 질문이 없을 때(새 세션). 빈 자리만 그리니 무엇이 어떻게 보일지 몰랐다. 진짜 바 · 칩 그리기에 넣어 고른 화면 · 칸 · 정보량이 그대로 반영된다. 화면에 "예시 값" 이라 적는다
  */
 export function sampleUsage(nowMs: number, model: string): Usage {
@@ -239,9 +318,9 @@ export function answerPreview(ui: Ui, summary: TurnSummary, isSample: boolean, i
   const { Box, Button, Text } = ui
   const line = answerLine(ui, summary, isFull, surface)
   const canFold = isFull && surface !== 'terminal'
-  // 질문 강조가 켜져 있으면 견본 칩도 마우스를 올리면 회색. 지난 질문 값으로 그린
-  // 견본은 그 질문과 한 묶음 — 올리면 채팅창의 그 답변 · 칩 · 패널 줄도 함께. 예시 값은 묶을 답변이 없어 견본만
-  const hover = isHover && surface !== 'terminal' ? { hover: { ...(isSample ? {} : { scope: questionScope(summary.atMs) }), backgroundColor: 'promptBorder' } } : {}
+  // 질문 강조가 켜져 있으면 견본 칩도 마우스를 올리면 테두리가 굵게.
+  // 지난 질문 값으로 그린 견본은 그 질문과 한 묶음 — 올리면 채팅창의 그 답변 · 칩 · 패널 줄도 함께. 예시 값은 묶을 답변이 없어 견본만
+  const hover = isHover && surface !== 'terminal' ? { hover: { ...(isSample ? {} : { scope: questionScope(summary.atMs) }), borderStyle: 'bold' } } : {}
   // S13(0.9.1): 견본 틀 = 미리보기 칩 + 옅은 바탕(바 견본과 같은 꼴) — 예전 제목 줄 "답변 끝 칩 — 질문 비용" 은 카드 제목과 겹쳐 칩으로 옮겼다.
   // 칩은 질문마다 붙고, 견본만 지난 질문 값(없으면 예시 값)으로 그린다. 설명은 "?"(데스크톱 마우스 올림 · 누르면 펼침)
   const tip =

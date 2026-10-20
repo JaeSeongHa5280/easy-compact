@@ -118,6 +118,29 @@ export function diagOwnText(c: DiagCounts): string {
 /** 제보할 곳 — 공개 저장소 새 이슈 */
 export const ISSUE_URL = 'https://github.com/JaeSeongHa5280/easy-compact/issues/new'
 
+/** 그 OS 꼴 경로 — Windows(드라이브 글자)면 \ 로(탐색기 주소 칸 · 파일 고르기 창에 그대로 붙는다), 아니면 그대로 */
+export function nativePath(path: string): string {
+  return /^[A-Za-z]:[\\/]/.test(path) ? path.replace(/\//g, '\\') : path
+}
+
+/**
+ * 1.0.2: 저장한 파일을 파일 탐색기에서 여는 명령 — 앞 것부터
+ * 해 보고 안 되면 다음 것. Windows = 그 파일을 고른 탐색기, 맥 = Finder 에서 고름, 그 밖(리눅스) = 그 폴더.
+ * Windows 는 cmd 의 start 로 — 엔진 $.process.run 은 창을 숨겨 띄워(execa windowsHide) explorer.exe 를 바로 부르면 탐색기 창이 숨은 채
+ * 열렸다. cmd 가 읽는 글자(& ^ % !)나 탐색기 /select 가 가르는 쉼표가 든 경로는 [] — [경로 복사] 로
+ */
+export function revealArgv(path: string): string[][] {
+  if (/^[A-Za-z]:[\\/]/.test(path)) {
+    const native = nativePath(path)
+    return /[&^%!,\r\n]/.test(native) ? [] : [['cmd.exe', '/d', '/c', 'start', '', 'explorer.exe', '/select,', native]]
+  }
+  const dir = path.replace(/[\\/][^\\/]*$/, '') || '/'
+  return [
+    ['open', '-R', path],
+    ['xdg-open', dir],
+  ]
+}
+
 /** 덤프 글 + 짝 없는 서로게이트 · 제어 문자 수(데스크톱이 그리기를 통째로 거부하는 글 후보) */
 export function dumpText(state: Record<string, unknown>): { text: string; lone: number; ctrl: number } {
   const text = JSON.stringify(state, null, 2)

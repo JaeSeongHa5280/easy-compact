@@ -16,7 +16,7 @@ import { GAUGE_SHAPES } from './gauge'
 import { autoIcon } from './ui-auto'
 import type { GaugeShape } from './gauge'
 import { statusLineUse } from './status-line'
-import { diagOwnText, diagSummary, ISSUE_URL } from './diag'
+import { diagOwnText, diagSummary, ISSUE_URL, nativePath } from './diag'
 import type { DiagView } from './diag'
 
 /** 게이지 꼴 이름(B8) */
@@ -83,6 +83,9 @@ export type SettingsActions = {
   diagRedact: (isOn: boolean) => void
   diagCopy: (surface?: string) => void
   diagSave: () => void
+  /** 저장한 진단 파일(1.0.2): [폴더 열기](파일 탐색기) · [경로 복사](누른 표면의 클립보드) */
+  diagReveal: () => void
+  diagCopyPath: (surface?: string) => void
   /** 컴팩트 시점 안내 줄의 [현황에서 고르기] — 현황 탭으로(0.6.0, 컴팩트 시점을 현황으로 옮김) */
   openOverview: () => void
   /** 설정 안 탭(S10, 0.8.1) */
@@ -621,8 +624,8 @@ export function drawSettings(
             'hover-row',
             L('질문 강조', 'Highlight'),
             L(
-              '칩이나 패널의 질문 줄에 마우스를 올리면 그 답변이 회색으로 표시됩니다.',
-              'Hover a chip or a question row in the pane to gray out that answer.',
+              '칩이나 패널의 질문 줄에 마우스를 올리면 그 답변에 파란 테두리가 생깁니다.',
+              'Hover a chip or a question row in the pane to outline that answer in blue.',
             ),
             onOffControl(ui, 'questionHover', s.questionHover, on => save({ ...s, questionHover: on })),
             onOffW(),
@@ -1629,10 +1632,15 @@ export function drawDiagCard(act: SettingsActions, ui: Ui, v: DiagView, surface:
         </Text>
       ) : null}
       {v.savedPath ? (
-        <Box key="diag-saved">
-          <Text color="success" wrap="wrap">
-            {L(`저장: ${v.savedPath}`, `Saved: ${v.savedPath}`)}
+        <Box key="diag-saved" flexDirection="column">
+          <Text key="diag-saved-path" color="success" wrap="wrap">
+            {L(`저장: ${nativePath(v.savedPath)}`, `Saved: ${nativePath(v.savedPath)}`)}
           </Text>
+          {/* 1.0.2: 패널 글은 끌어 고를 수 없어 버튼으로 */}
+          <Box key="diag-saved-acts" columnGap={1} rowGap={1} flexWrap="wrap" alignItems="center">
+            <Button key="diag-reveal" label={L('폴더 열기', 'Open folder')} variant="secondary" onPress={() => act.diagReveal()} />
+            <Button key="diag-copy-path" label={L('경로 복사', 'Copy path')} variant="secondary" onPress={(p?: { surface?: string }) => act.diagCopyPath(p?.surface ?? surface)} />
+          </Box>
         </Box>
       ) : null}
       <Box key="diag-code-box" marginTop={1} flexDirection="column">

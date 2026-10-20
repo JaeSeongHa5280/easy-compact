@@ -120,6 +120,8 @@ export type AutoChain = {
   before: number
   /** 컴팩트를 시작한 뒤 사람 · 다른 세션 글이 들어왔다 — 이어가기를 안 보낸다 */
   isInterrupted?: boolean
+  /** 1.0.2: 입력 칸에 사람이 쓰던 글이 있어 그 단계(요약 · 컴팩트)를 미루는 중 — 칩 "오토 · 입력 칸 글 기다림" */
+  isDraftHeld?: boolean
 }
 
 /**
@@ -508,6 +510,12 @@ export type CompactEvent = {
    * 직후 크기로 써 상주가 18k(기본 적재 0)로 보였다. 엔진이 안 줬으면 없다
    */
   kept?: number
+  /**
+   * 1.0.2: 어느 길로 알아챘나(진단 파일 — 사용자 2026-10-20 "진단 파일에 컴팩트 판정 넣는거 좋음"). hook = session.compact 훅 · catch =
+   * 훅이 적기 전에 던져 .catch 가 받은 결과 · boundary = 엔진 값이 빈 때 기록 경계 · watch = 의심 뒤 감시가 본 경계 · shrink = 의심 뒤
+   * 다음 요청이 줄어듦 · own-boundary / own-empty = 우리 /compact 뒤 기록 경계 / 엔진 값 빔. 1.0.1 까지 적은 것엔 없다
+   */
+  via?: string
 }
 
 /**
@@ -621,7 +629,7 @@ declare module 'claude-code' {
       summaryCard: boolean
       /** 1.0 값 강조 시계(0.2초)가 올리는 수 — 바만 읽어 강조 동안 그 칸만 다시 그린다 */
       flashTick: number
-      /** 이지 오토(이 세션) — null 이면 아직 안 읽음(세션 시작 때 저장소 · 마지막으로 고른 값으로 채운다) */
+      /** 이지 오토(이 세션) — null 이면 아직 안 읽음(세션 시작 때 저장소의 이 세션 값, 없으면 꺼짐) */
       auto: AutoState | null
     }
   }

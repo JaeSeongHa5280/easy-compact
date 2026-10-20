@@ -161,6 +161,37 @@ export function lastMainTtl(text: string): number | null {
   return null
 }
 
+/** 기록에서 찾은 컴팩트 경계 한 줄 — 엔진이 정말 컴팩트했다는 표시(pre = 직전 크기, post = 남긴 대화 · 없으면 없음) */
+export type Boundary = { atMs: number; trigger: string; pre: number; post?: number }
+
+/**
+ * 1.0.2(회사 PC 1.0.1 "컴팩트 직후 컨텍스트가 바로 안 바뀌고 채팅 한 번 해야 바뀜"): 기록 끝에서 sinceMs 뒤의 마지막 컴팩트 경계. 엔진 값이
+ * 빈 것만으론 컴팩트인지 모른다(가짜 20개) — 경계 줄이 있으면 진짜다. own = 이 세션 줄만(포크 앞부분은 부모 줄). 없으면 null.
+ * tools/last-compact.mjs 와 같은 규칙
+ */
+export function lastBoundaryAfter(text: string, own: string | null, sinceMs: number): Boundary | null {
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!
+    if (!line.includes('"compact_boundary"')) continue
+    let r: Record<string, unknown>
+    try {
+      r = JSON.parse(line) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    if (r.type !== 'system' || r.subtype !== 'compact_boundary' || r.isSidechain === true) continue
+    if (own !== null && typeof r.sessionId === 'string' && r.sessionId !== own) continue
+    const atMs = Date.parse(String(r.timestamp ?? '')) || 0
+    // 끝에서부터 본다 — 이것이 sinceMs 앞이면 그 앞 줄도 앞이다
+    if (atMs <= sinceMs) return null
+    const meta = (r.compactMetadata ?? {}) as Record<string, unknown>
+    const post = num(meta.postTokens)
+    return { atMs, trigger: typeof meta.trigger === 'string' ? meta.trigger : 'manual', pre: num(meta.preTokens), ...(post > 0 ? { post } : {}) }
+  }
+  return null
+}
+
 /**
  * tools/scan-transcript.mjs 의 출력(줄마다 "p …" · "c …" · "q …") → 건들. p 줄 끝 둘(5분 · 1시간 쓰기) · 셋째(엔진 판, "-" = 모름) ·
  * c 줄 다섯째(남긴 대화 postTokens, 0 = 모름)는 없을 수 있다
@@ -436,6 +467,7 @@ export function parseFlowFile(text: string): Flow | null {
         index: num(c.index),
         ...(typeof c.summary === 'number' ? { summary: c.summary } : {}),
         ...(typeof c.kept === 'number' && c.kept > 0 ? { kept: c.kept } : {}),
+        ...(typeof c.via === 'string' ? { via: c.via } : {}),
       }))
       // 중복 컴팩트를 걸러내기 전에 저장한 파일도 고쳐 읽는다(같은 시각 · 직전 크기면 하나)
       .filter((c, i, all) => all.findIndex(o => o.atMs === c.atMs && o.before === c.before) === i)
