@@ -4,6 +4,18 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.0.5] — 2026-10-22
+
+### Changed
+- **Question highlight covers the whole answer** — hover a question-cost chip or its row in the pane and every block of that answer (text, tool rows, results, grouped tool lines) gets a blue bar on its left. 1.0.2 outlined only the last block, where the chip sits. After the app restarts, earlier questions mark only that last block (Settings **Answer chip** tab → **Highlight**, off at first).
+- **Output marked "(incl. thinking)", split by effort** — open a finished question in cost per question and its output reads *output $0.33 (incl. thinking)*, so the number itself says thinking tokens are in it; if the effort changed partway through, *output $0.33 (incl. thinking — Extra $0.03 · Max $0.30)*. The split shows for questions from this version on.
+- **The Slim line's limit % dims under 70%** — like the bar (bright white read like a cost). Orange from 70% and red from 90% stay.
+- **Darker section-title icons on light themes** — the gray had 2.6:1 contrast on white; now 3.7:1.
+
+### Fixed
+- **Desktop Settings' "Line below the input" switch didn't save** — it was back as it was when you reopened Settings (the terminal worked).
+- **The folded bar's ✕ tip** — with auto-open off, a folded bar doesn't open again on its own, yet the ✕ in the confirm opened from the Easy Auto chip said it would. It now says *Fold · reopen: […] below the input*.
+
 ## [1.0.4] — 2026-10-21
 
 ### Changed

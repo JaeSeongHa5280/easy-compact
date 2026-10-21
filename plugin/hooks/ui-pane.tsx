@@ -97,8 +97,8 @@ export function settingsPreviews(ui: Ui, surface: string, d: PreviewData, act: P
   const sSet = d.s
   const pvU = d.pvU
   const pvBoxW = d.cols - (isTerminal ? 10 : 7)
-  const pvBand = (part: 'all' | 'limits' | 'cost' | 'turn', extra: BandPreviewExtra = {}) =>
-    drawBandPreview(ui, surface, pvU, d.nowMs, d.inputs, bandShowOf(sSet), sSet.sessionColors, d.pvTurn, viewOf(sSet).layout === 'one', d.spend, pvBoxW, part, extra)
+  const pvBand = (extra: BandPreviewExtra = {}) =>
+    drawBandPreview(ui, surface, pvU, d.nowMs, d.inputs, bandShowOf(sSet), sSet.sessionColors, d.pvTurn, viewOf(sSet).layout === 'one', d.spend, pvBoxW, extra)
   const pvLevel = pvU.contextTokens > 0 ? levelOf(pvU.contextTokens) : null
   const pvStatus =
     d.setTab === 'bar' && sSet.statusLine && !isSlim(sSet)
@@ -117,7 +117,7 @@ export function settingsPreviews(ui: Ui, surface: string, d: PreviewData, act: P
     ? {
         bar: (
           <Box key="pv" flexDirection="column">
-            {pvBand('all', {
+            {pvBand({
               label: hoverTip(
                 ui,
                 'pv-bar-tip',
@@ -135,17 +135,11 @@ export function settingsPreviews(ui: Ui, surface: string, d: PreviewData, act: P
             })}
           </Box>
         ),
-        limits: isSlim(sSet) ? null : pvBand('limits'),
-        cost: isSlim(sSet) ? null : pvBand('cost'),
-        turn: isSlim(sSet) ? null : pvBand('turn'),
         chip: null,
       }
     : d.setTab === 'chip'
       ? {
           bar: null,
-          limits: null,
-          cost: null,
-          turn: null,
           chip: answerPreview(ui, d.pvTurn, d.isSample, viewOf(sSet).info === 'full', surface, d.isPreviewOpen, sSet.questionHover, openSet['desc-pv-answer-tip'] === true, { toggleTip: () => act.toggleFold('desc-pv-answer-tip'), toggleOpen: act.togglePreview }),
         }
       : null

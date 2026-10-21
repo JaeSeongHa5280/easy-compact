@@ -43,8 +43,6 @@ export function draftCompactAt(s: Settings, d: CmpDraft): number {
 
 export type SettingsActions = {
   save: (next: Settings) => void
-  editCmp: (next: CmpDraft | null) => void
-  applyCmp: () => void
   typeTidy: (text: string) => void
   saveTidy: (text: string) => void
   typeCompact: (text: string) => void
@@ -63,7 +61,6 @@ export type SettingsActions = {
   diagSave: () => void
   diagReveal: () => void
   diagCopyPath: (surface?: string) => void
-  openOverview: () => void
   setTab: (tab: SettingsTab) => void
   sizeError?: (msg: string | null) => void
 }
@@ -75,7 +72,7 @@ export function settingsTabName(t: SettingsTab): string {
   return t === 'bar' ? L('바', 'Bar') : t === 'chip' ? L('답변 칩', 'Answer chip') : t === 'pane' ? L('패널', 'Pane') : t === 'compact' ? L('컴팩트', 'Compact') : L('일반', 'General')
 }
 
-export type SettingsPreviews = { bar: unknown; limits: unknown; cost: unknown; turn: unknown; chip: unknown }
+export type SettingsPreviews = { bar: unknown; chip: unknown }
 
 export type CacheInfo = {
   ttl: number
@@ -93,7 +90,6 @@ export function drawSettings(
   draft: string | null,
   rawOpen = false,
   onToggleRaw: () => void = () => {},
-  cmp: CmpDraft | null = null,
   ctxNow: number | null = null,
   surface = 'desktop',
   cols: number | null = null,
@@ -527,8 +523,8 @@ export function drawSettings(
             'hover-row',
             L('질문 강조', 'Highlight'),
             L(
-              '칩이나 패널의 질문 줄에 마우스를 올리면 그 답변에 파란 테두리가 생깁니다.',
-              'Hover a chip or a question row in the pane to outline that answer in blue.',
+              '칩이나 패널의 질문 줄에 마우스를 올리면 그 답변의 칸마다 왼쪽에 파란 막대가 생깁니다.',
+              'Hover a chip or a question row in the pane to mark each block of that answer with a blue bar on the left.',
             ),
             onOffControl(ui, 'questionHover', s.questionHover, on => save({ ...s, questionHover: on })),
             onOffW(),
@@ -1200,7 +1196,6 @@ export function drawSettingsView(
   phase: unknown,
   kind: unknown,
   surface: string,
-  cmp: CmpDraft | null = null,
   ctxNow: number | null = null,
   autoLang: Lang | null = null,
   cols: number | null = null,
@@ -1258,7 +1253,7 @@ export function drawSettingsView(
           {L('바꾸면 모든 세션에 바로 적용됩니다.', 'Changes apply to all sessions right away.')}
         </Text>
       )}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, cmp, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow], sizeErr)}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow], sizeErr)}
     </Box>
   )
 }
@@ -1444,7 +1439,7 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
     case 'done':
       state = [
         <Text key="upd-state" color="success" wrap="wrap">
-          {L(`${upd.market ?? ''} 판을 받았습니다. 곧 적용되고, 그대로면 앱을 다시 켜세요.`, `Downloaded ${upd.market ?? ''}. It applies shortly; restart the app if it doesn’t.`)}
+          {L(`${upd.market ?? ''} 버전을 받았습니다. 곧 적용되고, 그대로면 앱을 다시 켜세요.`, `Downloaded ${upd.market ?? ''}. It applies shortly; restart the app if it doesn’t.`)}
         </Text>,
       ]
       buttons = [checkBtn]
@@ -1460,8 +1455,8 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
       state = [
         <Text key="upd-state" dimColor wrap="wrap">
           {upd.devOff
-            ? L('개발자 모드가 꺼져 공개판처럼 보이는 중입니다. 폴더에서 불러온 판이라 업데이트 버튼은 없습니다.', 'Dev mode is off, so it looks like the public build. Loaded from a folder, so there is no Update button.')
-            : L('개발자 모드입니다. 폴더에서 불러온 판이라 업데이트 버튼이 없으니 저장소에서 받으세요.', 'Dev mode. Loaded from a folder, so there is no Update button. Pull it from the repository.')}
+            ? L('개발자 모드가 꺼져 공개 버전처럼 보이는 중입니다. 폴더에서 불러온 버전이라 업데이트 버튼은 없습니다.', 'Dev mode is off, so it looks like the public build. Loaded from a folder, so there is no Update button.')
+            : L('개발자 모드입니다. 폴더에서 불러온 버전이라 업데이트 버튼이 없으니 저장소에서 받으세요.', 'Dev mode. Loaded from a folder, so there is no Update button. Pull it from the repository.')}
         </Text>,
       ]
       break

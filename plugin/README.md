@@ -57,8 +57,9 @@ The hooks watch and draw. Apart from Easy Auto stopping a turn (above), they nev
 - `session.start`, `turn.start`, `turn.step`, `turn.complete`, `session.measure` and `session.compact`: read token counts and timings to keep the costs and the context size up to date. With Easy Auto on, `turn.step` is where it sees a long task pass the range and stops the turn.
 - `prompt.submit`: notes where a prompt came from (you, another session or a notification — so Easy Auto waits for you), and its text and number of images, to name the question. Passed on unchanged.
 - `prompt.suggest`: notes that Claude Code made its own suggestion request, so that cost is labelled. Passed on unchanged.
+- `tool.call`: notes the id of each tool call in the main conversation (the id only, not its input or result), so that hovering a question's cost chip can mark that question's tool rows too. Passed on unchanged.
 - `session.attach`, `session.detach`: when you switch into a session, the bar's values flash once; leaving clears that.
-- `ui.render`, `ui.message`, `ui.close`: draw the bar, the pane, the cost chip under answers, the running question strip above the input, the running cost next to the terminal's working indicator and the folded bar's button, and handle their buttons.
+- `ui.render`, `ui.message`, `ui.close`: draw the bar, the pane, the cost chip under answers (with Question highlight on, also a hidden bar beside each block and tool row of that answer, shown while you hover its chip or pane row), the running question strip above the input, the running cost next to the terminal's working indicator and the folded bar's button, and handle their buttons.
 
 It adds no slash command. With **Line below the input** turned on in Settings, it also keeps one line of text (the gist of the bar) in the footer below the input.
 

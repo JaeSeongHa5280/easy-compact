@@ -235,7 +235,6 @@ export const PARTS: readonly { key: PartKey; group: 'bar' | 'chat'; states: read
   { key: 'spin', group: 'chat', states: ['off', 'on'], layouts: ['button', 'one', 'three'] },
 ]
 export const PART_KEYS: readonly PartKey[] = PARTS.map(p => p.key)
-export const SLIM_PARTS = PARTS
 
 export function partName(key: PartKey): string {
   const names: Record<PartKey, [string, string]> = {
@@ -282,9 +281,6 @@ export function levelName(_key: PartKey, v: PartLevel): string {
   if (v === 'need') return L('필요할 때', 'When needed')
   return L('늘', 'Always')
 }
-export const slimPartName = partName
-export const slimPartUse = partUse
-export const slimLevelName = levelName
 
 export function normalizeParts(raw: unknown, base: PartShow): PartShow {
   const old = objectOf(raw)
@@ -308,12 +304,10 @@ export function isSlim(s: Pick<Settings, 'screen' | 'custom'>): boolean {
 export function slimViewOf(s: Pick<Settings, 'screen' | 'custom'>): PartShow {
   return viewOf(s).parts
 }
-export const partsOf = slimViewOf
 
 export function setPart(s: Settings, key: PartKey, v: PartLevel): Settings {
   return editView(s, view => ({ ...view, parts: { ...view.parts, [key]: v } }))
 }
-export const setSlimPart = setPart
 
 export function parsePartLevel(text: string): PartLevel | null {
   const t = text.replace(/\s+/g, '').toLowerCase()

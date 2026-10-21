@@ -124,10 +124,10 @@ export function stageText(ui: Ui, key: FlashKey, color: string | undefined, chil
   )
 }
 
-export function workMark(ui: Ui, key: string, isFrame = true, isStill = false) {
+export function workMark(ui: Ui, key: string, isFrame = true) {
   const Svg = onDesktop() ? (ui as unknown as { Svg?: SvgElement }).Svg : undefined
   if (!Svg) return null
-  const isRun = isMotionOn && !isStill
+  const isRun = isMotionOn
   return (
     <Svg
       key={key}
@@ -574,7 +574,7 @@ export type IconName = keyof typeof ICON_PATHS
 
 const ICON_GLYPH: Record<IconName, string> = { session: '💰', questions: '🧾', compact: '🗜', cold: '🧊', switch: '🔄', held: '⏸', update: '⬆' }
 
-export const ICON_GRAY = '#9aa0a8'
+export const ICON_GRAY = '#80858e'
 
 export const ICON_PX = 14
 

@@ -12,6 +12,7 @@ import type {
   Optimal,
   PaneMode,
   PaneView,
+  QuestionCells,
   SaveTurn,
   Settings,
   Source,
@@ -62,7 +63,7 @@ import {
 } from './cost'
 import type { CompactCalib, CompactMix, RetroCompacts, SpendDays } from './cost'
 import { ARRIVE_SETTLE_MS, clearArrival, drawingBar, endFlash, FLASH_STEP_MS, markArrival, noteRank, stepFlash, takeArrival } from './flash'
-import { BAND_PARTS, isSlim, parseSlim, slimCustom, spendOf, PARTS, setPart, parsePartKey, parsePartLevel, partName, levelName, slimViewOf, setLimits, bandModeName, bandPartName, bandShowMode, bandShowOf, bandStateText, chooseScreen, editView, hiddenNote, isViewPart, HIDDEN_NOTE_MS, parseScreen, screenName, setFolded, viewOf, paneAutoUse, paneSyncUse, revealLabel, revealName, setBandShow, chooseTidy, isAutoWord, parseOnOff, DEFAULT_SETTINGS, normalizeSettings, NEW_INSTALL_SCREEN, UPDATE_SCREEN, paneModeName, paneModeOf, parseBandMode, parseBandPart, parseMinutes, parseTokens, setBandPart, setCompactAt, setFollow, setRange, setTidyCustom, thresholdsOf, tidyStyles, tidyBody, usesCustom, setCompactCustom, setContextWindow, setEngineAuto } from './settings'
+import { BAND_PARTS, isSlim, parseSlim, slimCustom, spendOf, PARTS, setPart, parsePartKey, parsePartLevel, partName, levelName, slimViewOf, bandModeName, bandPartName, bandShowMode, bandShowOf, bandStateText, chooseScreen, editView, hiddenNote, isViewPart, HIDDEN_NOTE_MS, parseScreen, screenName, setFolded, viewOf, paneAutoUse, paneSyncUse, revealLabel, revealName, setBandShow, chooseTidy, isAutoWord, parseOnOff, DEFAULT_SETTINGS, normalizeSettings, NEW_INSTALL_SCREEN, UPDATE_SCREEN, paneModeName, paneModeOf, parseBandMode, parseBandPart, parseMinutes, parseTokens, setBandPart, setCompactAt, setFollow, setRange, setTidyCustom, thresholdsOf, tidyStyles, tidyBody, usesCustom, setCompactCustom, setContextWindow, setEngineAuto } from './settings'
 import {
   baseOfCategories,
   GROWTH_GUESS,
@@ -78,19 +79,19 @@ import { afterGuess, afterInNowTokens, compactSince, compactSummary, costScanFro
 import type { Boundary } from './flow'
 import type { CostScan, Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
-import { APP_MIN_USD, agentPart, agentSum, attachHead, continuedName, ctxNumText, PLUGIN_SENT, promptHead, stepLabel, paneTitle } from './text'
+import { APP_MIN_USD, agentPart, agentSum, attachHead, continuedName, ctxNumText, effortSplit, PLUGIN_SENT, promptHead, stepLabel, paneTitle } from './text'
 import type { AttachCounts } from './text'
 import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, directKeep, tidyVerdict, autoTurnOf, autoSavePrompt, autoContinuePrompt, autoCompactKeep, kindAuto, kindAutoSave, isAutoSaveKind } from './tidy'
 import { AUTO_AGAIN_REQUESTS, AUTO_WAIT_MS, autoChipText, autoDraftNote, autoFromStore, autoKey, autoLossOf, autoNoteText, autoRangeText, autoToggleNote, freshAuto, isAutoActive, isChainStuck, isTooSoon } from './auto'
 import { drawAutoNote } from './ui-auto'
-import { CH_PX, oldEngineNote, setGaugeShape, setMotion, row, gridOf, CARD_INSET, SVG_MAX_PX } from './ui-common'
+import { CH_PX, oldEngineNote, questionScope, setGaugeShape, setMotion, row, gridOf, CARD_INSET, SVG_MAX_PX } from './ui-common'
 import type { Ui } from './ui-common'
 import { setBandOrder, setCtxUnit, slimButtonText, slimParts } from './ui-band'
 import type { SpendShown } from './ui-band'
 import { permanentOf, drawAllSpend, setPaneBarMotion } from './ui-usage'
 import type { AllSpendLine, Tally } from './ui-usage'
-import { draftCompactAt, drawSettingsView, drawUpdateDrawer } from './ui-settings'
-import { drawAnswerChip, liveStrip, sampleTurn, sampleUsage, spinnerCost } from './ui-answer'
+import { drawSettingsView, drawUpdateDrawer } from './ui-settings'
+import { cellMark, drawAnswerChip, liveStrip, sampleTurn, sampleUsage, spinnerCost } from './ui-answer'
 import { drawBar } from './ui-bar'
 import type { BarActions, BarData } from './ui-bar'
 import { drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
@@ -103,7 +104,7 @@ import { setSurface } from './glyph'
 import type { Lang } from './i18n'
 import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
-import { agentRunFromText, foldOlder, nextSwitches, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, turnsFromRecords, withAgentStep, withAppStep } from './turns'
+import { agentRunFromText, cellScopeOf, foldOlder, nextEffortOutput, nextQuestionCells, nextSwitches, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, turnsFromRecords, withAgentStep, withAppStep, withCellScopes } from './turns'
 import { AFTER_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
 import type { PaneEvent, Urgency } from './state'
 
@@ -565,6 +566,8 @@ const flashTick = atom({ plugin: 'easy-compact', key: 'flashTick' } as const, 0)
 
 const turnSummaries = atom({ plugin: 'easy-compact', key: 'turnSummaries' } as const, [])
 
+const cellScopes = atom({ plugin: 'easy-compact', key: 'cellScopes' } as const, {})
+
 const turnsOlder = atom({ plugin: 'easy-compact', key: 'turnsOlder' } as const, null)
 
 const compactPhase = atom({ plugin: 'easy-compact', key: 'compactPhase' } as const, 'idle')
@@ -610,8 +613,6 @@ const updDrawer = atom({ plugin: 'easy-compact', key: 'updDrawer' } as const, fa
 const tidyDraft = atom({ plugin: 'easy-compact', key: 'tidyDraft' } as const, null)
 
 const compactDraft = atom({ plugin: 'easy-compact', key: 'compactDraft' } as const, null)
-
-const cmpDraft = atom({ plugin: 'easy-compact', key: 'cmpDraft' } as const, null)
 
 const flowPoints = atom({ plugin: 'easy-compact', key: 'flowPoints' } as const, [])
 
@@ -1383,15 +1384,6 @@ async function applyThresholds($: EngineInterface): Promise<void> {
   setThresholds(thresholdsOf(s, model))
 }
 
-async function applyCmpDraft($: EngineInterface): Promise<void> {
-  const d = await read($, cmpDraft)
-  if (d) {
-    const s = await currentSettings($)
-    await saveSettings($, { ...s, follow: d.follow, rangeStart: d.rangeStart, rangeEnd: d.rangeEnd, compactAt: draftCompactAt(s, d) })
-  }
-  await update($, cmpDraft, () => null)
-}
-
 async function setPaneMode($: EngineInterface, mode: PaneMode): Promise<void> {
   await update($, paneModeLocal, () => mode)
   await $.store.set(PANE_MODE_KEY, mode).catch(() => {})
@@ -1551,7 +1543,8 @@ async function recordStep(
       prev && prev.turnId === turnId
         ? prev
         : { turnId, steps: 0, cost: ZERO_COST, prompt: '', contextTokens: 0, outputTokens: 0, details: [], ...(ultraTurn?.turnId === turnId && ultraTurn.isOn ? { ultra: true as const } : {}) }
-    const switches = nextSwitches(base, model, effort === undefined ? undefined : String(effort))
+    const effortText = effort === undefined ? undefined : String(effort)
+    const switches = nextSwitches(base, model, effortText)
     return {
       ...base,
       steps: base.steps + 1,
@@ -1561,9 +1554,10 @@ async function recordStep(
       details: [...base.details, { label, usd: cost.usd, write: cost.write, ...(rewrite > 0 ? { rewrite } : {}) }].slice(-60),
       ...(rewrite > 0 ? { rewriteUsd: (base.rewriteUsd ?? 0) + rewrite } : {}),
       model,
-      ...(effort === undefined ? {} : { effort: String(effort) }),
+      ...(effortText === undefined ? {} : { effort: effortText }),
       ...(switchedFrom && !base.switchedFrom ? { switchedFrom } : {}),
       ...(switches ? { switches } : {}),
+      outputByEffort: nextEffortOutput(base.outputByEffort, effortText, cost.output),
     }
   })
 }
@@ -1664,6 +1658,8 @@ let suggestedSinceMark = false
 let pendingSubmit: { text: string; counts: AttachCounts | null; isIdle: boolean; atMs: number } | null = null
 
 let lastStepAnswer = ''
+
+let liveCells: QuestionCells | null = null
 
 async function ledgerUsd($: EngineInterface): Promise<number | null> {
   try {
@@ -1987,11 +1983,19 @@ async function markUltra($: EngineInterface, turnId: string): Promise<void> {
   await updateTurns($, list => list.map(t => (t.turnId === turnId ? { ...t, ultra: true as const } : t)))
 }
 
+async function cellScope($: EngineInterface, surface: string, cell: { toolIds?: readonly (string | undefined)[]; text?: string }): Promise<string | null> {
+  if (surface === 'terminal') return null
+  const s = await currentSettings($)
+  if (!s.questionHover || slimViewOf(s).chip === 'off') return null
+  return cellScopeOf(await read($, cellScopes), cell)
+}
+
 async function closeTurn($: EngineInterface, text: string, isAborted = false): Promise<void> {
   const now = await read($, live)
   await update($, live, () => null)
   if (!now || (now.steps === 0 && !isAborted)) return
   const measured = await read($, usage)
+  const split = effortSplit(now.outputByEffort)
   const summary: TurnSummary = {
     tail: tailOf(text),
     steps: now.steps,
@@ -2006,11 +2010,15 @@ async function closeTurn($: EngineInterface, text: string, isAborted = false): P
     ...(now.effort ? { effort: now.effort } : {}),
     ...(now.switchedFrom ? { switchedFrom: now.switchedFrom } : {}),
     ...(now.switches ? { switches: now.switches } : {}),
+    ...(split ? { outputByEffort: split } : {}),
     ...(now.ultra ? { ultra: true as const } : {}),
     turnId: now.turnId,
     ...(isAborted ? { aborted: true as const } : {}),
   }
   await updateTurns($, list => [...list, summary])
+  const cells = liveCells?.turnId === now.turnId ? liveCells : null
+  liveCells = null
+  if (cells) await update($, cellScopes, prev => withCellScopes(prev, cells, questionScope(summary.atMs)))
   if (!now.ultra) void markUltra($, now.turnId).catch(() => {})
 }
 
@@ -2733,8 +2741,6 @@ function settingsActs($: EngineInterface): SettingsActions {
   return {
     save: chosen => void saveFromSettings($, chosen),
     setTab: tab => void openSettingsTab($, tab),
-    editCmp: draftNow => void update($, cmpDraft, () => draftNow),
-    applyCmp: () => void applyCmpDraft($),
     typeTidy: text => void update($, tidyDraft, () => text),
     saveTidy: text => void saveTidyCustom($, text),
     typeCompact: text => void update($, compactDraft, () => text),
@@ -2753,7 +2759,6 @@ function settingsActs($: EngineInterface): SettingsActions {
     diagSave: () => void saveDiag($),
     diagReveal: () => void revealDiag($),
     diagCopyPath: surface => void copyDiagPath($, surface),
-    openOverview: () => void openUsageTab($, 'main'),
     sizeError: msg => {
       timingErr = msg
       $.ui.invalidate('ui.render')
@@ -2975,6 +2980,7 @@ export const register: Register = on => {
     const submitAt = await $.clock.now()
     if (e.agentId === undefined) await autoOnTurnStart($, e.turnId, e.text).catch(() => {})
     if (e.agentId === undefined) lastStepAnswer = ''
+    if (e.agentId === undefined) liveCells = { turnId: e.turnId, tools: [], tails: [] }
     const sent = e.agentId === undefined && pendingSubmit && submitAt - pendingSubmit.atMs < 60_000 ? pendingSubmit : null
     if (e.agentId === undefined) pendingSubmit = null
     const ownHead = promptHead(e.text)
@@ -3021,12 +3027,20 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('tool.call', async ($, e, next) => {
+    if (e.agentId === undefined && liveCells && typeof e.tool_use_id === 'string') liveCells = nextQuestionCells(liveCells, { tool: e.tool_use_id })
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('turn.step', async function* ($, e, next) {
     await ensureLang($)
     if (e.agentId === undefined) await autoAtStep($, e.turnId).catch(() => {})
     if (e.agentId === undefined && e.index === 0) void watchUltra($, e.turnId).catch(() => {})
     const result = yield* next(e)
-    if (e.agentId === undefined && typeof result.answer === 'string' && result.answer.trim() !== '') lastStepAnswer = result.answer
+    if (e.agentId === undefined && typeof result.answer === 'string' && result.answer.trim() !== '') {
+      lastStepAnswer = result.answer
+      if (liveCells?.turnId === e.turnId) liveCells = nextQuestionCells(liveCells, { answer: result.answer })
+    }
     if (e.agentId !== undefined && result.usage) {
       try {
         const cost = costOf(result.usage, result.usage.model, 5, null, engineNow)
@@ -3095,7 +3109,10 @@ export const register: Register = on => {
     if (e.props.isSummary) return next(e)
     const sums = await read($, turnSummaries)
     const summary = [...sums].reverse().find(s => endsWithTail(e.props.text, s.tail))
-    if (!summary) return next(e)
+    if (!summary) {
+      const scope = await cellScope($, e.surface, { text: e.props.text })
+      return scope ? cellMark($.ui.resolve(e), await next(e), scope) : next(e)
+    }
     const theirs = await next(e)
     const settings = await currentSettings($)
     if (slimViewOf(settings).chip === 'off') return theirs
@@ -3103,6 +3120,21 @@ export const register: Register = on => {
     const isOpen = isFull && e.surface !== 'terminal' && (await read($, answerOpen)).includes(summary.atMs)
     const isHover = e.surface !== 'terminal' && settings.questionHover
     return drawAnswerChip($.ui.resolve(e), { theirs, summary, isFull, surface: e.surface, isOpen, isHover }, { toggle: () => void toggleAnswer($, summary.atMs) })
+  })
+
+  on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const scope = await cellScope($, e.surface, { toolIds: [e.props.tool_use_id] })
+    return scope ? cellMark($.ui.resolve(e), await next(e), scope) : next(e)
+  })
+
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    const scope = await cellScope($, e.surface, { toolIds: [e.props.tool_use_id] })
+    return scope ? cellMark($.ui.resolve(e), await next(e), scope) : next(e)
+  })
+
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    const scope = await cellScope($, e.surface, { toolIds: e.props.calls.map(c => c.tool_use_id) })
+    return scope ? cellMark($.ui.resolve(e), await next(e), scope) : next(e)
   })
 
   on('session.compact', async ($, e, next) => {
@@ -3167,6 +3199,10 @@ export const register: Register = on => {
         isOn = !s.bandAutoOpen
         await saveFromSettings($, { ...s, bandAutoOpen: isOn })
         break
+      case 'statusLine':
+        isOn = !s.statusLine
+        await saveFromSettings($, { ...s, statusLine: isOn })
+        break
       case 'paneAutoOpen':
       case 'paneShared':
         isOn = !s[id]
@@ -3184,35 +3220,14 @@ export const register: Register = on => {
         isOn = s.motion === 'reduce'
         await saveFromSettings($, { ...s, motion: isOn ? 'system' : 'reduce' })
         break
-      case 'limits':
-        isOn = viewOf(s).parts.lim5 === 'off' && viewOf(s).parts.lim7 === 'off'
-        await saveFromSettings($, setLimits(s, isOn))
-        break
-      case 'spendToday':
-      case 'spendMonth': {
-        const k = id === 'spendToday' ? 'today' : 'month'
-        isOn = viewOf(s).parts[k] === 'off'
-        await saveFromSettings($, setPart(s, k, isOn ? 'on' : 'off'))
-        break
-      }
       case 'chipDetail': {
         if (s.screen !== 'custom') return { props: { on: viewOf(s).info === 'full', disabled: true } }
         isOn = viewOf(s).info !== 'full'
         await saveFromSettings($, editView(s, v => ({ ...v, info: isOn ? 'full' : 'lean' })))
         break
       }
-      default: {
-        const part = id.startsWith('show-') ? BAND_PARTS.find(p => p.key === id.slice(5)) : undefined
-        if (!part) return next(e)
-        if (part.group === 'limits') {
-          isOn = !bandShowOf(s)[part.key]
-          await saveFromSettings($, setBandPart(s, part.key, isOn))
-          break
-        }
-        if (s.screen !== 'custom') return { props: { on: bandShowOf(s)[part.key], disabled: true } }
-        isOn = !bandShowOf(s)[part.key]
-        await saveFromSettings($, setBandPart(s, part.key, isOn))
-      }
+      default:
+        return next(e)
     }
     return { props: { on: isOn, disabled: false } }
   })
@@ -3279,7 +3294,6 @@ export const register: Register = on => {
         await read($, compactPhase),
         await read($, compactKind),
         e.surface,
-        await read($, cmpDraft),
         (await read($, usage))?.contextTokens ?? null,
         autoLang,
         cols,

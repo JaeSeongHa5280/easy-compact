@@ -1,9 +1,8 @@
-// 요율 적용일 대조(0.9.2 — 사용자 "엔진에서 못 얻으면 툴 업데이트할 때 실측해서 반영"): 엔진은 요율표도, 요율이 언제 바뀌었는지도 mod 에
-// 주지 않는다. 그래서 요율이 바뀐 모델(hooks/cost.ts PRICE_TABLE 의 history 줄)마다 "언제부터 새 요율인가" 를 날짜 후보별로 바꿔 가며 이 PC
-// 이번 달 합(대화 기록 + 장부 extra — 패널 "이번 달" 과 같은 셈, 컴팩트 어림은 합계 밖이라 뺌)을 내고, 앱 설정(사용량) 화면 금액과 가장
-// 가까운 날을 알려 준다. 고칠 곳: 그 줄의 until(그날부터 새 요율), 가격표 발표일은 announced.
-// 0.9.3(회사 PC 의뢰서): 설정 화면은 요청을 보낸 엔진 판의 요율표로 센다 — history 줄의 minEngine(그 판부터 새 요율)이 있으면 지금 셈은 판
-// 먼저(판을 모르는 기록만 until 날짜). 맨 위 줄 = 지금 셈, 그 아래 판별 토큰(어느 판이 얼마나 썼나), 날짜 후보는 판을 무시하고 견준 것
+// 요율 적용일 대조 — 엔진은 요율표도, 요율이 언제 바뀌었는지도 mod 에 주지 않는다. 그래서 요율이 바뀐 모델(hooks/cost.ts PRICE_TABLE 의
+// history 줄)마다 "언제부터 새 요율인가" 를 날짜 후보별로 바꿔 가며 이 PC 이번 달 합(대화 기록 + 장부 extra — 패널 "이번 달" 과 같은 셈,
+// 컴팩트 어림은 합계 밖이라 뺌)을 내고, 앱 설정(사용량) 화면 금액과 가장 가까운 날을 알려 준다. 고칠 곳: 그 줄의 until(그날부터 새 요율),
+// 가격표 발표일은 announced. history 줄에 minEngine(그 버전부터 새 요율)이 있으면 지금 셈은 버전 먼저(버전을 모르는 기록만 until 날짜).
+// 맨 위 줄 = 지금 셈, 그 아래 버전별 토큰(어느 버전이 얼마나 썼나), 날짜 후보는 버전을 무시하고 견준 것
 //
 // 쓰는 법: node tools/rate-fit.mjs --usage <설정 화면 이번 달 $> [--month YYYY-MM] [--config <설정 폴더>] [--data <mod 데이터 폴더>] [--json]
 //   --usage   앱 설정(사용량) 화면의 이번 달 금액(Claude Code 만 — Cowork 같은 다른 제품은 빼고)
@@ -12,7 +11,8 @@
 //   --data    기본 = <설정 폴더>/plugins/data/easy-compact* 중 extra/ 가 있는 곳(마켓 설치본 easy-compact-easy-compact · 개발본 easy-compact)
 //   --json    사람 표 대신 JSON 한 줄(AI · 다른 도구용)
 // 읽기만 한다(대화 기록 · 장부 · cost.ts). 캐시는 OS 임시 폴더(easy-compact-rate-fit-cache.json) — 두 번째부터 빠르다. 네트워크 없음.
-// 공개본 플러그인 폴더에도 든다(plugin/tools) — 회사 PC 처럼 설정 화면 금액이 있는 PC 에서 바로 돌리게. 플러그인은 이 도구를 부르지 않는다.
+// 공개본 플러그인 폴더에도 든다(plugin/tools) — 설정 화면 금액이 있는 PC 에서 설치본 그대로 돌리게. 플러그인은 이 도구를 부르지 않는다.
+
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -21,7 +21,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
-/** cost.ts PRICE_TABLE 을 읽는다(엔진 없이 node 로 — check-rates 와 같은 길). 줄마다 { match, base, long?, history[] } */
 export function parseTable(src) {
   const start = src.indexOf('const PRICE_TABLE')
   const body = src.slice(start, src.indexOf(']\n', src.indexOf('= [', start)))
@@ -34,7 +33,6 @@ export function parseTable(src) {
     const row = { source: m[1], match: new RegExp(m[1]), label: m[2], base: rates(+m[3], +m[4], +m[5]), history: [] }
     const long = /long:\s*\{\s*over:\s*([\d_]+),\s*rates:\s*rates\('[^']*',\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)/s.exec(part)
     if (long) row.long = { over: Number(long[1].replace(/_/g, '')), rates: rates(+long[2], +long[3], +long[4]) }
-    // 이력 줄 { until, minEngine?, base: rates(…), announced? } — 칸 순서와 상관없이 읽는다(0.9.3 에 minEngine 이 until 뒤에 들어갔다)
     for (const h of part.matchAll(/\{\s*until:\s*'([\d-]+)'([^{}]*)\}/g)) {
       const base = /base:\s*rates\('[^']*',\s*([\d.]+),\s*([\d.]+),\s*([\d.]+)\)/.exec(h[2])
       if (!base) continue
@@ -48,7 +46,6 @@ export function parseTable(src) {
   return rows
 }
 
-/** 엔진 판 v 가 min 이상인가(cost.ts engineAtLeast 와 같은 규칙) — 못 읽으면 null */
 export function engineAtLeast(v, min) {
   const parts = s => /^(\d+)\.(\d+)\.(\d+)/.exec(String(s).trim())?.slice(1).map(Number) ?? null
   const a = parts(v)
@@ -58,16 +55,11 @@ export function engineAtLeast(v, min) {
   return true
 }
 
-/** scan-spend 모델 칸 "<model>|<엔진 판>" → [모델, 판 또는 null] */
 const splitKey = key => {
   const bar = key.lastIndexOf('|')
   return bar > 0 ? [key.slice(0, bar), key.slice(bar + 1) || null] : [key, null]
 }
 
-/**
- * 그 요청의 요율(ratesFor 와 같은 규칙 — 판을 알고 minEngine 이 있으면 판, 아니면 날짜). over = 이 줄의 history 를 날짜로 바꿔 볼 때
- * [줄 번호, 첫 이력의 until] — 그 줄은 판을 무시하고 날짜로만 센다(날짜 후보 견주기)
- */
 function rateOf(rows, model, tier, day, over, engine = null) {
   const i = rows.findIndex(r => r.match.test(model))
   if (i < 0) return null
@@ -82,7 +74,6 @@ function rateOf(rows, model, tier, day, over, engine = null) {
   return old?.base ?? row.base
 }
 
-/** 한 달(YYYY-MM) 합 = 기록 토큰 × 그 요청의 요율(판 먼저, 없으면 그날) + 장부 extra(달러) */
 export function monthTotal(rows, days, extra, month, over = null) {
   let usd = 0
   for (const [day, byModel] of Object.entries(days ?? {})) {
@@ -102,9 +93,6 @@ export function monthTotal(rows, days, extra, month, over = null) {
 
 const addDays = (day, n) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
 
-/**
- * 요율이 바뀐 줄마다 적용일 후보(그 달 1일 ~ 그 달 끝 + "바뀌지 않음") 별 이번 달 합과 설정 화면과의 차. best = 차가 가장 작은 날
- */
 export function fitDates(rows, days, extra, month, usage) {
   const first = `${month}-01`
   const next = addDays(`${month}-28`, 4).slice(0, 7)
@@ -113,7 +101,6 @@ export function fitDates(rows, days, extra, month, usage) {
   rows.forEach((row, i) => {
     if (row.history.length === 0) return
     const h = row.history[0]
-    // 이번 달에 걸린 변경만 — 적용일 · 발표일이 둘 다 이 달 밖이면 이 달 합엔 상관없다
     const touches = [h.until, h.announced].some(d => d && d >= first && d <= addDays(last, 1))
     if (!touches) return
     const cands = []
@@ -129,10 +116,6 @@ export function fitDates(rows, days, extra, month, usage) {
   return out
 }
 
-/**
- * 판으로 갈리는 변경(minEngine)이 있는 줄마다 그 달 판별 사용 — 판(모르면 "?") · 캐시 읽기 · 전체 토큰 · 처음 · 마지막 날 · 새 요율 판인가(의뢰서
- * 2-2 표 — 어느 판이 얼마나 썼나). 모델은 표에서 처음 맞는 줄이 그 줄일 때만(opus-5-5 가 opus-5 보다 위인 것처럼)
- */
 export function engineBreakdown(rows, days, month) {
   const out = []
   for (const row of rows) {
@@ -163,10 +146,8 @@ export function engineBreakdown(rows, days, month) {
   return out
 }
 
-/** 지금 셈이 설정 화면과 이만큼 안이면 맞은 것(의뢰서 검수 기준 $2) */
 const FIT_USD = 2
 
-/** <설정 폴더>/plugins/data/easy-compact* 중 extra/ 가 있는 곳(여럿이면 마켓 설치본 먼저) */
 function findData(config) {
   const base = join(config, 'plugins', 'data')
   let names = []
@@ -227,7 +208,6 @@ function main() {
   for (const f of fits) {
     const what = f.changed.map(([k, a, b]) => `${k} ${a} → ${b}`).join(' · ')
     console.log(`\n${f.model} (${f.source}) — ${what} · 날짜로만 셌다면(판 무시) · 판 모르는 기록의 기준일 ${f.until}${f.announced ? ` · 가격표 발표 ${f.announced}` : ''}`)
-    // 금액이 같은 날이 이어지면 한 줄로(그 사이 그 모델을 안 쓴 날) — 표시(지금 · 가격표 · 가장 가까움)가 붙은 날은 따로
     const markOf = c => [c.until === f.until ? '지금' : '', f.best && c.until === f.best.until ? '← 가장 가까움' : '', c.until === f.announced ? '가격표' : ''].filter(Boolean).join(' · ')
     const groups = []
     for (const c of f.cands) {

@@ -23,7 +23,6 @@ closeSync(fd)
 
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 const lines = buf.toString('utf8').split('\n')
-// 끝 2 MiB 의 첫 줄은 중간에서 잘렸을 수 있다 — 못 읽으면 건너뛴다
 let found = '-'
 for (let i = lines.length - 1; i >= 0; i--) {
   const line = lines[i]

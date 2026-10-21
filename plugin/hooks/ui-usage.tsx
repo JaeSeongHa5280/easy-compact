@@ -57,7 +57,6 @@ import {
   CH_PX,
   compactMark,
   compactMarkCells,
-  foldButton,
   foldHead,
   section,
   growthText,
@@ -1052,11 +1051,17 @@ export function drawHistory(
         const isFull = isOpen && act.isFull?.(id) === true
         const fullEl =
           isOpen && act.toggleFull && (isFull || detailCut(top.shown, textBox - DETAIL_INSET, g, tags)) ? fullButton(ui, `hf-${i}`, isFull, () => act.toggleFull!(id)) : null
-        const costLines = isOpen ? costBreakdown(t.cost, t.appUsd, t.details, t.steps) : []
+        const costLines = isOpen ? costBreakdown(t.cost, t.appUsd, t.details, t.steps, t.outputByEffort, t.ultra) : []
         const extra = isOpen ? (
           <Box key={`hbox-${i}`} {...DETAIL_BOX}>
             {costLines.map((line, k) => {
-              const el = agentText(ui, `hb-${i}-${k}`, line, (agentSum(t.details)?.runningCount ?? 0), { dimColor: true, wrap: 'wrap' })
+              const el = line.includes('Ultracode') ? (
+                <Text key={`hb-${i}-${k}`} wrap="wrap">
+                  {(ultraPieces(ui, `hb-${i}-${k}`, line) as unknown[]).map((p, j) => (typeof p === 'string' ? <Text key={`hb-${i}-${k}-d${j}`} dimColor>{p}</Text> : p))}
+                </Text>
+              ) : (
+                agentText(ui, `hb-${i}-${k}`, line, (agentSum(t.details)?.runningCount ?? 0), { dimColor: true, wrap: 'wrap' })
+              )
               return fullEl && k === costLines.length - 1 ? (
                 <Box key={`hbr-${i}`} flexDirection="row" flexWrap="wrap" alignItems="center" columnGap={1}>
                   {el}
@@ -1563,7 +1568,7 @@ export function rateChangeText(model: string, n: (v: number) => string, since: R
   if (steps.length === 0) return null
   if (byEngine) {
     return L(
-      `요율이 바뀐 것: ${steps.join(' · ')}. 앱 설정(사용량) 화면처럼 요청마다 그 요청을 보낸 Claude Code 판의 요율로 셉니다.`,
+      `요율이 바뀐 것: ${steps.join(' · ')}. 앱 설정(사용량) 화면처럼 요청마다 그 요청을 보낸 Claude Code 버전의 요율로 셉니다.`,
       `Rate change: ${steps.join(' · ')}. Like Claude's usage page, each request uses the rates of the Claude Code version that sent it.`,
     )
   }

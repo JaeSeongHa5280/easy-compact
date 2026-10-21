@@ -436,8 +436,6 @@ export function coldFor(
   return coldCompact(ctx, inputs, u.model, u.sharedTokens ?? 0, ttlOf(u))
 }
 
-export const SESSION_HEX = { yellow: '#e0a030', orange: '#e8833a', red: '#e05555' } as const
-
 export const SESSION_TEXT = ['warning', '#d9722b', 'error'] as const
 
 export function sessionColorOf(usd: number, colors: readonly [number, number, number]): string | undefined {

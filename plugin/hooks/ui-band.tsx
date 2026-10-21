@@ -457,35 +457,14 @@ export function drawBandPreview(
   isLean = false,
   spend: SpendShown | null = null,
   boxW: number | null = null,
-  part: 'all' | 'limits' | 'cost' | 'turn' = 'all',
   extra: BandPreviewExtra = {},
 ) {
   const { Box, Text } = ui
-  const label = extra.label ?? previewLabel(ui, `pv-label-${part}`, L('미리보기', 'Preview'))
+  const label = extra.label ?? previewLabel(ui, 'pv-label-all', L('미리보기', 'Preview'))
   const frame = (key: string, body: unknown) => previewFrame(ui, key, label, body)
   const limits = !isLean && u && u.rateLimits.length > 0 ? drawLimitsLine(ui, surface, u, nowMs, show) : null
   const turn = show.lastTurn ? drawLastTurnLine(ui, last) : null
-  const why = (key: string, text: string) =>
-    frame(
-      key,
-      <Text key={`${key}-why`} dimColor wrap="wrap">
-        {text}
-      </Text>,
-    )
-  if (part === 'limits' && !limits) {
-    return why(
-      'band-preview-limits',
-      isLean
-        ? L('간단 화면은 바가 한 줄이라 한도 줄이 안 보입니다', 'The one-row Simple screen has no limits row')
-        : u && u.rateLimits.length > 0
-          ? L('한도 줄이 꺼져 있습니다', 'The limits row is off')
-          : L('이 세션엔 한도 값이 아직 없습니다(첫 응답 뒤 · API 키 세션엔 없음)', 'No limit values in this session yet (after the first answer · none with an API key)'),
-    )
-  }
-  if (extra.slim && part === 'all') return drawSlimPreview(ui, surface, u, nowMs, extra.slim, colors, label, extra.live ?? null)
-  if (part === 'turn' && (isLean || !turn)) {
-    return why('band-preview-turn', isLean ? L('간단 화면은 바가 한 줄이라 질문 줄이 안 보입니다', 'The one-row Simple screen has no question row') : L('질문 줄이 꺼져 있습니다', 'The question row is off'))
-  }
+  if (extra.slim) return drawSlimPreview(ui, surface, u, nowMs, extra.slim, colors, label, extra.live ?? null)
   const fake = (key: string, text: string) => (
     <Text key={key} dimColor>
       {text}
@@ -542,10 +521,6 @@ export function drawBandPreview(
       ) : null}
     </Box>
   )
-  if (part !== 'all') {
-    const one = part === 'limits' ? line('pv-1', limits, null) : part === 'cost' ? line('pv-2', est, null) : line('pv-3', turn, compact)
-    return frame(`band-preview-${part}`, one)
-  }
   const isRegroup = !isMin && limits !== null && hasTurnRow && u !== null
   const regrouped = (() => {
     if (!isRegroup || !u) return null
@@ -664,11 +639,14 @@ export function slimParts(ui: Ui, u: Usage, nowMs: number, view: SlimShow, color
     const pct = `${Math.round(r.percentUsed)}%`
     const reset = view.resets === 'on' && r.resetsAt ? L(`${fmtUntil(r.resetsAt, nowMs)} 후 리셋`, `resets in ${fmtUntil(r.resetsAt, nowMs)}`) : null
     const name = `${limitName(r.kind)} `
-    const pctEl = (
-      <Text bold {...(r.percentUsed >= 90 ? { color: 'error' } : r.percentUsed >= 70 ? { color: 'warning' } : {})}>
-        {pct}
-      </Text>
-    )
+    const pctEl =
+      r.percentUsed >= 70 ? (
+        <Text bold color={r.percentUsed >= 90 ? 'error' : 'warning'}>
+          {pct}
+        </Text>
+      ) : (
+        <Text dimColor>{pct}</Text>
+      )
     const short: LineCell = {
       key: `s-lim-${r.kind}`,
       text: `${name}${pct}`,

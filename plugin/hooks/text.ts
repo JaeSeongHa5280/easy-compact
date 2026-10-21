@@ -1,4 +1,4 @@
-import type { CostParts, StepDetail, StepSwitch } from '../types'
+import type { CostParts, EffortOutput, StepDetail, StepSwitch } from '../types'
 import { approxUsd, fmtTokens, fmtUsd, modelKey, modelName, otherModelOf, repriceTurns } from './cost'
 import { L, plural } from './i18n'
 import { onTerminal, withIcon } from './glyph'
@@ -209,20 +209,39 @@ export function agentHead(): string {
   return onTerminal() ? L('에이전트', 'agents') : '🤖'
 }
 
-export function costBreakdown(cost: CostParts, appUsd?: number, details?: readonly StepDetail[], steps?: number): string[] {
-  const parts = (read: number, write: number, output: number) =>
-    L(`읽기 ${fmtUsd(read)} · 쓰기 ${fmtUsd(write)} · 출력 ${fmtUsd(output)}`, `read ${fmtUsd(read)} · write ${fmtUsd(write)} · output ${fmtUsd(output)}`)
+export function effortSplit(list: readonly EffortOutput[] | undefined): EffortOutput[] | null {
+  return list && list.length >= 2 && list.every(e => e.effort !== '') ? [...list] : null
+}
+
+export function costBreakdown(
+  cost: CostParts,
+  appUsd?: number,
+  details?: readonly StepDetail[],
+  steps?: number,
+  byEffort?: readonly EffortOutput[],
+  ultra?: boolean,
+): string[] {
+  const split = effortSplit(byEffort)
+  const think = (isMain: boolean) => {
+    const by = isMain && split ? split.map(e => `${effortLabel(e.effort, ultra)} ${fmtUsd(e.usd)}`).join(' · ') : null
+    return by ? L(`(생각 포함 — ${by})`, ` (incl. thinking — ${by})`) : L('(생각 포함)', ' (incl. thinking)')
+  }
+  const parts = (read: number, write: number, output: number, isMain = false) =>
+    L(
+      `읽기 ${fmtUsd(read)} · 쓰기 ${fmtUsd(write)} · 출력 ${fmtUsd(output)}${think(isMain)}`,
+      `read ${fmtUsd(read)} · write ${fmtUsd(write)} · output ${fmtUsd(output)}${think(isMain)}`,
+    )
   const reqs = steps === undefined ? '' : L(`요청 ${steps}회 `, `${plural(steps, 'request')} `)
   const hasApp = appUsd !== undefined && appUsd >= APP_MIN_USD
   const app = hasApp ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd!)}`, `app's own requests ${fmtUsd(appUsd!)}`)) : null
   const a = agentSum(details)
   const compactUsd = (details ?? []).reduce((s, d) => s + (d.compact ? d.usd : 0), 0)
   const compact = compactUsd >= APP_MIN_USD ? withIcon('🗜', L(`컴팩트 ${fmtUsd(compactUsd)}`, `Compact ${fmtUsd(compactUsd)}`)) : null
-  if (!a && !compact) return [`${steps === undefined ? '' : L(`요청 ${steps}회 · `, `${plural(steps, 'request')} · `)}${parts(cost.read, cost.write, cost.output)}${app ? ` · ${app}` : ''}`]
+  if (!a && !compact) return [`${steps === undefined ? '' : L(`요청 ${steps}회 · `, `${plural(steps, 'request')} · `)}${parts(cost.read, cost.write, cost.output, true)}${app ? ` · ${app}` : ''}`]
   const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - compactUsd)
   const main =
     (!a || a.hasParts) && !compact
-      ? `${L('메인', 'Main')} ${reqs}${fmtUsd(mainUsd)} · ${parts(Math.max(0, cost.read - (a?.read ?? 0)), Math.max(0, cost.write - (a?.write ?? 0)), Math.max(0, cost.output - (a?.output ?? 0)))}`
+      ? `${L('메인', 'Main')} ${reqs}${fmtUsd(mainUsd)} · ${parts(Math.max(0, cost.read - (a?.read ?? 0)), Math.max(0, cost.write - (a?.write ?? 0)), Math.max(0, cost.output - (a?.output ?? 0)), true)}`
       : `${L('메인', 'Main')} ${reqs}${fmtUsd(mainUsd)}`
   const agentHeadText = a ? withIcon('🤖', L(`에이전트 ${a.count}개 · 요청 ${a.steps}회 ${fmtUsd(a.usd)}`, `${plural(a.count, 'agent')} · ${plural(a.steps, 'request')} ${fmtUsd(a.usd)}`)) : ''
   const agents = !a ? null : a.hasParts ? `${agentHeadText} · ${parts(a.read, a.write, a.output)}` : agentHeadText
@@ -254,12 +273,6 @@ export function answerBreakdown(
     hasApp ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd!)}`, `app's own requests ${fmtUsd(appUsd!)}`)) : null,
   ].filter((x): x is string => x !== null)
   return { main: `${L('메인 ', 'Main ')}${reqs}${fmtUsd(mainUsd)}${parts}`, mainSteps: details.filter(d => !d.agent && !d.app && !d.compact), others }
-}
-
-export function topSteps(details: readonly StepDetail[], n: number): { shown: StepDetail[]; rest: number; restUsd: number } {
-  const top = new Set([...details].sort((a, b) => b.usd - a.usd).slice(0, n))
-  const shown = details.filter(d => top.has(d))
-  return { shown, rest: details.length - shown.length, restUsd: details.reduce((sum, d) => sum + (top.has(d) ? 0 : d.usd), 0) }
 }
 
 export function recentSteps(details: readonly StepDetail[], n: number): { shown: StepDetail[]; rest: number; restUsd: number } {

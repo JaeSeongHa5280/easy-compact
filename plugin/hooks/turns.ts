@@ -1,5 +1,5 @@
-import type { CostParts, LiveTurn, StepDetail, StepSwitch, Tokens, TurnsOlder, TurnSummary } from '../types'
-import { costOf, dayOf, engineOfLine, modelKey } from './cost'
+import type { CostParts, EffortOutput, LiveTurn, QuestionCells, StepDetail, StepSwitch, Tokens, TurnsOlder, TurnSummary } from '../types'
+import { costOf, dayOf, engineOfLine, modelKey, tailOf } from './cost'
 import type { FlowRecord } from './flow'
 import { L } from './i18n'
 import { agentSum, promptHead } from './text'
@@ -192,6 +192,53 @@ export function nextSwitches(prev: LiveTurn, model: string, effort: string | und
   if (prev.effort !== undefined && effort !== undefined && prev.effort !== effort) add.push({ at, kind: 'effort', from: prev.effort, to: effort })
   if (add.length === 0) return prev.switches
   return [...(prev.switches ?? []), ...add].slice(-SWITCHES_KEEP)
+}
+
+export const CELLS_TOOLS_MAX = 500
+export const CELLS_TAILS_MAX = 200
+export const CELL_SCOPES_MAX = 5000
+
+export function nextQuestionCells(cells: QuestionCells, add: { tool?: string; answer?: string }): QuestionCells {
+  const tool = add.tool ?? ''
+  const tail = add.answer ? tailOf(add.answer) : ''
+  const tools = tool && !cells.tools.includes(tool) && cells.tools.length < CELLS_TOOLS_MAX ? [...cells.tools, tool] : cells.tools
+  const tails = tail && !cells.tails.includes(tail) && cells.tails.length < CELLS_TAILS_MAX ? [...cells.tails, tail] : cells.tails
+  return tools === cells.tools && tails === cells.tails ? cells : { ...cells, tools, tails }
+}
+
+export function withCellScopes(prev: Readonly<Record<string, string>>, cells: QuestionCells, scope: string): Record<string, string> {
+  const add = [...cells.tools.map(id => `t:${id}`), ...cells.tails.map(t => `m:${t}`)]
+  if (add.length === 0) return { ...prev }
+  const fresh = new Set(add)
+  const kept = Object.entries(prev).filter(([k]) => !fresh.has(k))
+  return Object.fromEntries([...kept, ...add.map(k => [k, scope] as const)].slice(-CELL_SCOPES_MAX))
+}
+
+export function cellScopeOf(scopes: Readonly<Record<string, string>>, cell: { toolIds?: readonly (string | undefined)[]; text?: string }): string | null {
+  for (const id of cell.toolIds ?? []) {
+    const hit = id ? scopes[`t:${id}`] : undefined
+    if (hit) return hit
+  }
+  if (cell.text === undefined) return null
+  const exact = scopes[`m:${tailOf(cell.text)}`]
+  if (exact) return exact
+  const block = cell.text.replace(/\s+/g, ' ').trim()
+  if (!block) return null
+  let found: string | null = null
+  for (const [key, scope] of Object.entries(scopes)) {
+    if (!key.startsWith('m:')) continue
+    const tail = key.slice(2)
+    if (block.endsWith(tail) || (block.length >= 20 && tail.endsWith(block))) found = scope
+  }
+  return found
+}
+
+export function nextEffortOutput(prev: readonly EffortOutput[] | undefined, effort: string | undefined, usd: number): EffortOutput[] {
+  const key = effort ?? ''
+  const list = prev ?? []
+  const i = list.findIndex(e => e.effort === key)
+  if (i < 0) return [...list, { effort: key, usd }]
+  return list.map((e, j) => (j === i ? { ...e, usd: e.usd + usd } : e))
 }
 
 export function withAgentStep(details: readonly StepDetail[], agentId: string, label: string, cost: CostParts, model: string, atMs: number): StepDetail[] {

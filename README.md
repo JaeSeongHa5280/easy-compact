@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.4-4c9be8" alt="Version 1.0.4">
+  <img src="https://img.shields.io/badge/version-1.0.5-4c9be8" alt="Version 1.0.5">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -108,6 +108,13 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.0.5
+
+- **Question highlight covers the whole answer** — hover a chip or a pane row and every block of that answer (text, tool rows) gets a blue bar on its left. 1.0.2 outlined only the last block.
+- **Output marked "(incl. thinking)"** — an open question's output says thinking tokens are in it, split by effort when the effort changed partway.
+- **Slim limit % dims · darker icons on light themes** — under 70% the Slim line's limit % dims like the bar; the gray icons' contrast on white goes from 2.6 to 3.7:1.
+- **Fixed** — desktop Settings' "Line below the input" switch didn't save; the ✕ tip of a folded bar with auto-open off.
 
 ## What's new in 1.0.4
 
@@ -333,13 +340,13 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 **While Claude works, every step gets its own line and price.** Tool names are colored by kind, and app tools get plain names (update_plan → *Task list* and so on). The **Running question strip** right above the input shows the question's cost and request count on one line too — a laptop bug works away, and while agents run a lead bug waves and small bugs follow (up to three, then *+N*) until it reads *N agents done*. When the answer ends the strip goes and the answer chip takes over (Off · Always in the Settings **Answer chip** tab).
 
-<img src="docs/img/history.png" width="760" alt="A finished question opened: read, write and output split, then each step">
+<img src="docs/img/history.png" width="760" alt="A finished question opened: read, write and output (incl. thinking) split, then each step">
 
-**Open any finished question** (detailed view): main (read / write / output) · 🤖 agents · 🗜 compact · ⚙ app's own requests, then each step (newest on top; the rest fold into *N earlier steps* at the bottom). If a step's text is cut off, **[Full text ▾]** opens all of that question's step text. `(+42k)` is how much context that question added. Questions where the model or effort changed get a 🔄 — *🔄 effort change from this question: High → Max* when it differs from the previous question, *🔄 effort change from request 5: Extra → Max* when it changed partway, with the same text at the end of that request's step line. Ultracode shows as an effort level (a purple *Ultracode*, changes like *Max → Ultracode*). The simple view doesn't open questions — each shows its total and `N requests · 🤖 N agents`. Question costs survive restarting the app and reopening older sessions, and a question you stop mid-answer stays as *⏹ stopped*. The question log keeps 60, but totals cover the whole session (questions pushed out are counted separately — requests in the total that no question caught show as *Outside questions $X*). A forked session counts only its own share after the fork.
+**Open any finished question** (detailed view): main (read / write / output — output includes thinking tokens, marked *(incl. thinking)*, and is split by effort like *(incl. thinking — Extra $0.03 · Max $0.30)* when the effort changed partway) · 🤖 agents · 🗜 compact · ⚙ app's own requests, then each step (newest on top; the rest fold into *N earlier steps* at the bottom). If a step's text is cut off, **[Full text ▾]** opens all of that question's step text. `(+42k)` is how much context that question added. Questions where the model or effort changed get a 🔄 — *🔄 effort change from this question: High → Max* when it differs from the previous question, *🔄 effort change from request 5: Extra → Max* when it changed partway, with the same text at the end of that request's step line. Ultracode shows as an effort level (a purple *Ultracode*, changes like *Max → Ultracode*). The simple view doesn't open questions — each shows its total and `N requests · 🤖 N agents`. Question costs survive restarting the app and reopening older sessions, and a question you stop mid-answer stays as *⏹ stopped*. The question log keeps 60, but totals cover the whole session (questions pushed out are counted separately — requests in the total that no question caught show as *Outside questions $X*). A forked session counts only its own share after the fork.
 
-<img src="docs/img/question-cost.png" width="900" alt="The blue question-cost chip under an answer, opened into main requests, agents and steps; hovering it highlights the answer and its row in the Easy Compact pane">
+<img src="docs/img/question-cost.png" width="900" alt="The blue question-cost chip under an answer, opened into main requests, agents and steps; hovering it marks each block of the answer with a bar on its left and outlines its row in the Easy Compact pane">
 
-**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and the answer and the row get a blue outline while the chip's border turns bold (desktop, with Settings **Answer chip** tab → **Highlight** on — off at first).
+**Every answer ends with a blue chip: what that question cost.** On the Detailed screen, **▸ Details** opens it in place — main · 🤖 agents · 🗜 compact · ⚙ app's own requests, with the priciest main steps. **Hover** the chip or the question's row in the pane and each block of the answer (text, tool rows) gets a blue bar on its left, the row gets a blue outline and the chip's border turns bold (desktop, with Settings **Answer chip** tab → **Highlight** on — off at first).
 
 ### 3. Know when to compact
 

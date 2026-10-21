@@ -692,7 +692,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       }}
     />
   )
-  const isAutoShown = sNow.bandFolded
+  const isAutoShown = sNow.bandFolded && sNow.bandAutoOpen
   const foldedLabel = revealLabel(!sNow.bandAutoOpen, u && u.contextTokens > 0 ? levelOf(u.contextTokens) : null, u && u.contextTokens > 0 ? `${u.contextEstimated ? '~' : ''}${ctxNumText(u.contextTokens, u.window, sNow.ctxUnit)}` : null)
   const modeButton = withTip(`band-mode-box-${mode}`, (
     <Button

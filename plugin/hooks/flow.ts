@@ -237,8 +237,6 @@ export function coldGapMs(ttl: number = CACHE_TTL_MIN): number {
   return (ttl + (ttl >= 60 ? 5 : 1)) * 60_000
 }
 
-export const COLD_GAP_MS = coldGapMs(CACHE_TTL_MIN)
-
 const ttlAt = (p: CtxPoint | undefined) => (p?.ttl === 5 ? 5 : CACHE_TTL_MIN)
 
 export function isColdStart(flow: Flow, atMs: number, model: string): boolean {

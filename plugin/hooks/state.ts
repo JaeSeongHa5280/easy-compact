@@ -25,7 +25,7 @@ export const OUTPUT_KEY = 'compactOutputTokens'
 
 export const SAVE_KEEP = 5
 
-export const SETTINGS_OPEN_DEFAULT: Record<string, boolean> = { 'sec-screen': true }
+export const SETTINGS_OPEN_DEFAULT: Record<string, boolean> = {}
 
 export const DIAG_CLOSED = { open: false, where: 'drawer' as 'drawer' | 'gen', redact: true, copiedLines: null as number | null, savedPath: null as string | null }
 

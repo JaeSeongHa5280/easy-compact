@@ -160,6 +160,21 @@ export function answerDetail(ui: Ui, summary: TurnSummary) {
   )
 }
 
+export function questionBar(ui: Ui, scope: string) {
+  const { Box } = ui
+  return <Box key="q-bar" position="absolute" top={0} bottom={0} left={-1} width={1} display="none" backgroundColor={BRAND_HEX} hover={{ scope, display: 'flex' }} />
+}
+
+export function cellMark(ui: Ui, theirs: unknown, scope: string) {
+  const { Box } = ui
+  return (
+    <Box key="q-cell" flexDirection="column">
+      {questionBar(ui, scope)}
+      {theirs}
+    </Box>
+  )
+}
+
 export function drawAnswerChip(ui: Ui, d: { theirs: unknown; summary: TurnSummary; isFull: boolean; surface: string; isOpen: boolean; isHover: boolean }, act: { toggle: () => void }) {
   const { Box, Button, Text } = ui
   const { theirs, summary, isFull, surface, isOpen, isHover } = d
@@ -180,7 +195,7 @@ export function drawAnswerChip(ui: Ui, d: { theirs: unknown; summary: TurnSummar
     <Box flexDirection="column">
       {isHover ? (
         <Box key="q-ans" flexDirection="column">
-          <Box key="q-glow" position="absolute" top={0} left={0} right={0} bottom={0} display="none" borderStyle="round" borderColor={BRAND_HEX} hover={{ scope, display: 'flex' }} />
+          {questionBar(ui, scope)}
           {theirs}
         </Box>
       ) : (
