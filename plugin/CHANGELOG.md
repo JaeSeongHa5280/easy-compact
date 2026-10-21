@@ -4,6 +4,13 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.0.3] — 2026-10-21
+
+### Changed
+- **Model and effort changes partway through a question** — in the Easy Compact pane's cost per question, if the model or effort changes during a question, its row shows something like *🔄 effort Extra → Max from request 5*, and the open step list shows the same text at the end of the first request that used the new value. Before, only each question's last request was kept, so changes partway through were lost. A change from the previous question still shows as *🔄 effort High → Max*, now compared with the question's first request.
+- **Questions that ran with Ultracode** — a question that ran with Ultracode on shows *Ultracode* in its row, in the same purple the Claude app and Claude Code use. It's read from the Ultracode on/off marks in the session record.
+- **Effort levels in the app's words** — Low · Medium · High · Extra · Max instead of the raw *max*. The note at the bottom of the pane says higher effort uses more thinking tokens, so output costs more, and that this is already in the amounts.
+
 ## [1.0.2] — 2026-10-21
 
 ### Changed

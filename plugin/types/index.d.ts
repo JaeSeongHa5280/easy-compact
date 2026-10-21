@@ -417,6 +417,12 @@ export type StepDetail = {
 /** 요청 · 턴 비용을 요율별로 나눈 값(달러) */
 export type CostParts = { read: number; write: number; output: number; input: number; usd: number }
 
+/**
+ * 한 질문 안에서 모델 · 노력이 바뀐 자리(1.0.3) — at = 그 질문의 몇 번째 메인 요청부터(1부터), from · to = 앞 요청 값 · 이 요청 값.
+ * 질문 사이 바뀜은 앞 질문과 견준다(ui-usage changesOf) — 여기엔 질문 안 바뀜만
+ */
+export type StepSwitch = { at: number; kind: 'model' | 'effort'; from: string; to: string }
+
 /** 지금 도는 메인 턴의 누적(작업 중 표시용). prompt 는 사용자가 보낸 글 앞부분 */
 export type LiveTurn = {
   turnId: string
@@ -436,6 +442,8 @@ export type LiveTurn = {
   effort?: string
   /** 이 질문의 첫 요청이 모델을 바꾼 뒤 첫 요청이었다 — 바꾸기 전 모델 id */
   switchedFrom?: string
+  /** 이 질문 안에서 모델 · 노력이 바뀐 자리(1.0.3) — 없으면 안 바뀜 */
+  switches?: StepSwitch[]
 }
 
 /** 끝난 턴 요약. 답변 블록은 id 가 없어 마지막 글 끝부분(tail)으로 찾는다 */
@@ -462,6 +470,10 @@ export type TurnSummary = {
   effort?: string
   /** 이 질문의 첫 요청이 모델을 바꾼 뒤 첫 요청이었다 — 바꾸기 전 모델 id */
   switchedFrom?: string
+  /** 이 질문 안에서 모델 · 노력이 바뀐 자리(1.0.3). 이전 판 기록에는 없다 */
+  switches?: StepSwitch[]
+  /** Ultracode 가 켜진 채 돈 질문(1.0.3 — 대화 기록의 엔진 켬 · 끔 알림으로 가림). 이전 판 기록에는 없다 */
+  ultra?: true
   /** 그 질문의 메인 턴 id — 질문이 끝난 뒤에도 도는 백그라운드 에이전트의 값을 띄운 질문에 더한다. 이전 판 기록에는 없다 */
   turnId?: string
 }

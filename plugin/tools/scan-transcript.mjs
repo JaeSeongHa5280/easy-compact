@@ -19,10 +19,32 @@
 //                            cost-state 값 — 갈라 올 때 엔진이 되살린 장부)
 //   s <값>                 (세션마다 마지막 cost-state 값 — 엔진이 세션을 열 때 되살렸을 수 있는 값)
 
+//
+// --ultra <시작 바이트>: Ultracode 켬 · 끔 단서만(1.0.3 — hooks/flow.ts ULTRA_ON · ULTRA_OFF 와 같은 글) — 그 바이트부터 끝까지에서 마지막 것
+//   on | off | none   (none = 그 구간에 엔진 켬 · 끔 알림 줄이 없음 — mod 는 앞 구간 값을 그대로 쓴다. 지난번 끝 바이트부터 읽어 질문마다 짧게 끝난다)
+
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 
+const ULTRA_ON = '"attachment":{"type":"ultra_effort_enter"'
+const ULTRA_OFF = '"attachment":{"type":"ultra_effort_exit"'
+
 const args = process.argv.slice(2)
+const ultraAt = args.indexOf('--ultra')
+if (ultraAt >= 0) {
+  const from = Number(args[ultraAt + 1])
+  if (ultraAt !== 1 || !args[0] || !Number.isInteger(from) || from < 0) {
+    console.error('쓰는 법: node scan-transcript.mjs <트랜스크립트.jsonl> --ultra <시작 바이트>')
+    process.exit(2)
+  }
+  let state = 'none'
+  for await (const line of createInterface({ input: createReadStream(args[0], { encoding: 'utf8', start: from }), crlfDelay: Infinity })) {
+    if (line.includes(ULTRA_ON)) state = 'on'
+    else if (line.includes(ULTRA_OFF)) state = 'off'
+  }
+  console.log(state)
+  process.exit(0)
+}
 const isCosts = args.includes('--costs')
 const [path, own] = args.filter(a => a !== '--costs')
 if (!path || (isCosts && !own)) {

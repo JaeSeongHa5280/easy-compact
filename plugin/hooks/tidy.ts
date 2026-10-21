@@ -2,16 +2,6 @@ import type { Settings } from '../types'
 import { L } from './i18n'
 import { compactText, tidyBody, tidyStyles } from './settings'
 
-/**
- * 컴팩트 지시문 — [컴팩트 준비] 프롬프트 · 진행/보류 표시 · 컴팩트 종류 이름 · 요약에 남길 것.
- * 글은 지금 언어로(L) 만들어 함수로 준다 — 상수로 두면 불러올 때의 언어로 굳는다.
- */
-
-/**
- * 컴팩트 중 글에 붙는 이름. 하는 일(엔진이 요약을 한 번 만든다)은 다 같고 요약에 붙는 지시만 다르다 — 버튼 둘은 우리 지시
- * (directKeep · compactKeep), /compact 는 친 글(없으면 엔진 기본), 자동은 없음. 예전엔 넷 다 "컴팩트 중" 하나라 어느 것이
- * 도는지 안 보였다. 저장하고 컴팩트는 이 단계에선 저장이 끝났으니 앞 단계 글("저장 중 → 끝나면 컴팩트")을 잇는다
- */
 export function kindDirect(): string {
   return L('기본 컴팩트', 'Plain compact')
 }
@@ -20,12 +10,6 @@ export function kindTidy(): string {
   return L('저장 끝 → 컴팩트', 'Saved → compacting')
 }
 
-/**
- * 버튼이 세운 게 아닌 컴팩트(엔진이 출처를 트리거로만 준다 — 버튼이 돌린 /compact 도 manual 이라 버튼 쪽은 미리 세운다).
- * Claude 에 원래 있는 기능이라 "클로드 기본" 을 붙인다 — 우리 버튼(바로 컴팩트 · 저장하고 컴팩트)과 섞여 읽히지 않게.
- * "네이티브" 는 개발 외래어, "앱" 은 ⚙ 앱 자체 요청과 같은 말이라 직접 친 /compact 도 앱이 스스로 돌린 것처럼 읽혔다.
- * 뒤는 Claude Code 의 이름 — 명령 compact, 자동은 Auto-compact. 둘 다 슬래시 없이: /auto-compact 라는 명령은 없다
- */
 export function compactKindOf(trigger: string): string {
   return trigger === 'auto'
     ? L('클로드 기본 auto-compact', "Claude's auto-compact")
@@ -34,7 +18,6 @@ export function compactKindOf(trigger: string): string {
       : L('컴팩트', 'Compact')
 }
 
-/** 저장 턴 프롬프트 머리 · 정리 답 맨 끝 줄의 판정 표시. 판정은 두 언어 다 받는다(턴 도중 언어가 바뀌어도) */
 const TAGS = { tidy: ['[컴팩트 준비]', '[Compact prep]'], go: ['[컴팩트 진행]', '[Compact go]'], hold: ['[컴팩트 보류]', '[Compact hold]'] } as const
 
 const pick = (pair: readonly [string, string]) => L(pair[0], pair[1])
@@ -43,7 +26,6 @@ export function tidyTag(): string {
   return pick(TAGS.tidy)
 }
 
-/** 정리 답 맨 끝 줄의 판정. 진행이 있어야만 컴팩트한다 — 없으면 멈추고 알린다 */
 export function markGo(): string {
   return pick(TAGS.go)
 }
@@ -52,18 +34,11 @@ export function markHold(): string {
   return pick(TAGS.hold)
 }
 
-/** 질문 글이 저장 턴 프롬프트인가(두 언어) */
 export function isTidyPrompt(text: string): boolean {
   return TAGS.tidy.some(tag => text.startsWith(tag))
 }
 
-/**
- * 정리 턴에 보내는 글. 모델이 읽는 프롬프트라 이 턴은 토큰이 든다.
- * 돈 판단은 mod 가 숫자로 한다 — 손해면 이 버튼이 막혀 이 글이 안 간다. 세션은 잃을 정보만 본다: 예전엔 손익 숫자를 주고
- * "손해인지" 를 맡겼는데, 세션은 정보 쪽만 보고("메모리에 저장해 둬 잃을 게 없다") 손해인 컴팩트를 진행했다
- */
 export function tidyPrompt(body: readonly string[]): string {
-  // 앞(잃을 정보 판단 — 비용은 mod 가 버튼에서 이미 봄)과 뒤([컴팩트 진행] 표시)는 고정, 가운데만 설정의 문구(프리셋 또는 사용자 글)
   return [
     L(
       `${tidyTag()} 사용자가 "이지 컴팩트" 를 눌렀습니다. 이 답이 끝나면 대화를 컴팩트합니다(세부 내용은 요약만 남습니다).`,
@@ -88,10 +63,6 @@ export function tidyPrompt(body: readonly string[]): string {
   ].join('\n')
 }
 
-/**
- * 설정 화면 "보내는 글 전체": [저장하고 컴팩트] 저장 턴에 보내는 글 줄마다(① 칸 줄 표시) + 그 턴이 끝난 뒤 /compact 지시 +
- * [바로 컴팩트] 의 /compact 지시(② 칸 글이 두 버튼 모두에 붙는다)
- */
 export function tidyScript(s: Settings): { text: string; isBody: boolean }[] {
   const body = tidyBody(s)
   return [
@@ -105,10 +76,6 @@ export function tidyScript(s: Settings): { text: string; isBody: boolean }[] {
   ]
 }
 
-/**
- * 저장하고 컴팩트의 /compact 지시: 정리 답(이어서 할 일 등)을 요약이 버리지 않게 넘기는 고정 지시 + 설정 ② 칸 글(요약에 남길 것).
- * s 를 안 주면 고정 지시만(예전 꼴)
- */
 export function compactKeep(s?: Settings): string {
   const fixed = L(
     `직전 ${tidyTag()} 답에 적은 내용("이어서 할 일" 등)은 요약에 그대로 남길 것`,
@@ -118,42 +85,28 @@ export function compactKeep(s?: Settings): string {
   return extra ? `${fixed}. ${extra}` : fixed
 }
 
-/**
- * 정리 없이 바로 컴팩트할 때(캐시가 살아 있든 식었든) — 정리 턴이 하던 일을 요약 지시로 대신한다: 설정 ② 칸 글(프리셋 일반 =
- * "진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것"). 지시문은 몇십 토큰이라 늘 붙인다. 캐시 상태로 정하는 건 정리 단계를 할지 뿐이다
- */
 export function directKeep(s?: Settings): string {
   return s ? compactText(s) : L('진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것', 'Keep ongoing work, decisions and next steps in the summary')
 }
 
-/** 정리 턴의 답으로 다음 단계를 정한다(표시는 두 언어 다 받는다) */
 export function tidyVerdict(reason: string, answer: string): 'go' | 'hold' | 'stopped' | 'unmarked' {
   if (reason !== 'answer') return 'stopped'
   if (TAGS.hold.some(mark => answer.includes(mark))) return 'hold'
   return TAGS.go.some(mark => answer.includes(mark)) ? 'go' : 'unmarked'
 }
 
-// ── 이지 오토(2026-10-19 — 정본 D:/Claude/easy-compact-auto.md §5): 우리가 보내는 글 둘 · /compact 지시 · 이름 ──
-
-/** 우리 턴 글 머리표 — 우리 훅은 우리 보내기를 못 봐서(엔진 "every hook but the calling one") turn.start 글로 알아본다. 두 언어 다 */
 const AUTO_TAGS = { save: ['[이지 오토 · 요약]', '[Easy Auto · summary]'], cont: ['[이지 오토 · 이어가기]', '[Easy Auto · continue]'] } as const
 
-/** 글이 우리 요약 · 이어가기 턴인가(앞의 "The … plugin sent a message:" 는 부른 쪽이 떼고 준다) */
 export function autoTurnOf(text: string): 'save' | 'continue' | null {
   const t = text.trimStart()
   if (AUTO_TAGS.save.some(tag => t.startsWith(tag))) return 'save'
   return AUTO_TAGS.cont.some(tag => t.startsWith(tag)) ? 'continue' : null
 }
 
-/** 진행 칸 · 질문별 비용의 우리 턴 이름 = 글 머리표(지금 언어로) */
 export function autoTurnName(kind: 'save' | 'continue'): string {
   return pick(kind === 'save' ? AUTO_TAGS.save : AUTO_TAGS.cont)
 }
 
-/**
- * 요약 글: 머리표 + 이지 컴팩트 "일반" 저장 글 + 끝 줄 [컴팩트 진행]. 보류는 묻지 않는다 — 답에 표시가 없으면 이번 사슬만 쉰다.
- * mid = 긴 일 도중 끊음(이어가기를 보낸다는 것까지 알려 남은 일을 적게 한다 — 시험 B "단계 3~5는 아직 실행하지 않았습니다"). at = 넘은 크기 글
- */
 export function autoSavePrompt(path: 'end' | 'mid', at: string): string {
   const head =
     path === 'mid'
@@ -173,12 +126,10 @@ export function autoSavePrompt(path: 'end' | 'mid', at: string): string {
   ].join('\n')
 }
 
-/** 이어가기 글(긴 일 길만) */
 export function autoContinuePrompt(): string {
   return `${pick(AUTO_TAGS.cont)} ${L('컴팩트를 마쳤습니다. 하던 일을 이어서 해 주세요.', 'Compacting is done. Please continue what you were doing.')}`
 }
 
-/** 이지 오토의 /compact 지시: 요약 답을 남기라는 고정 지시 + 이지 컴팩트 "일반" 지시 */
 export function autoCompactKeep(): string {
   return L(
     `직전 ${pick(AUTO_TAGS.save)} 답에 적은 내용("이어서 할 일" 등)은 요약에 그대로 남길 것. ${tidyStyles().default.compact}`,
@@ -186,7 +137,6 @@ export function autoCompactKeep(): string {
   )
 }
 
-/** 컴팩트 중 이름(바 "이지 오토 컴팩트 중…") · 저장 중 표시(compactKind 에 둔다 — ui-common phaseLook 이 "이지 오토 · 저장 중 → 끝나면 컴팩트") */
 export function kindAuto(): string {
   return L('이지 오토 컴팩트', 'Easy Auto compact')
 }
@@ -195,7 +145,6 @@ export function kindAutoSave(): string {
   return L('이지 오토', 'Easy Auto')
 }
 
-/** 저장 중 표시가 이지 오토 것인가(언어가 바뀌어도) */
 export function isAutoSaveKind(kind: unknown): boolean {
   return kind === '이지 오토' || kind === 'Easy Auto'
 }

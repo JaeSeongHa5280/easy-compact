@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.2-4c9be8" alt="Version 1.0.2">
+  <img src="https://img.shields.io/badge/version-1.0.3-4c9be8" alt="Version 1.0.3">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -108,6 +108,12 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.0.3
+
+- **Model and effort changes partway through a question** — in cost per question, a question where they changed shows *🔄 effort Extra → Max from request 5*, and the open step list shows the same at the end of the first request that used the new value. Before, only the last request's values were kept.
+- **Questions that ran with Ultracode** — the row shows *Ultracode* in the app's purple.
+- **Effort levels in the app's words** — *Max*, *Extra* and so on. The note at the bottom says higher effort uses more thinking tokens, so output costs more, and that's already in the amounts.
 
 ## What's new in 1.0.2
 
@@ -323,7 +329,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 <img src="docs/img/history.png" width="760" alt="A finished question opened: read, write and output split, then each step">
 
-**Open any finished question** (detailed view): main (read / write / output) · 🤖 agents · 🗜 compact · ⚙ app's own requests, then each step (newest on top; the rest fold into *N earlier steps* at the bottom). If a step's text is cut off, **[Full text ▾]** opens all of that question's step text. `(+42k)` is how much context that question added. The simple view doesn't open questions — each shows its total and `N requests · 🤖 N agents`. Question costs survive restarting the app and reopening older sessions, and a question you stop mid-answer stays as *⏹ stopped*. The question log keeps 60, but totals cover the whole session (questions pushed out are counted separately — requests in the total that no question caught show as *Outside questions $X*). A forked session counts only its own share after the fork.
+**Open any finished question** (detailed view): main (read / write / output) · 🤖 agents · 🗜 compact · ⚙ app's own requests, then each step (newest on top; the rest fold into *N earlier steps* at the bottom). If a step's text is cut off, **[Full text ▾]** opens all of that question's step text. `(+42k)` is how much context that question added. Questions where the model or effort changed get a 🔄 — *🔄 effort High → Max* when it differs from the previous question, *🔄 effort Extra → Max from request 5* when it changed partway, with the same text at the end of that request's step line. Questions that ran with Ultracode show a purple *Ultracode*. The simple view doesn't open questions — each shows its total and `N requests · 🤖 N agents`. Question costs survive restarting the app and reopening older sessions, and a question you stop mid-answer stays as *⏹ stopped*. The question log keeps 60, but totals cover the whole session (questions pushed out are counted separately — requests in the total that no question caught show as *Outside questions $X*). A forked session counts only its own share after the fork.
 
 <img src="docs/img/question-cost.png" width="900" alt="The blue question-cost chip under an answer, opened into main requests, agents and steps; hovering it highlights the answer and its row in the Easy Compact pane">
 
