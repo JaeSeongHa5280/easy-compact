@@ -23,7 +23,7 @@ import {
   pendingCompact,
 } from './flow'
 import type { CompactEffect, Flow } from './flow'
-import { APP_MIN_USD, ctxNumText, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, callsOf, costBreakdown, effortName, limitName, midSwitchText, modelText, switchText, switchTags, recentSteps } from './text'
+import { APP_MIN_USD, ctxNumText, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, betweenSwitchText, callsOf, costBreakdown, effortKey, effortLabel, limitName, midSwitchText, switchText, switchTags, recentSteps } from './text'
 import {
   ACCENT,
   TALK_HEX,
@@ -72,7 +72,7 @@ import { ctxUnitNow, fitLine, rewriteNote } from './ui-band'
 import type { LineCell } from './ui-band'
 import { L, plural } from './i18n'
 import { iconOf, onDesktop, withIcon } from './glyph'
-import { BRAND_HEX, questionScope, rasterOf } from './ui-common'
+import { BRAND_HEX, questionScope, rasterOf, ultraPieces } from './ui-common'
 import { flowCells, flowLayout, timingCells } from './cells'
 
 const FLOW_ROWS = 6
@@ -85,14 +85,21 @@ export function setPaneBarMotion(m: PaneBarMotion): void {
 }
 
 export function changesOf(
-  t: { model?: string; effort?: string; switchedFrom?: string; switches?: readonly StepSwitch[] },
+  t: { model?: string; effort?: string; switchedFrom?: string; switches?: readonly StepSwitch[]; ultra?: true },
   older?: TurnSummary,
 ): { fromModel: string | null; fromEffort: string | null; toModel: string | null; toEffort: string | null } {
   const toModel = t.switches?.find(s => s.kind === 'model')?.from ?? t.model ?? null
-  const toEffort = t.switches?.find(s => s.kind === 'effort')?.from ?? t.effort ?? null
+  const firstEffort = t.switches?.find(s => s.kind === 'effort')?.from ?? t.effort
   const fromModel = t.switchedFrom ?? (older?.model && toModel && modelKey(older.model) !== modelKey(toModel) ? older.model : null)
-  const fromEffort = older?.effort && toEffort && older.effort !== toEffort ? older.effort : null
-  return { fromModel, fromEffort, toModel, toEffort }
+  const oldKey = older ? effortKey(older.effort, older.ultra) : null
+  const newKey = effortKey(firstEffort, t.ultra)
+  const isEffortChanged = oldKey !== null && newKey !== null && oldKey !== newKey
+  return {
+    fromModel,
+    toModel,
+    fromEffort: isEffortChanged ? effortLabel(older?.effort, older?.ultra) : null,
+    toEffort: isEffortChanged ? effortLabel(firstEffort, t.ultra) : null,
+  }
 }
 
 export const LIVE_SHOWN = 8
@@ -115,9 +122,12 @@ export function liveBlock(
   const keepFrom = mainIdx[Math.max(0, mainIdx.length - LIVE_SHOWN)] ?? 0
   const shown = now.details.filter((d, i) => d.agent || d.app || d.compact || i >= keepFrom)
   const hidden = now.details.length - shown.length
-  const model = modelText(now.model, now.effort)
   const midModel = midSwitchText(now.switches, 'model')
   const midEffort = midSwitchText(now.switches, 'effort')
+  const isModelMark = (fromModel !== null && toModel !== null) || midModel !== null
+  const isEffortMark = (fromEffort !== null && toEffort !== null) || midEffort !== null
+  const plainEffort = isEffortMark || now.ultra ? '' : effortLabel(now.effort, false)
+  const model = [!isModelMark && now.model ? modelName(now.model) : '', plainEffort].filter(Boolean).join(' · ')
   const tags = switchTags(now.details, now.steps, now.switches)
   const look = phaseLook(phase, kind)
   const textBox = cols - CARD_INSET - g.iconW - 1 - g.leadW - 1
@@ -153,8 +163,19 @@ export function liveBlock(
                 <Text key="lr" dimColor>{L(` · 요청 ${callsOf(now.steps, now.details)}회`, ` · ${plural(callsOf(now.steps, now.details), 'request')}`)}</Text>,
                 liveAgents ? (isMark ? agentText(ui, 'la', liveAgents, (agentSum(now.details)?.runningCount ?? 0), {}, ' · ') : <Text key="la">{` · ${liveAgents}`}</Text>) : null,
                 model ? <Text key="lm" dimColor>{` · ${model}`}</Text> : null,
-                fromModel && toModel ? <Text key="lfm">{` · ${withIcon('🔄', `${L('모델', 'model')} ${modelName(fromModel)} → ${modelName(toModel)}`)}`}</Text> : null,
-                fromEffort && toEffort ? <Text key="lfe">{` · ${withIcon('🔄', `${L('노력', 'effort')} ${effortName(fromEffort)} → ${effortName(toEffort)}`)}`}</Text> : null,
+                !isEffortMark && now.ultra ? (
+                  <Text key="lu">
+                    {' · '}
+                    {ultraPieces(ui, 'lu', effortLabel(now.effort, true))}
+                  </Text>
+                ) : null,
+                fromModel && toModel ? <Text key="lfm">{` · ${withIcon('🔄', betweenSwitchText('model', modelName(fromModel), modelName(toModel)))}`}</Text> : null,
+                fromEffort && toEffort ? (
+                  <Text key="lfe">
+                    {' · '}
+                    {ultraPieces(ui, 'lfe', withIcon('🔄', betweenSwitchText('effort', fromEffort, toEffort)))}
+                  </Text>
+                ) : null,
                 midModel ? <Text key="lmm">{` · ${withIcon('🔄', midModel)}`}</Text> : null,
                 midEffort ? <Text key="lme">{` · ${withIcon('🔄', midEffort)}`}</Text> : null,
                 rewriteNote(ui, now.rewriteUsd),
@@ -236,7 +257,7 @@ export function historyRow(
   const isMark = agents !== null && agents.startsWith('🤖 ') && onDesktop()
   if (agents) parts.push(isMark ? agentText(ui, 'a', agents, (agentSum(t.details)?.runningCount ?? 0)) : <Text key="a">{agents}</Text>)
   if (t.model) {
-    if (fromModel && toModel) parts.push(<Text key="m">{withIcon('🔄', `${L('모델', 'model')} ${modelName(fromModel)} → ${modelName(toModel)}`)}</Text>)
+    if (fromModel && toModel) parts.push(<Text key="m">{withIcon('🔄', betweenSwitchText('model', modelName(fromModel), modelName(toModel)))}</Text>)
     if (midModel) parts.push(<Text key="mm">{withIcon('🔄', midModel)}</Text>)
     if (!fromModel && !midModel)
       parts.push(
@@ -245,17 +266,20 @@ export function historyRow(
         </Text>,
       )
   }
-  if (t.effort) {
-    if (fromEffort && toEffort) parts.push(<Text key="e">{withIcon('🔄', `${L('노력', 'effort')} ${effortName(fromEffort)} → ${effortName(toEffort)}`)}</Text>)
+  if (t.effort || t.ultra) {
+    if (fromEffort && toEffort) parts.push(<Text key="e">{ultraPieces(ui, 'e', withIcon('🔄', betweenSwitchText('effort', fromEffort, toEffort)))}</Text>)
     if (midEffort) parts.push(<Text key="em">{withIcon('🔄', midEffort)}</Text>)
     if (!fromEffort && !midEffort)
       parts.push(
-        <Text key="e" dimColor>
-          {effortName(t.effort)}
-        </Text>,
+        t.ultra ? (
+          <Text key="e">{ultraPieces(ui, 'e', effortLabel(t.effort, true))}</Text>
+        ) : (
+          <Text key="e" dimColor>
+            {effortLabel(t.effort, false)}
+          </Text>
+        ),
       )
   }
-  if (t.ultra) parts.push(<Text key="u" color="effortUltra">Ultracode</Text>)
   if (t.contextTokens) {
     parts.push(
       <Text key="c">
@@ -517,7 +541,7 @@ export function drawFlow(
       ? decideRow(
           ui,
           'f-extra-note',
-          L('미룬 비용', 'Deferral cost'),
+          L('더 든 비용', 'Deferral cost'),
           <Text wrap="wrap">
             <Text bold>{fmtUsd(extraTotal)}</Text>
             {extra && extraTotal > 0 ? (
@@ -761,7 +785,7 @@ export function growthOf(t: TurnSummary, older: TurnSummary | undefined): number
 
 const DECIDE_MIN_VALUE = 24
 function decideNameW(): number {
-  return nameColW([L('지금 하면', 'Compact now'), L('미룬 비용', 'Deferral cost')])
+  return nameColW([L('지금 하면', 'Compact now'), L('더 든 비용', 'Deferral cost')])
 }
 function decideStacked(cols: number | null): boolean {
   return cols !== null && cols - decideNameW() - 1 < DECIDE_MIN_VALUE
@@ -1574,11 +1598,15 @@ export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null,
           </Text>
         ) : null
       })()}
-      {last?.effort ? (
+      {last?.effort || last?.ultra ? (
         <Text dimColor wrap="wrap">
-          {L(
-            `노력 ${effortName(last.effort)}(지난 질문 기준) · 노력이 높을수록 생각 토큰이 늘어 출력 값이 커집니다 — 금액엔 이미 들어 있습니다`,
-            `Effort ${effortName(last.effort)} (last question) · higher effort uses more thinking tokens, so output costs more — already counted in the amounts`,
+          {ultraPieces(
+            ui,
+            'ref-effort',
+            L(
+              `생각 깊이(앱 메뉴의 '노력') ${effortLabel(last.effort, last.ultra)}(지난 질문 기준) · 깊을수록 생각 토큰이 늘어 출력 값이 커집니다 — 금액엔 이미 들어 있습니다`,
+              `Effort ${effortLabel(last.effort, last.ultra)} (last question) · higher effort uses more thinking tokens, so output costs more — already counted in the amounts`,
+            ),
           )}
         </Text>
       ) : null}

@@ -4,6 +4,13 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.0.4] — 2026-10-21
+
+### Changed
+- **Clearer change text** — cost per question now shows changes as *🔄 effort change from this question: Extra → Max* and *🔄 effort change from request 5: …*, saying what it's compared with and splitting old → new. Model changes use the same form (*model change: …*). 1.0.3's Korean wording read as if the effort were Extra; in Korean the label is now 생각 깊이 (thinking depth), and the note at the bottom of the pane ties it to the app's menu name.
+- **Ultracode as an effort level** — a question where you picked Ultracode in the app's effort menu shows a purple *Ultracode* instead of Extra, and changes read *Max → Ultracode* · *Ultracode → Max*. 1.0.3 showed the Extra that Claude Code runs Ultracode at, so a *Max → Extra* change you never made appeared.
+- **Shown while the question runs** — Ultracode is detected at the question's first request rather than after it ends, so the running row shows it too. When there's a change, the running row no longer repeats the same value.
+
 ## [1.0.3] — 2026-10-21
 
 ### Changed

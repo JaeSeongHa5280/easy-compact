@@ -329,6 +329,21 @@ function tagText(tag: string | undefined): string {
   return tag ? ` · ${withIcon('🔄', tag)}` : ''
 }
 
+export function ultraPieces(ui: Ui, key: string, text: string): unknown {
+  const parts = text.split('Ultracode')
+  if (parts.length === 1) return text
+  return parts.flatMap((p, i) => [
+    ...(p ? [p] : []),
+    ...(i < parts.length - 1
+      ? [
+          <ui.Text key={`${key}-u${i}`} color="effortUltra">
+            Ultracode
+          </ui.Text>,
+        ]
+      : []),
+  ])
+}
+
 export function fullButton(ui: Ui, key: string, isOn: boolean, onPress: () => void) {
   const { Button } = ui
   return <Button key={key} label={isOn ? L('한 줄로 ▴', 'One line ▴') : L('글 다 보기 ▾', 'Full text ▾')} variant="secondary" onPress={onPress} />
@@ -377,7 +392,7 @@ export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, 
             <Text wrap={wrap}>
               {tools ?? label}
               {note ? <Text color="warning">{note}</Text> : null}
-              {tag ? <Text>{tag}</Text> : null}
+              {tag ? <Text>{ultraPieces(ui, `${key}-${j}-tag`, tag)}</Text> : null}
             </Text>
           )}
         </Box>

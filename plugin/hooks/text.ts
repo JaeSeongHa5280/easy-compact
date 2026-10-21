@@ -341,20 +341,39 @@ function switchValue(kind: StepSwitch['kind'], v: string): string {
 }
 
 function switchKindName(kind: StepSwitch['kind']): string {
-  return kind === 'model' ? L('모델', 'model') : L('노력', 'effort')
+  return kind === 'model' ? L('모델', 'model') : L('생각 깊이', 'effort')
+}
+
+function changeText(kind: StepSwitch['kind'], from: string, to: string, at: string | null): string {
+  const name = switchKindName(kind)
+  return at === null ? L(`${name} 변경: ${from} → ${to}`, `${name} change: ${from} → ${to}`) : L(`${at} ${name} 변경: ${from} → ${to}`, `${name} change ${at}: ${from} → ${to}`)
+}
+
+export function effortLabel(effort: string | undefined, ultra: boolean | undefined): string {
+  if (!ultra) return effort ? effortName(effort) : ''
+  return effort && effort !== 'xhigh' ? `Ultracode(${effortName(effort)})` : 'Ultracode'
+}
+
+export function effortKey(effort: string | undefined, ultra: boolean | undefined): string | null {
+  if (!ultra) return effort ?? null
+  return effort && effort !== 'xhigh' ? `ultracode:${effort}` : 'ultracode'
 }
 
 export function stepSwitchText(s: StepSwitch): string {
-  return `${switchKindName(s.kind)} ${switchValue(s.kind, s.from)} → ${switchValue(s.kind, s.to)}`
+  return changeText(s.kind, switchValue(s.kind, s.from), switchValue(s.kind, s.to), null)
+}
+
+export function betweenSwitchText(kind: StepSwitch['kind'], from: string, to: string): string {
+  return changeText(kind, from, to, L('이 질문부터', 'from this question'))
 }
 
 export function midSwitchText(switches: readonly StepSwitch[] | undefined, kind: StepSwitch['kind']): string | null {
   const own = (switches ?? []).filter(s => s.kind === kind)
   if (own.length === 0) return null
-  if (own.length === 1) return L(`요청 ${own[0].at}부터 ${stepSwitchText(own[0])}`, `${stepSwitchText(own[0])} from request ${own[0].at}`)
+  if (own.length === 1) return changeText(kind, switchValue(kind, own[0].from), switchValue(kind, own[0].to), L(`요청 ${own[0].at}부터`, `from request ${own[0].at}`))
   const chain = [own[0].from, ...own.map(s => s.to)].map(v => switchValue(kind, v)).join(' → ')
   const ats = own.map(s => s.at).join(' · ')
-  return L(`${switchKindName(kind)} ${chain}(요청 ${ats}부터)`, `${switchKindName(kind)} ${chain} (from requests ${ats})`)
+  return L(`${switchKindName(kind)} 변경: ${chain}(요청 ${ats}부터)`, `${switchKindName(kind)} change: ${chain} (from requests ${ats})`)
 }
 
 export function switchTags(details: readonly StepDetail[], steps: number, switches: readonly StepSwitch[] | undefined): Map<StepDetail, string> {

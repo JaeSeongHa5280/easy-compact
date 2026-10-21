@@ -444,6 +444,8 @@ export type LiveTurn = {
   switchedFrom?: string
   /** 이 질문 안에서 모델 · 노력이 바뀐 자리(1.0.3) — 없으면 안 바뀜 */
   switches?: StepSwitch[]
+  /** Ultracode 가 켜진 채 도는 질문(1.0.4 — 첫 요청 때 기록의 엔진 켬 알림으로 가림). 앱에선 생각 깊이 단계 하나라 엑스트라 대신 이 글로 */
+  ultra?: true
 }
 
 /** 끝난 턴 요약. 답변 블록은 id 가 없어 마지막 글 끝부분(tail)으로 찾는다 */

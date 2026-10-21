@@ -1550,7 +1550,7 @@ async function recordStep(
     const base: LiveTurn =
       prev && prev.turnId === turnId
         ? prev
-        : { turnId, steps: 0, cost: ZERO_COST, prompt: '', contextTokens: 0, outputTokens: 0, details: [] }
+        : { turnId, steps: 0, cost: ZERO_COST, prompt: '', contextTokens: 0, outputTokens: 0, details: [], ...(ultraTurn?.turnId === turnId && ultraTurn.isOn ? { ultra: true as const } : {}) }
     const switches = nextSwitches(base, model, effort === undefined ? undefined : String(effort))
     return {
       ...base,
@@ -1974,6 +1974,14 @@ async function ultraNow($: EngineInterface): Promise<boolean> {
   return isOn
 }
 
+let ultraTurn: { turnId: string; isOn: boolean } | null = null
+
+async function watchUltra($: EngineInterface, turnId: string): Promise<void> {
+  const isOn = await ultraNow($)
+  ultraTurn = { turnId, isOn }
+  if (isOn) await update($, live, prev => (prev && prev.turnId === turnId && !prev.ultra ? { ...prev, ultra: true as const } : prev))
+}
+
 async function markUltra($: EngineInterface, turnId: string): Promise<void> {
   if (!(await ultraNow($))) return
   await updateTurns($, list => list.map(t => (t.turnId === turnId ? { ...t, ultra: true as const } : t)))
@@ -1998,11 +2006,12 @@ async function closeTurn($: EngineInterface, text: string, isAborted = false): P
     ...(now.effort ? { effort: now.effort } : {}),
     ...(now.switchedFrom ? { switchedFrom: now.switchedFrom } : {}),
     ...(now.switches ? { switches: now.switches } : {}),
+    ...(now.ultra ? { ultra: true as const } : {}),
     turnId: now.turnId,
     ...(isAborted ? { aborted: true as const } : {}),
   }
   await updateTurns($, list => [...list, summary])
-  void markUltra($, now.turnId).catch(() => {})
+  if (!now.ultra) void markUltra($, now.turnId).catch(() => {})
 }
 
 async function startCompacting($: EngineInterface, kind: string): Promise<void> {
@@ -3015,6 +3024,7 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     await ensureLang($)
     if (e.agentId === undefined) await autoAtStep($, e.turnId).catch(() => {})
+    if (e.agentId === undefined && e.index === 0) void watchUltra($, e.turnId).catch(() => {})
     const result = yield* next(e)
     if (e.agentId === undefined && typeof result.answer === 'string' && result.answer.trim() !== '') lastStepAnswer = result.answer
     if (e.agentId !== undefined && result.usage) {
