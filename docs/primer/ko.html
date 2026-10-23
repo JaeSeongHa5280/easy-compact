@@ -869,7 +869,7 @@ ol.lplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
   </figure>
   <div class="keepbreak">
     <div class="kb bad"><b>캐시를 깨는 일</b><span>모델 바꾸기</span><span>보관 시간 넘게 쉬기</span><span>빠른 모드 켜기(그 뒤 첫 요청)</span><span>MCP 서버 연결 · 해제(도구를 미리 싣는 설정일 때)</span><span>컴팩트(대화 부분만 새로)</span><span>이미지가 많이 쌓여 오래된 것이 빠질 때</span><span>Claude Code 업그레이드 뒤 첫 세션</span></div>
-    <div class="kb good"><b>캐시를 지키는 일</b><span>생각 깊이 바꾸기(위 모델들)</span><span>파일 고치기</span><span>CLAUDE.md 고치기(다음 세션부터 반영)</span><span>권한 모드 바꾸기</span><span>스킬 · 명령 쓰기</span><span>하위 에이전트 띄우기</span><span>/rewind 로 되돌리기</span></div>
+    <div class="kb good"><b>캐시를 깨지 않는 일</b><span>생각 깊이 바꾸기(위 모델들)</span><span>파일 고치기</span><span>CLAUDE.md 고치기(다음 세션부터 반영)</span><span>권한 모드 바꾸기</span><span>스킬 · 명령 쓰기</span><span>하위 에이전트 띄우기</span><span>/rewind 로 되돌리기</span></div>
   </div>
   <p class="note">목록은 공식 문서의 요지입니다<a class="cite" href="#ref-1">[1]</a>. 모델과 생각 깊이는 세션 처음에 정하고 컴팩트는 일이 끊기는 곳에서 하면 캐시가 덜 깨집니다.</p>
 </section>
@@ -1122,7 +1122,7 @@ ol.lplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
 <section id="refs">
   <h2>참고 문헌</h2>
   <ol class="refs" style="list-style:none;padding-left:0">
-    <li id="ref-1"><span class="k">[1]</span>Claude Code, 「How Claude Code uses prompt caching」. <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a><br><small>요청마다 전체를 다시 보냄 · 캐시의 세 층(지시문 · 프로젝트 · 대화) · 보관 시간 기본값(Claude 계정 요금제 안 메인 컨텍스트 1시간, API 키 · 클라우드 · 사용 크레딧 · 하위 에이전트 5분)과 1시간으로 바꾸는 설정 · <code>/usage</code> 의 Prompt cache (main) 줄(적중률 · 놓친 횟수 · 지금 따뜻한지) · 캐시를 깨는 일(모델 · 빠른 모드 · MCP · 컴팩트 등)과 지키는 일(생각 깊이 — Opus 5.5 · Sonnet 5.5 · Haiku 5.5 · Fable 5.1 을 API 키 · 구독으로) · 식은 뒤 컴팩트는 캐시 없이 읽음 · 같은 폴더의 세션끼리 앞부분 공유 · 터미널의 쉬는 세션 자동 컴팩트.</small></li>
+    <li id="ref-1"><span class="k">[1]</span>Claude Code, 「How Claude Code uses prompt caching」. <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a><br><small>요청마다 전체를 다시 보냄 · 캐시의 세 층(지시문 · 프로젝트 · 대화) · 보관 시간 기본값(Claude 계정 요금제 안 메인 컨텍스트 1시간, API 키 · 클라우드 · 사용 크레딧 · 하위 에이전트 5분)과 1시간으로 바꾸는 설정 · <code>/usage</code> 의 Prompt cache (main) 줄(적중률 · 놓친 횟수 · 지금 따뜻한지) · 캐시를 깨는 일(모델 · 빠른 모드 · MCP · 컴팩트 등)과 깨지 않는 일(생각 깊이 — Opus 5.5 · Sonnet 5.5 · Haiku 5.5 · Fable 5.1 을 API 키 · 구독으로) · 식은 뒤 컴팩트는 캐시 없이 읽음 · 같은 폴더의 세션끼리 앞부분 공유 · 터미널의 쉬는 세션 자동 컴팩트.</small></li>
     <li id="ref-2"><span class="k">[2]</span>Claude API, 「Using the Messages API」. <a href="https://platform.claude.com/docs/en/build-with-claude/working-with-messages" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/working-with-messages</a><br><small>API 는 상태가 없어 대화 기록 전체를 보냅니다.</small></li>
     <li id="ref-3"><span class="k">[3]</span>Claude API, 「Pricing」. <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">platform.claude.com/docs/en/about-claude/pricing</a><br><small>모델별 요율 · 캐시 배수(Opus 5.5 · Sonnet 5.5 의 캐시 읽기는 새로 읽기의 0.05배) · 100만 토큰 창도 같은 요율.</small></li>
     <li id="ref-4"><span class="k">[4]</span>Claude Code, 「Manage costs effectively」. <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a><br><small>비용은 컨텍스트 크기를 따라 커짐 · 생각 토큰은 출력으로 청구 · 긴 세션은 한 줄 질문에도 컨텍스트 전체만큼 씀 · 쉰 뒤 첫 메시지는 캐시를 놓침 · /clear 는 값이 없음 · 구독자에게 보이는 금액은 청구액이 아님.</small></li>
