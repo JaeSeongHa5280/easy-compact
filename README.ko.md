@@ -22,6 +22,10 @@
   <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#102-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
 </p>
 
+<p align="center">
+  그림으로 보는 안내서: <a href="https://jaeseongha5280.github.io/easy-compact/primer/ko.html"><b>Claude 비용, 눈으로 보기</b></a> — Claude Code 요금이 어떻게 붙는지, 세션이 길수록 왜 비싸지는지, 어떻게 줄이는지
+</p>
+
 ---
 
 ## 필요한 것

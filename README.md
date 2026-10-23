@@ -22,6 +22,10 @@
   <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-102">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
+<p align="center">
+  Interactive guide: <a href="https://jaeseongha5280.github.io/easy-compact/primer/"><b>Claude Costs, Made Visible</b></a> — how Claude Code is billed, why long sessions cost more, and how to cut it.
+</p>
+
 ---
 
 ## Requirements

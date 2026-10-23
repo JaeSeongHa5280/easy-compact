@@ -1,0 +1,1907 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude 비용, 눈으로 보기</title>
+<meta name="description" content="Claude Code 요금이 어떻게 붙는지(토큰 · 컨텍스트 · 캐시 · 컴팩트)와 줄이는 법을 움직이는 그림으로 보여 주는 안내서">
+<link rel="alternate" hreflang="en" href="https://jaeseongha5280.github.io/easy-compact/primer/">
+<link rel="alternate" hreflang="ko" href="https://jaeseongha5280.github.io/easy-compact/primer/ko.html">
+<script>window.__errs=[];window.addEventListener('error',function(e){window.__errs.push(String(e.message));var p=document.getElementById('__err');if(p)p.textContent=window.__errs.join('\n');});</script>
+<style>
+:root{color-scheme:dark;--bg:#111318;--panel:#16191f;--card:#1b1f26;--card2:#232832;--line:#2d333e;--text:#e9ebef;--muted:#a3aab5;--dim:#8b929d;--read:#2fb5a5;--write:#e3a33b;--input:#5b9cf0;--out:#ec6a50;--good:#3fb68b;--bad:#ef5350;--accent:#7aa7ff;--coin:#e7b43a;--hl:rgba(122,167,255,.14);--shadow:none}
+:root[data-theme="light"]{color-scheme:light;--bg:#f5f6f8;--panel:#ffffff;--card:#ffffff;--card2:#eef1f5;--line:#dce1e7;--text:#1b1f26;--muted:#545e6c;--dim:#6b7380;--read:#0e8f80;--write:#b8760e;--input:#2f6fd6;--out:#cf452b;--good:#1f8a5b;--bad:#c9302c;--accent:#2f6fd6;--coin:#c28f12;--hl:rgba(47,111,214,.10)}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.75 system-ui,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;-webkit-text-size-adjust:100%}
+a{color:var(--accent)}
+.top{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:8px 16px;flex-wrap:wrap}
+.top b{font-size:15px}
+.top nav{display:flex;gap:6px;flex-wrap:wrap;flex:1}
+.top nav a{font-size:13px;text-decoration:none;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 10px}
+.btn{background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font:inherit;font-size:14px;cursor:pointer;min-height:36px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.btn:disabled{opacity:.45;cursor:default}
+main{max-width:900px;margin:0 auto;padding:28px 16px 80px}
+header.paper h1{font-size:34px;line-height:1.3;margin:10px 0 6px;letter-spacing:-.01em}
+header.paper .sub{font-size:18px;color:var(--muted);margin:0}
+header.paper .meta{font-size:13px;color:var(--dim);margin:10px 0 0}
+.abstract{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:22px 0 8px}
+.abstract h2{font-size:13px;letter-spacing:.08em;color:var(--dim);margin:0 0 8px;font-weight:700}
+.abstract ol{margin:0;padding-left:20px}
+.abstract li{margin:4px 0}
+.part{margin:56px 0 4px;font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--accent)}
+section h2{font-size:24px;line-height:1.35;margin:6px 0 6px}
+.lead{font-size:18px;margin:6px 0 14px}
+.lead small{display:block;font-size:14px;color:var(--muted);margin-top:4px}
+.cite{font-size:12px;text-decoration:none;vertical-align:super;margin-left:1px;color:var(--accent);white-space:nowrap}
+figure{margin:12px 0 26px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 16px 12px}
+figure .tag{display:inline-block;font-size:12px;font-weight:700;color:var(--accent);background:var(--hl);border-radius:6px;padding:1px 8px;margin-bottom:10px}
+figcaption{font-size:13px;color:var(--muted);line-height:1.65;border-top:1px solid var(--line);margin-top:14px;padding-top:10px}
+figcaption b{color:var(--text)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.lbl{font-size:13px;color:var(--muted);min-width:76px}
+.seg{display:inline-flex;flex-wrap:wrap;gap:4px;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg button{background:transparent;border:0;color:var(--muted);font:inherit;font-size:14px;padding:5px 11px;border-radius:7px;cursor:pointer;min-height:34px}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:700}
+.seg button sup{font-size:10px;opacity:.8}
+input[type=range]{flex:1;min-width:180px;accent-color:var(--accent);height:30px}
+.val{font-variant-numeric:tabular-nums;font-weight:700;min-width:84px;text-align:right}
+.big{font-size:40px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;letter-spacing:-.01em}
+.bigl{font-size:13px;color:var(--muted)}
+.kpis{display:flex;gap:22px;flex-wrap:wrap;margin:10px 0}
+.kpi .n{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+.kpi .t{font-size:12.5px;color:var(--muted)}
+.chip{display:inline-block;font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:1px 9px;color:var(--muted)}
+.chip.warn{border-color:var(--write);color:var(--write)}
+.chip.bad{border-color:var(--bad);color:var(--bad)}
+.chip.good{border-color:var(--good);color:var(--good)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin:6px 0}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.c-read{background:var(--read)}.c-write{background:var(--write)}.c-input{background:var(--input)}.c-out{background:var(--out)}
+.note{font-size:13px;color:var(--muted)}
+.callout{border-left:3px solid var(--write);background:var(--card);border-radius:0;padding:12px 14px;margin:8px 0 24px;font-size:15px}
+.callout b{color:var(--write)}
+
+.f1{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+.stack{position:relative;border:1px dashed var(--line);border-radius:10px;padding:6px;min-height:80px;overflow:hidden}
+.blk{border-radius:5px;margin:2px 0;font-size:11.5px;color:#0d1117;display:flex;align-items:center;padding:0 7px;overflow:hidden;white-space:nowrap}
+.blk.thin span{display:none}
+.blk.sys{background:#8c96a6}.blk.q{background:var(--input)}.blk.tool{background:#c9a5f2}.blk.ans{background:var(--out)}
+.scan{position:absolute;left:0;right:0;top:0;height:22px;background:var(--read);opacity:0;pointer-events:none;mix-blend-mode:normal}
+.stair{display:flex;align-items:flex-end;gap:2px;height:150px;border-bottom:1px solid var(--line);padding:0 2px}
+.stair i{flex:1;max-width:14px;background:var(--read);border-radius:2px 2px 0 0;min-height:2px;transition:height .35s}
+
+.squares{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;min-height:230px;padding:6px 0}
+.sq{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:120px;flex:1}
+.sqbox{border-radius:6px;transition:width .5s,height .5s}
+.sq.out .sqbox{background:var(--out)}.sq.w1 .sqbox{background:var(--write)}.sq.in .sqbox{background:var(--input)}.sq.rd .sqbox{background:var(--read)}
+.sqlab{text-align:center;font-size:13px;color:var(--muted);line-height:1.4}
+.sqlab b{display:block;font-size:20px;color:var(--text);font-variant-numeric:tabular-nums}
+
+.stackbar{display:flex;height:34px;border-radius:8px;overflow:hidden;background:var(--card2);border:1px solid var(--line)}
+.stackbar div{transition:width .45s ease;height:100%}
+.coins{display:grid;grid-template-columns:repeat(20,1fr);gap:4px;max-width:520px;margin:8px 0}
+.coins i{aspect-ratio:1;border-radius:50%;border:1px solid var(--line);background:transparent;transition:background .25s,transform .25s,border-color .25s}
+.coins i.on{background:var(--coin);border-color:var(--coin);transform:scale(1.04)}
+[hidden]{display:none!important}
+.sl{flex:1;min-width:180px;display:flex;flex-direction:column}
+.sl input[type=range]{flex:none;width:100%;min-width:0}
+.ticks{position:relative;height:16px;margin:0 8px;font-size:11px;color:var(--muted)}
+.ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.play{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:20px}
+
+.bars20{display:flex;align-items:flex-end;gap:4px;height:160px;border-bottom:1px solid var(--line);padding:0 2px;margin:8px 0}
+.bars20 i{flex:1;border-radius:3px 3px 0 0;transition:height .4s ease,background .3s;min-height:2px}
+
+.tl{display:grid;grid-template-columns:1fr 2.2fr 1fr;gap:12px;align-items:end;min-height:150px}
+.tlcol{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.tlcol .cap{font-size:12.5px;color:var(--muted);text-align:center}
+.mini{display:flex;align-items:flex-end;gap:4px;height:120px;justify-content:center}
+.mini i{width:12px;border-radius:2px 2px 0 0;background:var(--read)}
+.meter{height:16px;border-radius:8px;background:var(--card2);border:1px solid var(--line);overflow:hidden}
+.meter div{height:100%;background:var(--read);transition:width .35s,background .3s}
+.glass{font-size:40px;text-align:center;line-height:1}
+.ret{display:flex;align-items:flex-end;justify-content:center;gap:10px;height:150px}
+.ret i{width:44px;border-radius:4px 4px 0 0;transition:height .45s,background .3s;min-height:3px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:10px 0}
+.card{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card .n{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+.card .t{font-size:13.5px;color:var(--muted);line-height:1.55}
+.card h3{font-size:16px;margin:0 0 4px}
+
+svg text{font-family:inherit}
+.chart{width:100%;height:auto;display:block}
+.pair{display:grid;grid-template-columns:minmax(0,1fr);gap:4px}
+.hb{display:grid;grid-template-columns:86px 1fr 52px;gap:8px;align-items:center;font-size:13px;margin:5px 0}
+.hb .track{height:18px;background:var(--card2);border-radius:5px;overflow:hidden}
+.hb .fill{height:100%;transition:width .5s ease;border-radius:5px}
+.hb .pct{text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+
+.appbar{background:#1e1f24;border:1px solid #33363f;border-radius:12px;padding:10px 12px;color:#e6e6e6;font-size:14px}
+:root[data-theme="light"] .appbar{background:#fbfbfa;border-color:#d9d9d4;color:#2b2b28}
+.appbar .r1{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.appbar .k{color:#9b9da5}
+:root[data-theme="light"] .appbar .k{color:#77787d}
+.appbar .v{font-weight:700;font-variant-numeric:tabular-nums}
+.gauge{display:inline-flex;gap:2px;border:1.5px solid currentColor;border-radius:4px;padding:2px;vertical-align:middle;color:#8b8f99}
+.gauge i{width:7px;height:12px;border-radius:1.5px;background:transparent}
+.gauge.l1 i:nth-child(-n+1),.gauge.l2 i:nth-child(-n+2){background:#8b8f99}
+.gauge.l3{color:#f0a35e}.gauge.l3 i:nth-child(-n+3){background:#f0a35e}
+.gauge.l4{color:#ef5350}.gauge.l4 i{background:#ef5350}
+@media (prefers-reduced-motion:no-preference){.gauge.l4{animation:blink 1s steps(2,end) infinite}}
+@keyframes blink{50%{opacity:.35}}
+.cbtn{background:transparent;border:1px solid #4a4d57;color:inherit;border-radius:7px;padding:3px 12px;font:inherit;font-size:13.5px;cursor:pointer}
+.cbtn.due{border-color:#f0a35e;color:#f0a35e}.cbtn.late,.cbtn.cold{border-color:#ef5350;color:#ef5350}
+.popup{margin-top:10px;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14.5px;display:none}
+.popup.show{display:block}
+.toast{font-size:13.5px;color:var(--muted);min-height:22px;margin-top:6px}
+table.map{width:100%;border-collapse:collapse;font-size:14.5px;margin:10px 0}
+table.map td{border-top:1px solid var(--line);padding:8px 8px;vertical-align:top}
+table.map td:first-child{color:var(--muted);width:42%}
+pre.install{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;white-space:pre-wrap;word-break:break-all;font-size:13px}
+.limits li{margin:5px 0}
+.refs{font-size:14px}
+.refs li{margin:6px 0;line-height:1.6}
+.refs .k{display:inline-block;min-width:38px;font-weight:700;color:var(--accent)}
+.refs small{color:var(--muted)}
+.foot{font-size:12.5px;color:var(--dim);margin-top:30px}
+.reveal{opacity:1}
+@media (max-width:720px){
+  header.paper h1{font-size:27px}
+  .f1,.play{grid-template-columns:minmax(0,1fr)}
+  .tl{grid-template-columns:1fr;min-height:0}
+  .big{font-size:34px}
+  .coins{grid-template-columns:repeat(20,1fr);gap:3px}
+  .hb{grid-template-columns:72px 1fr 44px}
+}
+.keep{display:grid;grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);gap:10px;align-items:stretch;margin:10px 0}
+.kcol{display:flex;flex-direction:column;gap:6px}
+.khead{font-size:13px;color:var(--muted)}
+.kbox{flex:1;min-height:150px;border:1px dashed var(--line);border-radius:10px;padding:8px;display:flex;flex-wrap:wrap;align-content:flex-start;gap:6px}
+.karrow{display:flex;align-items:center;justify-content:center;font-size:22px;color:var(--dim)}
+.kchip{display:inline-block;padding:3px 10px;border-radius:999px;font-size:13px;border:1px solid var(--line);transition:opacity .35s,border-color .35s,color .35s}
+.kchip.ok{border-color:var(--good);color:var(--good)}
+.kchip.half{border-color:var(--write);color:var(--write)}
+.kchip.lost{opacity:.42;text-decoration:line-through}
+.kchip.file{border-color:var(--accent);color:var(--accent)}
+.ksub{width:100%;border:1px solid var(--accent);border-radius:8px;padding:6px;display:flex;flex-wrap:wrap;gap:6px}
+.ksub b{width:100%;font-size:12px;color:var(--accent)}
+@media (max-width:720px){.keep{grid-template-columns:minmax(0,1fr)}.karrow{transform:rotate(90deg)}}
+figcaption details{display:inline}
+figcaption summary{cursor:pointer;color:var(--accent);font-size:12.5px;list-style:none;display:inline-block;margin-left:6px}
+figcaption summary::-webkit-details-marker{display:none}
+figcaption summary::before{content:'▸ '}
+figcaption details[open]{display:block;margin-top:4px}
+figcaption details[open] summary{margin-left:0}
+figcaption details[open] summary::before{content:'▾ '}
+.hb.w{grid-template-columns:86px 1fr 104px}
+table.map th{font-size:12.5px;color:var(--muted);font-weight:600;text-align:left;padding:6px 8px}
+table.map.hm td:first-child{width:24%;color:var(--text);font-weight:600}
+table.map.hm td{font-size:14px}
+#__err{display:none}
+
+.scope{margin:16px 0 0;font-size:15px;color:var(--muted);border:1px dashed var(--line);border-radius:10px;padding:8px 12px}
+.scope b{color:var(--text)}
+.hook{display:flex;gap:18px;align-items:center;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:12px 0 0}
+.hook-n{font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hook-n .a{color:var(--out)}.hook-n .b{color:var(--good)}.hook-n .arr{color:var(--dim);margin:0 8px;font-weight:400}
+.hook p{margin:0;flex:1;min-width:240px;font-size:15px}
+.b0{min-height:200px;padding-top:4px}
+.b0 p{margin:6px 0;font-size:15px}
+.sentence{font-size:17px;color:var(--muted);margin:6px 0 2px}
+.toks{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0;min-height:40px}
+.tok{display:inline-block;padding:4px 9px;border-radius:7px;background:var(--card2);border:1px solid var(--line);font-size:15px}
+.tok:nth-child(3n+1){border-color:var(--input)}.tok:nth-child(3n+2){border-color:var(--read)}.tok:nth-child(3n){border-color:var(--write)}
+.ruler{position:relative;height:92px;margin:16px 12px 4px}
+.ruler::before{content:'';position:absolute;left:0;right:0;top:33px;border-top:2px solid var(--line)}
+.ruler .band{position:absolute;top:28px;height:12px;background:var(--good);opacity:.4;border-radius:3px}
+.ruler span{position:absolute;transform:translateX(-50%);font-size:12px;color:var(--muted);white-space:nowrap;line-height:1.3}
+.ruler span.dn{top:44px}.ruler span.up{top:2px}
+.ruler span::after{content:'';position:absolute;left:50%;width:2px;height:9px;background:currentColor}
+.ruler span.dn::after{top:-12px}.ruler span.up::after{bottom:-15px;height:15px}
+.ruler span.dn2{top:68px}.ruler span.dn2::after{top:-36px;height:33px;opacity:.6}
+.ruler span.hot{color:var(--good)}.ruler span.bad{color:var(--bad)}
+.ctxbar{position:relative;display:flex;height:42px;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--card2);margin:10px 0 4px}
+.ctxbar div{height:100%;transition:width .6s ease;display:flex;align-items:center;justify-content:center;font-size:12px;color:#0d1117;white-space:nowrap;overflow:hidden}
+.ctxbar .auto{position:absolute;top:0;bottom:0;width:2px;background:var(--bad)}
+.frames{display:grid;gap:12px;margin:10px 0}
+.frame{display:grid;grid-template-columns:170px minmax(0,1fr);gap:12px;align-items:center;transition:opacity .45s}
+.frame.off{opacity:.12}
+.frame .fl{font-size:13px;color:var(--muted);line-height:1.45}
+.frame .fl b{color:var(--text);display:block;font-size:14px}
+.fbar{display:flex;height:28px;border-radius:6px;overflow:hidden;background:var(--card2);border:1px solid var(--line)}
+.fbar div{height:100%;display:flex;align-items:center;padding:0 6px;font-size:12px;color:#0d1117;white-space:nowrap;overflow:hidden}
+.fv{font-size:13px;color:var(--muted);margin-top:3px}
+.fv b{color:var(--text);font-variant-numeric:tabular-nums}
+.f1v{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr);gap:8px;align-items:stretch;margin-top:6px}
+.f1side{display:flex;flex-direction:column;min-width:0}
+.f1mid{display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:22px}
+.f1v .stack{flex:1}
+.srv{position:relative;flex:1;border:1px solid var(--line);border-radius:10px;min-height:90px;display:flex;align-items:center;justify-content:center;padding:10px;background:var(--card2);text-align:center}
+.srv span{font-size:13.5px;color:var(--muted)}
+.parcel{position:absolute;left:0;top:0;border-radius:8px;background:repeating-linear-gradient(135deg,rgba(91,156,240,.5) 0 8px,rgba(91,156,240,.3) 8px 16px);border:2px solid var(--input);pointer-events:none;opacity:0;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:var(--text);z-index:3;overflow:hidden}
+.tblwrap{overflow-x:auto;margin:6px 0 10px}
+table.price{border-collapse:collapse;width:100%;min-width:470px;font-size:14px}
+table.price th,table.price td{padding:7px 8px;border-top:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}
+table.price th{font-size:12.5px;color:var(--muted);font-weight:600}
+table.price td:first-child,table.price th:first-child{text-align:left}
+table.price td small{display:block;font-size:11.5px;color:var(--muted);font-weight:400}
+table.price .on{background:var(--hl);color:var(--text);font-weight:700}
+table.price i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.cold{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:18px;margin:12px 0 4px;align-items:end}
+.cold .side{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cbox{border-radius:8px;background:var(--input);color:#0d1117;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;transition:height .4s;text-align:center;padding:0 6px}
+.copy{position:relative;border-radius:8px;border:2px solid var(--read);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;transition:opacity .5s,border-color .3s,height .4s;overflow:hidden;text-align:center;padding:0 6px}
+.copy .fill{position:absolute;left:0;right:0;bottom:0;height:100%;background:var(--read);opacity:.28;transition:height .9s ease,background .3s}
+.copy.gone{opacity:.45;border-style:dashed;border-color:var(--bad)}
+.copy.gone .fill{height:0}
+.copy span{position:relative}
+.timer{height:10px;border-radius:5px;background:var(--card2);border:1px solid var(--line);overflow:hidden}
+.timer div{height:100%;background:var(--read);width:100%}
+ol.steps{margin:10px 0 0;padding-left:22px;font-size:14px;color:var(--muted)}
+ol.steps li{margin:3px 0;transition:color .3s}
+ol.steps li.on{color:var(--text);font-weight:700}
+.ecnote{border:1px solid var(--accent);border-radius:12px;padding:10px 14px;font-size:14.5px;margin:0 0 24px;background:var(--hl)}
+.ecnote b{color:var(--accent)}
+.coldlist{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:8px 0;font-size:13px}
+.coldlist div{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:6px 10px;color:var(--muted)}
+.coldlist b{color:var(--write);font-variant-numeric:tabular-nums}
+.coldlist i{font-style:normal;color:var(--text);font-weight:700;margin-right:4px}
+.evid{border-left:3px solid var(--read);background:var(--card);padding:10px 14px;margin:8px 0;font-size:14.5px}
+.evid b{color:var(--read)}
+pre.tmpl{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font:13.5px/1.75 ui-monospace,Consolas,"Malgun Gothic",monospace;white-space:pre-wrap;margin:8px 0}
+ol.flow{counter-reset:f;list-style:none;padding:0;margin:10px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}
+ol.flow li{counter-increment:f;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.6}
+ol.flow li::before{content:counter(f);display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;align-items:center;justify-content:center;margin-right:6px}
+ol.flow b{font-size:15px}
+code{font-size:.9em;background:var(--card2);border:1px solid var(--line);border-radius:5px;padding:0 4px}
+.shot{background:#141518;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:6px 0}
+.shot img{display:block;width:100%;height:auto}
+.gal h3{font-size:16px;margin:12px 0 4px}
+dl.ui{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:6px 14px;margin:8px 0;font-size:14px}
+dl.ui dt{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--muted);word-break:break-word}
+dl.ui dd{margin:0}
+.habit{display:inline-block;font-size:12.5px;color:var(--accent);margin-top:4px}
+.trust{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:12px 0}
+.trust div{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px;color:var(--muted)}
+.trust b{display:block;font-size:15px;color:var(--text);margin-bottom:2px}
+.cta{border:2px solid var(--accent);border-radius:16px;padding:16px 18px;margin:22px 0 10px;background:var(--card)}
+.cta h3{margin:0 0 6px;font-size:19px}
+.cta p{margin:4px 0 8px;font-size:14.5px;color:var(--muted)}
+@media (max-width:720px){
+  .f1v{grid-template-columns:minmax(0,1fr)}
+  .f1mid{transform:rotate(90deg);height:26px}
+  .cold{grid-template-columns:minmax(0,1fr)}
+  .frame{grid-template-columns:minmax(0,1fr);gap:4px}
+  dl.ui{grid-template-columns:minmax(0,1fr);gap:0}
+  dl.ui dd{margin-bottom:8px}
+  .hook-n{font-size:27px}
+  figure input[type=range]{min-width:110px}
+  figure .lbl{min-width:58px}
+  figure .val{min-width:58px}
+  .stair{height:110px}
+  .shot{overflow-x:auto}
+  .shot img{width:auto;max-width:none;min-width:620px}
+}
+
+.eqs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0 2px}
+.eqs div{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.eqs b{display:block;font-size:12.5px;color:var(--muted);font-weight:600}
+.eqs span{font-size:17px;font-weight:800}
+.cparts{display:grid;margin:8px 0;font-size:13.5px}
+.cparts div{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:baseline;border-top:1px solid var(--line);padding:5px 0}
+.cparts i{width:10px;height:10px;border-radius:3px;display:inline-block;align-self:center}
+.cparts code{font-size:11.5px}
+.cparts .tk{margin-left:auto;font-weight:800;font-variant-numeric:tabular-nums}
+.cparts small{flex-basis:100%;color:var(--muted);font-size:12.5px;padding-left:20px}
+.frame .fr2{display:grid;gap:4px;min-width:0}
+.fmini{display:grid;grid-template-columns:104px minmax(0,1fr);gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}
+svg.db{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;vertical-align:-3px;margin-right:4px}
+ol.route{list-style:none;padding:0;margin:6px 0;display:flex;flex-wrap:wrap;gap:6px}
+ol.route li{flex:1;min-width:96px;border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:12.5px;color:var(--muted);line-height:1.45;transition:background .25s,border-color .25s,color .25s}
+ol.route li b{display:block;font-size:13.5px;color:var(--text)}
+ol.route li.req{border-color:var(--input)}
+ol.route li.loc{border-style:dashed}
+ol.route li.on{background:var(--hl);border-color:var(--accent);color:var(--text)}
+.legend i.old-sw{background:repeating-linear-gradient(135deg,#8c96a6 0 3px,transparent 3px 6px)}
+#f1-parcel{display:block}
+#f1-parcel .pold{display:block;background:repeating-linear-gradient(135deg,rgba(140,150,166,.6) 0 8px,rgba(140,150,166,.28) 8px 16px)}
+#f1-parcel .pnew{display:block;background:rgba(91,156,240,.9)}
+#f1-parcel span{position:absolute;left:4px;right:4px;top:50%;transform:translateY(-50%);text-align:center;font-size:12.5px;font-weight:700;color:var(--text);text-shadow:0 0 4px var(--bg),0 0 2px var(--bg)}
+.stair{position:relative}
+.stair .ghost{position:absolute;left:0;right:0;border-top:1px dashed var(--muted);opacity:.75;pointer-events:none}
+.stair .ghost span{position:absolute;right:0;top:-17px;font-size:11px;color:var(--muted)}
+.hitvis{display:grid;gap:8px;margin:8px 0}
+.hrow{display:grid;grid-template-columns:170px minmax(0,1fr);gap:10px;align-items:center;font-size:13px;color:var(--muted)}
+.hbar{display:flex;height:26px;border-radius:6px;overflow:hidden;background:var(--card2);border:1px solid var(--line)}
+.hbar .hit{background:var(--read);transition:width .3s}
+.hbar .miss,.hbar .add{background:var(--write);min-width:3px;transition:width .3s}
+.copybar{border-style:dashed}
+.evmsg{font-size:14.5px;margin:6px 0 0;min-height:46px}
+.copies{display:flex;gap:8px;align-items:flex-end}
+.copies .copy{flex:1;min-width:0}
+.copy.dim{opacity:.45}
+.copy.alt{border-color:var(--input)}
+.choice{display:grid;gap:8px;margin:6px 0}
+.ch{border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.ch.best{border-color:var(--good)}
+.chh{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.chh span{font-weight:800;font-variant-numeric:tabular-nums}
+.chbar{height:8px;border-radius:4px;background:var(--card2);margin:6px 0 4px;overflow:hidden}
+.chbar i{display:block;height:100%;background:var(--write);transition:width .3s}
+.ch.best .chbar i,.way.best .chbar i{background:var(--good)}
+.ch small,.way small{color:var(--muted);font-size:12.5px;line-height:1.5;display:block}
+.keepbreak{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin:8px 0}
+.kb{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;background:var(--card)}
+.kb b{width:100%;font-size:14px}
+.kb span{font-size:12.5px;border-radius:999px;padding:2px 9px;border:1px solid var(--line)}
+.kb.bad b{color:var(--bad)}.kb.bad span{border-color:rgba(239,83,80,.5)}
+.kb.good b{color:var(--good)}.kb.good span{border-color:rgba(63,182,139,.5)}
+.ways{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:10px;margin:8px 0}
+.way{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card2)}
+.way.best{border-color:var(--good)}
+.way > b{font-size:15px}
+.wv{display:flex;justify-content:space-between;gap:8px;font-size:13px;color:var(--muted);margin-top:3px}
+.wv b{color:var(--text);font-variant-numeric:tabular-nums}
+@media (max-width:720px){
+  .hrow{grid-template-columns:minmax(0,1fr);gap:4px}
+  .fmini{grid-template-columns:minmax(0,1fr);gap:2px}
+  .copies{flex-direction:column;align-items:stretch}
+}
+
+.zbar{display:flex;gap:2px;height:46px;margin:8px 0 6px}
+.zbar button{border:0;border-radius:6px;color:#0d1117;font:inherit;font-size:12px;font-weight:700;cursor:pointer;min-width:34px;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.75;transition:opacity .2s,transform .2s}
+.zbar button.on{opacity:1;outline:2px solid var(--text);outline-offset:1px}
+.zlens{border:1px solid var(--accent);border-radius:12px;padding:10px 12px;background:var(--card2);margin:6px 0}
+.zhead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:14px}
+.zhead span{color:var(--muted);font-variant-numeric:tabular-nums}
+.zlens .toks{min-height:44px}
+ol.rqsteps{list-style:none;padding:0;margin:6px 0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+ol.rqsteps li{border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:12.5px;color:var(--muted);line-height:1.45;transition:background .2s,border-color .2s}
+ol.rqsteps li b{display:block;font-size:13px;color:var(--text)}
+ol.rqsteps li.on{background:var(--hl);border-color:var(--accent);color:var(--text)}
+.rqbill{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--card2);border:1px solid var(--line);margin:6px 0 2px}
+.rqbill div{height:100%;transition:width .3s}
+.match{display:grid;gap:4px;margin:8px 0}
+.mhd,.mr{display:grid;grid-template-columns:minmax(0,1fr) 26px minmax(0,1fr);align-items:center}
+.mhd{font-size:12.5px;color:var(--muted)}
+.mr{border-radius:6px;transition:background .2s}
+.mr.on{background:var(--hl)}
+.ml,.mc{position:relative;height:28px;border-radius:6px;overflow:hidden;background:var(--card2);border:1px solid var(--line)}
+.ml i,.mc i{position:absolute;left:0;top:0;bottom:0;background:var(--input);opacity:.85;transition:background .3s,opacity .3s}
+.ml span,.mc span{position:relative;font-size:12px;padding:0 8px;line-height:26px;white-space:nowrap;color:var(--text)}
+.mc.empty{border-style:dashed}.mc.empty i{opacity:0}
+.mc.has i{background:var(--read);opacity:.4}
+.mc.gone{border-style:dashed;border-color:var(--bad)}.mc.gone i{opacity:.08}
+.mc.hit i{background:var(--read);opacity:.95}.mc.new i{background:var(--write);opacity:.95}
+.mm{text-align:center;font-weight:800;font-size:16px;color:var(--muted)}
+.meter2{display:grid;gap:6px;margin:10px 0}
+.mrow{display:grid;grid-template-columns:170px minmax(0,1fr) 70px;gap:10px;align-items:center;font-size:13px;color:var(--muted)}
+.mrow b{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+.mbar{height:16px;border-radius:8px;background:var(--card2);border:1px solid var(--line);overflow:hidden}
+.mbar i{display:block;height:100%;width:0;transition:width .25s}
+.mbar i.none{background:var(--input)}.mbar i.real{background:var(--read)}
+.timerrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;margin:6px 0}
+.part + .note{margin-top:2px}
+section.habit{border-top:1px solid var(--line);padding-top:10px;margin-top:22px}
+.hn{font-size:12.5px;font-weight:700;color:var(--accent);letter-spacing:.04em}
+section.habit h2{font-size:21px;margin:2px 0 10px}
+.hg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.hc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px}
+.hc > b{display:block;font-size:13px;color:var(--muted);margin-bottom:2px}
+.hc p{margin:4px 0 8px}
+.hc.why{border-color:rgba(236,106,80,.45)}.hc.ec{border-color:var(--accent)}
+.hbig{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--out)}
+.shots2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+figure.shot{padding:0;margin:10px 0 0;background:#141518}
+figure.shot figcaption{margin:0;padding:8px 12px;border-top:1px solid var(--line);background:var(--card)}
+.wkeep{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.wkeep .kchip{font-size:12px;padding:2px 8px}
+.vsbar{display:grid;gap:6px;margin:8px 0}
+.vsrow{display:grid;grid-template-columns:120px minmax(0,1fr) 80px;gap:10px;align-items:center;font-size:13.5px;color:var(--muted)}
+.vsrow b{color:var(--text);text-align:right;font-variant-numeric:tabular-nums}
+.vtrack{height:18px;border-radius:9px;background:var(--card2);border:1px solid var(--line);overflow:hidden}
+.vtrack i{display:block;height:100%}
+@media (max-width:720px){
+  ol.rqsteps{grid-template-columns:minmax(0,1fr)}
+  .hg{grid-template-columns:minmax(0,1fr)}
+  .mrow,.vsrow{grid-template-columns:minmax(0,1fr) 70px}
+  .mrow .mbar,.vsrow .vtrack{grid-column:1 / -1;grid-row:2}
+  .zbar button{font-size:0;min-width:22px}
+  .mhd,.mr{grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr)}
+  .ml span,.mc span{font-size:11px;padding:0 4px}
+}
+section.habit{display:block;color:var(--text);font-size:16px;margin-top:22px}
+
+
+.rcpt{border:1px solid var(--line);border-radius:12px;background:var(--card2);padding:8px 12px 6px;margin:6px 0 12px}
+.rhead{display:flex;align-items:baseline;justify-content:space-between;gap:4px 12px;flex-wrap:wrap;border-bottom:1px dashed var(--line);padding:2px 2px 8px}
+.rhead > b{font-size:15px}
+.rsum{font-size:13px;color:var(--muted)}
+.rsum b{font-size:22px;font-weight:800;color:var(--out);font-variant-numeric:tabular-nums;margin-left:4px}
+ol.rlines{list-style:none;margin:0 0 6px;padding:0}
+ol.rlines > li{border-bottom:1px solid var(--line)}
+.rbtn{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:grid;grid-template-columns:4.6em minmax(0,1fr) auto;gap:4px 10px;align-items:baseline;padding:8px 4px;border-radius:8px;transition:background .2s}
+.rbtn:hover,.rl.now .rbtn{background:var(--hl)}
+.rbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.rl .rk{font-weight:700;font-size:13.5px;color:var(--text);white-space:nowrap}
+.rbtn .rk::before{content:'▸ ';color:var(--dim)}
+.rbtn[aria-expanded="true"] .rk::before{content:'▾ '}
+.rl .rw{font-size:13px;color:var(--muted);line-height:1.5}
+.rl .rv{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;text-align:right;color:var(--text)}
+.rbar{grid-column:2 / 4;display:flex;height:10px;border-radius:5px;background:var(--card);border:1px solid var(--line);overflow:hidden}
+.rbar i{display:block;height:100%;width:0;transition:width .35s ease}
+.rbar i.r{background:var(--read)}.rbar i.w{background:var(--write)}.rbar i.o{background:var(--out)}
+.rdet{padding:0 4px 10px}
+.rdet .note{margin:4px 0 0}
+ol.rlines > li.rloc{display:grid;grid-template-columns:4.6em minmax(0,1fr) auto;gap:2px 10px;align-items:baseline;padding:6px 4px;border-bottom-style:dashed}
+li.rloc .rk{font-weight:600;font-size:12.5px;color:var(--dim);white-space:nowrap}
+li.rloc .rw{font-size:12.5px;color:var(--dim);line-height:1.5}
+li.rloc .rv{font-size:13px;color:var(--dim);text-align:right;font-variant-numeric:tabular-nums}
+.rpast{display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 6px}
+.rchip{font-size:12.5px;border:1px solid var(--line);border-radius:999px;padding:1px 9px;color:var(--muted);font-variant-numeric:tabular-nums}
+.rchip b{color:var(--text);font-weight:700}
+.rchip.on{border-color:var(--out)}
+.rchip.on b{color:var(--out)}
+
+
+.abstract .aq{font-size:22px;font-weight:800;line-height:1.4;margin:0 0 8px}
+.tags3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 6px}
+.tag3{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.tag3 span{font-size:13px;color:var(--muted);line-height:1.45}
+.tag3 b{font-size:clamp(22px,6vw,32px);font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}
+.tag3 small{font-size:12.5px;color:var(--muted)}
+.tag3.bad{border-color:var(--out)}.tag3.bad b{color:var(--out)}
+.tbar{display:block;height:8px;border-radius:4px;background:var(--card2);overflow:hidden;margin-top:6px}
+.tbar i{display:block;height:100%;width:0;background:var(--read);border-radius:4px}
+.tag3.bad .tbar i{background:var(--out)}
+.chap{margin:64px 0 4px;padding-top:16px;border-top:2px solid var(--line)}
+.chap h2{font-size:28px;margin:0;line-height:1.3}
+.chap h2 span{color:var(--accent);margin-right:10px;font-variant-numeric:tabular-nums}
+.chap p{margin:4px 0 0;font-size:15px;color:var(--muted)}
+.chap + section{margin-top:18px}
+h2.cnum{font-size:28px;line-height:1.3}
+h2.cnum span{color:var(--accent);margin-right:10px;font-variant-numeric:tabular-nums}
+#intro{margin-top:40px}
+#lim{margin-top:64px;padding-top:16px;border-top:2px solid var(--line)}
+section,.chap,.abstract{scroll-margin-top:90px}
+h3.sub3{font-size:18px;margin:30px 0 2px}
+section.habit .hg{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+
+.gbars{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:8px 0 4px}
+.gb{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:12px;padding:8px 8px 6px;background:var(--card2);transition:border-color .2s,background .2s}
+.gb:hover{border-color:var(--accent)}
+.gb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.gb.on{border-color:var(--accent);background:var(--hl)}
+.gcols{display:flex;align-items:flex-end;gap:6px;height:180px;border-bottom:1px solid var(--line)}
+.gc{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;min-width:0}
+.gc b{font-size:12.5px;text-align:center;font-variant-numeric:tabular-nums;white-space:nowrap;margin-bottom:3px}
+.gc i{display:block;border-radius:5px 5px 0 0;transition:height .35s}
+.gc.cont i{background:var(--muted)}.gc.comp i{background:var(--accent)}.gc.fresh i{background:var(--good)}
+.gc.best b{color:var(--good)}
+.glab{font-size:13px;text-align:center;color:var(--muted)}
+.gb.on .glab{color:var(--text);font-weight:700}
+
+
+.ecp .ech{margin:6px 0 8px;font-size:15px;line-height:1.6}
+.ecp .ech b{display:block;font-size:16px}
+.ecp .ech span{color:var(--muted)}
+.cta.cend{padding:20px 20px 16px;background:linear-gradient(180deg,var(--hl),var(--card) 55%)}
+.cta.cend h3{font-size:23px;margin:0 0 12px;line-height:1.35}
+ol.ctal{list-style:none;margin:0 0 14px;padding:0}
+ol.ctal li{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1.5fr);gap:4px 10px;align-items:baseline;font-size:14.5px;border-bottom:1px dashed var(--line);padding:6px 0}
+ol.ctal li b{color:var(--muted);font-weight:600}
+ol.ctal li i{color:var(--accent);font-style:normal;font-weight:700}
+.cta p.ctai{color:var(--text)}
+.cta p.ctai b{color:var(--accent);margin-right:6px}
+
+@media (max-width:720px){
+  .top nav{order:3;flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .top nav a{flex:none}
+  section.habit .hg{grid-template-columns:minmax(0,1fr)}
+  .chap h2,h2.cnum{font-size:24px}
+  .gbars{gap:6px}
+  .gb{padding:6px 4px 4px}
+  .gcols{gap:3px;height:150px}
+  .gc b{font-size:10.5px}
+  .glab{font-size:12px}
+  ol.ctal li{grid-template-columns:minmax(0,1fr)}
+  ol.ctal li i{display:none}
+  ol.ctal li b{font-size:13px}
+}
+
+
+:root{--yel:#f0913a}
+:root[data-theme="light"]{--yel:#c2620c}
+
+
+.abstract h2.aq{color:var(--text);letter-spacing:0;font-size:22px;font-weight:800;line-height:1.4;margin:0 0 8px}
+
+
+.try{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:12px;font-weight:700;color:var(--accent);border:1px dashed var(--accent);border-radius:999px;padding:0 10px 0 7px;vertical-align:top;line-height:1.75}
+.try svg{width:12px;height:12px;fill:currentColor}
+.seg button{border:1px solid var(--line);background:var(--card);color:var(--text);transition:border-color .15s,background .15s}
+.seg button:hover{border-color:var(--accent)}
+.seg button[aria-pressed="true"]{border-color:var(--accent)}
+.btn{box-shadow:0 2px 0 rgba(0,0,0,.35);transition:transform .08s,box-shadow .08s,border-color .15s}
+.btn:active:not(:disabled){transform:translateY(2px);box-shadow:none}
+.btn:disabled{opacity:.55;cursor:default}
+input[type=range]{accent-color:var(--accent);cursor:pointer}
+summary{border:1px solid var(--line);border-radius:999px;padding:0 10px}
+summary:hover{border-color:var(--accent)}
+.zbar button{cursor:pointer;transition:transform .12s,box-shadow .12s}
+.zbar button:hover{transform:translateY(-2px);box-shadow:0 3px 0 rgba(0,0,0,.35)}
+.gb{box-shadow:0 2px 0 rgba(0,0,0,.3)}
+.gb:hover{transform:translateY(-2px)}
+.rbtn{grid-template-columns:4.6em minmax(0,1fr) auto auto}
+.rbtn .rk::before,.rbtn[aria-expanded] .rk::before{content:none}
+.rbar{grid-column:2 / 5}
+.rbtn .rx{font-size:12px;color:var(--accent);border:1px solid var(--line);border-radius:999px;padding:0 8px;white-space:nowrap;align-self:center}
+.rbtn .rx::after{content:'펼치기 ▾'}
+.rbtn[aria-expanded="true"] .rx::after{content:'접기 ▴'}
+.rbtn:hover .rx{border-color:var(--accent)}
+@keyframes nudge{0%{box-shadow:0 0 0 0 rgba(122,167,255,.65)}70%{box-shadow:0 0 0 10px rgba(122,167,255,0)}100%{box-shadow:0 0 0 0 rgba(122,167,255,0)}}
+@media (prefers-reduced-motion:no-preference){.nudge{animation:nudge 1.8s ease-out infinite}}
+
+
+.lpbox{border:1px solid var(--line);border-radius:12px;background:var(--card2);padding:8px 10px 10px;margin:8px 0}
+.lphd{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding:2px 2px 8px;margin-bottom:8px}
+.lane{display:flex;flex-direction:column;font-size:14px;max-width:48%;line-height:1.4}
+.lane small{font-size:12px;color:var(--muted)}
+.lane.lsrv{text-align:right;align-items:flex-end}
+ol.lplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.lprow{opacity:0;transform:translateY(4px);transition:opacity .25s,transform .25s}
+.lprow.vis{opacity:1;transform:none}
+.lprow.lgo,.lprow.lback{display:grid;grid-template-columns:3.8em minmax(0,1fr) 3.8em;align-items:center;gap:6px}
+.lpcap{font-size:12px;color:var(--muted);text-align:center;border:1px solid var(--line);border-radius:999px;padding:1px 4px;white-space:nowrap;background:var(--card)}
+.lpcap.lsrv{display:inline-flex;align-items:center;justify-content:center;gap:4px}
+.lpar{display:flex;flex-direction:column;align-items:center;min-width:0}
+.lpar em{font-style:normal;font-size:13px;text-align:center;line-height:1.4}
+.lpar em b{font-variant-numeric:tabular-nums}
+.lpar small{font-size:12px;color:var(--muted);text-align:center;line-height:1.4}
+.lpar i{position:relative;display:block;width:100%;height:2px;margin:4px 0 3px;transform:scaleX(0);transition:transform .45s ease}
+.lpar.r i{background:var(--input);transform-origin:left}
+.lpar.l i{background:var(--out);transform-origin:right}
+.lpar i::after{content:'';position:absolute;top:-4px;border:5px solid transparent}
+.lpar.r i::after{right:-3px;border-left-color:var(--input);border-right-width:0}
+.lpar.l i::after{left:-3px;border-right-color:var(--out);border-left-width:0}
+.lprow.drawn .lpar i{transform:scaleX(1)}
+.lpspin{display:none;width:9px;height:9px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%}
+.lprow.thinking .lpspin{display:inline-block;animation:lpspin .8s linear infinite}
+@keyframes lpspin{to{transform:rotate(360deg)}}
+.lpbub{max-width:76%;border-radius:12px;padding:6px 10px;font-size:14px;line-height:1.5;background:var(--card)}
+.lpbub b{display:block;font-size:12px;color:var(--muted)}
+.lpbub.q{border:1px solid var(--input)}
+.lpbub.a{border:1px solid var(--out)}
+.lpterm{max-width:84%;background:#0d1117;border:1px solid var(--line);border-radius:10px;padding:6px 10px;font:12.5px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;color:#c9d1d9;overflow-x:auto}
+.lpterm .th{font:11.5px/1.5 system-ui,sans-serif;color:#8b949e;margin-bottom:2px}
+.lpterm code{display:block;white-space:pre;background:none;border:0;padding:0;color:inherit;font:inherit;transition:opacity .2s}
+.lpterm code.cmd{color:#7ee787}
+.lpterm .tf{font:12px/1.5 system-ui,sans-serif;color:#d2a8ff;margin-top:3px;transition:opacity .2s}
+
+
+.key9{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px;margin:8px 0}
+.key9 .kg{border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--card2);display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted);line-height:1.5}
+.key9 .kg.ec{border-color:var(--accent)}
+.key9 .kg > b{color:var(--text);font-size:13.5px;margin-bottom:2px}
+.key9 i{display:inline-block;vertical-align:middle;margin-right:7px;flex:none}
+.key9 i.kd{width:10px;height:10px;border-radius:50%}
+.key9 i.kdia{width:9px;height:9px;transform:rotate(45deg)}
+.key9 i.kl{width:16px;height:3px;border-radius:2px}
+.key9 i.kband{width:16px;height:10px;background:var(--yel);opacity:.4;border-radius:2px}
+
+@media (max-width:720px){
+  .lprow.lgo,.lprow.lback{grid-template-columns:3.2em minmax(0,1fr) 3.2em;gap:4px}
+  .lpcap{font-size:11px;padding:1px 2px}
+  .lpbub,.lpterm{max-width:100%}
+  .lane{max-width:50%}
+  .rbtn .rx{font-size:11px;padding:0 6px}
+}
+
+
+:root{--hl2:rgba(122,167,255,.07)}
+:root[data-theme="light"]{--hl2:rgba(47,111,214,.05)}
+.fhead{display:inline-flex;align-items:stretch;max-width:100%;border-radius:6px;overflow:hidden;margin-bottom:10px;vertical-align:top}
+.fhead .tag{margin:0;border-radius:0;display:flex;align-items:center;flex:none}
+.fhead .how{display:block;background:var(--hl2);border-left:1px solid var(--hl);padding:2px 10px;font-size:12.5px;line-height:1.55;color:var(--muted);font-weight:400}
+.fhead .how b{color:var(--accent);font-weight:600}
+
+
+.hcap{font-size:12.5px;color:var(--muted);line-height:1.45;margin:0 0 6px}
+
+
+.tag3 small.cause{display:block;font-size:12px;color:var(--muted);line-height:1.45;margin-top:1px}
+
+
+@media (min-width:900px){
+  .f2grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;align-items:start}
+  .f2r > .bigl:first-child{margin-top:0!important}
+}
+#fig1 .stair{height:90px}
+#fig1 .rbtn{padding:5px 4px}
+#fig1 ol.rlines > li.rloc{padding:3px 4px}
+#fig1 .rbar{height:8px}
+#fig1 .rcpt{margin-bottom:8px}
+#fig1 .kpis{gap:16px;margin:8px 0}
+#fig1 .kpi .n{font-size:20px}
+
+
+#f2-q30{color:var(--out)}
+#fig2 table.price td,#fig2 table.price th{padding-top:5px;padding-bottom:5px}
+#fig2 table.price td small{display:inline;margin-left:6px}
+
+
+.thm{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.thm .seg button{min-height:28px;padding:2px 10px;font-size:13px}
+
+.cta p.ctag{margin:12px 0 2px;font-size:13px;font-weight:700;color:var(--accent)}
+
+.f4b{display:grid;gap:7px;margin:12px 0 6px}
+.f4row{display:grid;grid-template-columns:150px minmax(0,1fr);gap:10px;align-items:center;font-size:13px}
+.f4row > span{color:var(--muted)}
+.f4trk{position:relative;height:28px;border-radius:6px;background:var(--card2);border:1px solid var(--line);overflow:hidden;display:flex}
+.f4trk i{display:block;height:100%;flex:none}
+.f4trk b{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;text-shadow:0 0 4px var(--card),0 0 2px var(--card)}
+.f4trk b.dim{font-weight:400;color:var(--muted)}
+.f4leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin:2px 0 10px}
+.f4leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+@media (max-width:560px){.f4row{grid-template-columns:minmax(0,1fr);gap:3px}}
+
+.tipbox{position:fixed;z-index:60;max-width:320px;padding:7px 10px;border-radius:8px;background:var(--card2);border:1px solid var(--line);color:var(--text);font-size:12.5px;line-height:1.55;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:pre-line}
+[data-tip]{cursor:help}
+
+.rqn{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 14px;margin:10px 0 18px}
+.rqn .rqh{font-size:13px;color:var(--muted);margin-bottom:6px}
+.rqn .rqr{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.5fr) 96px;gap:10px;align-items:center;padding:6px 0;border-top:1px dashed var(--line);font-size:13.5px}
+.rqn .rqq small{display:block;font-size:12px;color:var(--muted)}
+.rqn .rqp{display:flex;flex-wrap:wrap;gap:4px}
+.rqn .rqp i{font-style:normal;font-size:12px;padding:2px 7px;border-radius:6px;border:1px solid var(--write);color:var(--text);background:var(--card2)}
+.rqn .rqp i.a{border-color:var(--out)}
+.rqn .rqr > b{text-align:right;font-size:13.5px}
+.rqn .note{margin:8px 0 0}
+@media (max-width:640px){.rqn .rqr{grid-template-columns:minmax(0,1fr) auto}.rqn .rqp{grid-column:1 / -1}}
+.rqn .rqh b{color:var(--text);font-size:14px;display:block;margin-bottom:2px}
+</style>
+</head>
+<body>
+<div class="top">
+  <b>Claude 비용, 눈으로 보기</b>
+  <nav aria-label="차례"><a href="#intro">값 비교</a><a href="#ch2">요금 방식</a><a href="#ch3">캐시와 컨텍스트</a><a href="#ch4">늘리는 습관</a><a href="#ch5">줄이는 법</a><a href="#refs">참고 문헌</a><a class="lang" href="./" lang="en" hreflang="en">English</a></nav>
+  <div class="thm" role="group" aria-label="화면 밝기"><span>화면</span><div class="seg" id="theme-seg"><button type="button" data-v="dark" aria-pressed="true">어둡게</button><button type="button" data-v="light" aria-pressed="false">밝게</button></div><button class="btn" id="theme" type="button" hidden>밝게</button></div>
+</div>
+<main>
+<header class="paper">
+  <h1>Claude 비용, 눈으로 보기</h1>
+  <p class="sub">세션이 길수록 비싸지는 까닭과 줄이는 법 (Claude Code 기준)</p>
+  <p class="meta">기준일 2026-10-23. 금액은 Claude Code 기본 모델인 Opus 5.5 의 API 요율로 셌고 답의 질이나 속도는 견주지 않았습니다. [번호]는 맨 끝 참고 문헌입니다(공식 문서 [1]~[11], 글쓴이의 Claude Code 기록으로 잰 실측 [M1]~[M13]).</p>
+</header>
+
+<div class="abstract" id="abs" role="note">
+  <h2 class="aq">같은 질문인데 왜 어떤 때는 몇 배 비쌀까?</h2>
+  <ol>
+    <li>Claude 는 대화를 기억하지 못해서 요청마다 컨텍스트 전체를 다시 보냅니다. 컨텍스트가 클수록 요청 한 번 값이 오릅니다(실측 20만 아래 약 $0.11, 70만 넘으면 약 $0.21)<a class="cite" href="#ref-m10">[M10]</a>.</li>
+    <li>다시 보낸 컨텍스트가 서버의 캐시와 맞으면 20분의 1 값으로 읽힙니다. 오래 쉬거나 모델을 바꾸면 캐시를 못 써서 컨텍스트 전체를 비싼 값으로 다시 맡깁니다<a class="cite" href="#ref-1">[1]</a>.</li>
+    <li>비용을 늘리는 습관은 한 세션 계속 쓰기, 컴팩트 미루기, 잃을까 봐 못 넘기기, 캐시 식히기, 생각 깊이 늘 최대, 막연하게 크게 시키기입니다(4장).</li>
+    <li>알맞을 때 컴팩트하고 일이 바뀌면 새 세션을 엽니다. 이 셈으로는 20만~25만 토큰 근처에서 컴팩트할 때 가장 쌌습니다. 이지 컴팩트는 컴팩트할 때와 캐시가 식는 때를 바에 알려 줍니다(5장).</li>
+  </ol>
+</div>
+
+<section id="intro">
+  <h2 class="cnum"><span>1</span>같은 질문의 값 비교</h2>
+  <p class="lead">같은 질문도 언제 묻느냐에 따라 값이 크게 다릅니다. 쉬었다 돌아와서 물으면 <b id="i-x">13배</b>까지 듭니다.</p>
+  <div class="tags3">
+    <div class="tag3"><span>새 세션에서</span><b id="i-a">$0</b><small>컨텍스트 약 7만</small><small class="cause">기본 컨텍스트(지시문 · 도구 설명 3.7만)에 앞 질문 하나만 실려 있습니다</small><i class="tbar"><i id="i-ab"></i></i></div>
+    <div class="tag3"><span>컨텍스트가 50만일 때</span><b id="i-b">$0</b><small id="i-bt"></small><small class="cause">요청마다 컨텍스트 50만을 다시 싣고 읽습니다</small><i class="tbar"><i id="i-bb"></i></i></div>
+    <div class="tag3 bad"><span>50만에서 1시간 넘게 쉰 뒤</span><b id="i-c">$0</b><small id="i-ct"></small><small class="cause">캐시가 만료돼 컨텍스트 50만 전체를 재적재합니다</small><i class="tbar"><i id="i-cb"></i></i></div>
+  </div>
+  <p>값을 가르는 것은 셋입니다. 컨텍스트 양, 서버의 캐시가 남았는지, 질문 하나가 보내는 요청 수입니다<a class="cite" href="#ref-4">[4]</a><a class="cite" href="#ref-m10">[M10]</a>.</p>
+  <p class="note">예로 든 질문은 그림 1 · 2 와 같습니다(파일을 찾아 읽고 시험을 돌린 뒤 답함, 요청 4번). 값은 Opus 5.5 요율로 셌습니다.</p>
+  <p class="note">구독 플랜(Pro, Max 등)으로 쓰면 이 금액은 청구액이 아니라 한도가 깎이는 눈금입니다(2.3)<a class="cite" href="#ref-4">[4]</a>.</p>
+</section>
+
+<div class="chap" id="ch2"><h2><span>2</span>요금이 붙는 방식</h2><p>값은 토큰 수로 매기고 요청마다 컨텍스트 전체가 실립니다.</p></div>
+
+<section id="s0">
+  <h2>2.1 토큰 · 컨텍스트 · 캐시</h2>
+  <p class="lead">토큰은 값을 세는 단위, 컨텍스트는 요청마다 보내는 글, 캐시는 서버가 저장해 둔 앞 요청의 컨텍스트입니다. 요청은 Claude Code 가 컨텍스트를 서버에 한 번 보내고 답을 한 번 받는 일이고 질문 하나에 요청이 여러 번 갑니다. 그래서 질문 하나의 값은 그 질문 동안 간 요청들의 값을 더한 것입니다(2.2).</p>
+  <figure id="fig0">
+    <div class="fhead"><span class="tag">기초 그림</span><span class="how"><b>① ② ③</b> 단추로 토큰 · 컨텍스트 · 캐시를 차례로 봅니다. 막대 칸을 누르면 그 칸의 글이 토큰 조각으로 나뉘어 보입니다.</span></div>
+    <div class="row"><div class="seg" id="f0-step"><button data-v="tok" aria-pressed="true">① 토큰</button><button data-v="ctx">② 컨텍스트</button><button data-v="cache">③ 캐시</button></div><button class="btn" id="f0-again" type="button">다시 보기 ↻</button></div>
+    <div class="b0" id="f0-tok">
+      <p><b>컨텍스트</b>는 Claude 가 요청마다 읽는 글 전체이고 <b>토큰</b>이라는 조각으로 되어 있습니다. 막대의 칸을 누르면 그 안의 글을 크게 봅니다. 값도 이 조각 수로 매깁니다.</p>
+      <div class="bigl">새 세션에 질문 하나를 한 뒤의 컨텍스트 · 약 <b id="f0-ztot">4만</b> 토큰</div>
+      <div class="zbar nudge" id="f0-zbar"></div>
+      <div class="zlens"><div class="zhead"><b id="f0-zname"></b><span id="f0-zcount"></span></div><div class="toks" id="f0-toks"></div><p class="note" id="f0-znote"></p></div>
+      <p class="note">조각 나눔은 보기입니다. 실제로는 모델이 나누고 조각 수는 실측 비율을 따랐습니다(한국어 문서는 글자 1개쯤, 코드는 1.5글자쯤이 토큰 1개)<a class="cite" href="#ref-m12">[M12]</a>. 앞 네 칸의 크기는 새 세션의 <code>/context</code> 실측입니다<a class="cite" href="#ref-m13">[M13]</a>.</p>
+      <div class="bigl" style="margin-top:12px">크기 감각(토큰)</div>
+      <div class="ruler" aria-hidden="true">
+        <i class="band" style="left:20%;width:5%"></i>
+        <span class="dn" style="left:5%;transform:translateX(-30%)">새 세션 약 5만</span>
+        <span class="up" style="left:10%;transform:translateX(-25%)">컴팩트 뒤 약 10만</span>
+        <span class="dn2 hot" style="left:22.5%;transform:translateX(-30%)">가장 싼 컴팩트 자리 20만~25만</span>
+        <span class="up bad" style="left:96.7%;transform:translateX(-90%)">자동 컴팩트 96.7만</span>
+      </div>
+    </div>
+    <div class="b0" id="f0-ctx" hidden>
+      <p>질문이 쌓이면 대화 부분만 자랍니다. 아래는 새 세션을 열자마자 <code>/context</code> 로 본 구성의 한 예입니다(설치한 도구와 메모리에 따라 다름)<a class="cite" href="#ref-m13">[M13]</a>. 질문할 때마다 이 전체를 다시 보냅니다(2.2).</p>
+      <div class="row"><div class="seg" id="f0-when"><button data-v="0" aria-pressed="true">새 세션</button><button data-v="10">질문 10개 뒤</button><button data-v="30">질문 30개 뒤</button></div></div>
+      <div class="ctxbar" id="f0-cbar"></div>
+      <div class="cparts" id="f0-cparts"></div>
+      <p class="note">지금 컨텍스트 <b id="f0-ctxn">3.7만</b> 토큰. 질문마다 컨텍스트가 약 3만 토큰씩 자란다고 본 그림입니다.</p>
+    </div>
+    <div class="b0" id="f0-cache" hidden>
+      <p><b>캐시</b>는 서버가 방금 받은 컨텍스트를 잠시 저장해 둔 것입니다. 다음 요청의 앞부분이 캐시와 같으면 캐시를 그대로 씁니다(적중). 오래 쉬면 캐시가 지워집니다. 컨텍스트가 30만 토큰일 때:</p>
+      <div class="frames" id="f0-frames"></div>
+      <div class="legend"><span><i class="c-input"></i>내 PC 가 보낸 컨텍스트</span><span><i class="c-write"></i>맡기기(새로 읽기의 2배 값)</span><span><i class="c-read"></i>꺼내 읽기(20분의 1 값)</span></div>
+    </div>
+    <figcaption><b>기초 그림.</b> 토큰은 값을 세는 조각, 컨텍스트는 요청마다 보내는 글 전체, 캐시는 서버가 저장해 둔 앞 요청의 컨텍스트입니다<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-7">[7]</a>.<details><summary>가정 · 근거 보기</summary>글자와 토큰의 비율은 Read 로 읽은 큰 파일이 컨텍스트를 얼마나 늘렸는지로 쟀습니다(한국어 md 103개 · 코드 175개)<a class="cite" href="#ref-m12">[M12]</a>. 미뤄 둔 도구 설명(약 8.5만)은 필요할 때만 실려서 빠져 있습니다. 데스크톱 앱 세션은 더 크게 시작합니다(첫 요청 가운데 6.8만)<a class="cite" href="#ref-m13">[M13]</a>. 가장 싼 자리는 그림 8 의 셈이고 자동 컴팩트 자리는 공식 문서입니다<a class="cite" href="#ref-5">[5]</a>. 요율은 Opus 5.5(백만 토큰당 새로 읽기 $4, 맡기기 1시간 $8, 꺼내 읽기 $0.20)<a class="cite" href="#ref-3">[3]</a>.</details></figcaption>
+  </figure>
+</section>
+
+<section id="s1">
+  <h2>2.2 질문 하나의 처리 과정</h2>
+  <p class="lead">Claude 는 지난 대화를 기억하지 못합니다. 그래서 Claude Code 는 서버에 보낼 때마다 지금까지의 대화를 통째로 다시 싣습니다<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-2">[2]</a>.
+  <small><b>요청</b>은 서버에 한 번 보내고 답을 한 번 받는 일이고 값은 요청마다 매깁니다. <b>질문</b>은 내가 친 글 하나이고 질문 하나에 요청이 여러 번 갑니다.</small></p>
+  <div class="rqn" role="group" aria-label="질문 내용에 따라 다른 요청 수">
+    <div class="rqh"><b>질문 내용에 따라 서버가 처리하는 요청 수가 다릅니다.</b> 무엇을 시키느냐에 따라 Claude 가 도구를 몇 번 쓰는지가 달라서입니다. 칸 하나가 요청 한 번이고 칸 안은 그 요청에 서버가 돌려준 것입니다.</div>
+    <div class="rqr"><span class="rqq">「이 함수가 하는 일을 설명해 줘」<small>코드가 이미 컨텍스트에 있음</small></span><span class="rqp"><i class="a">답</i></span><b>요청 1번</b></div>
+    <div class="rqr"><span class="rqq">「upload.ts 를 읽고 설명해 줘」</span><span class="rqp"><i>Read 요청</i><i class="a">답</i></span><b>요청 2번</b></div>
+    <div class="rqr"><span class="rqq">「업로드가 큰 파일에서 멈추는 까닭을 찾아 줘」<small>아래 그림 1 · 2 의 질문</small></span><span class="rqp"><i>Grep 요청</i><i>Read 요청</i><i>Bash 요청</i><i class="a">답</i></span><b>요청 4번</b></div>
+    <div class="rqr"><span class="rqq">「비슷한 버그를 저장소에서 모두 찾아 고쳐 줘」</span><span class="rqp"><i>Grep</i><i>Read</i><i>Read</i><i>Edit</i><i>Bash</i><i>…</i><i class="a">답</i></span><b>요청 10번 넘게</b></div>
+    <p class="note">요청마다 컨텍스트 전체를 싣고 가므로 질문 하나의 값은 그 질문의 요청 값을 모두 더한 것입니다. 글쓴이의 기록에서 질문 하나는 평균 12~32번 요청을 보냈습니다<a class="cite" href="#ref-m10">[M10]</a>. 뒤의 그림 3 · 6 · 8 은 질문 하나를 요청 10번으로 셉니다.</p>
+  </div>
+  <figure id="fig1loop">
+    <div class="fhead"><span class="tag">그림 1</span><span class="how"><b>「처음부터 보기 ▶」</b>를 누르면 질문 하나가 내 PC 와 서버를 오가는 과정이 차례로 나옵니다. <b>「한 단계씩」</b>을 누르면 한 걸음씩 봅니다.</span></div>
+    <div class="row"><button class="btn primary nudge" id="lp-go" type="button">처음부터 보기 ▶</button><button class="btn" id="lp-step" type="button">한 단계씩 ▷</button><span class="note" id="lp-state" aria-live="polite"></span></div>
+    <div class="lpbox">
+      <div class="lphd"><span class="lane"><b>내 PC · Claude Code</b><small>도구를 실제로 돌림 · 돌리는 일엔 토큰 값 없음</small></span><span class="lane lsrv"><b>Claude · 서버</b><small>컨텍스트를 읽고 다음 할 일을 정함 · 요청마다 값</small></span></div>
+      <ol class="lplist" id="lp-rows"></ol>
+    </div>
+    <p class="note" id="lp-sum"></p>
+    <figcaption><b>그림 1.</b> 서버는 도구를 직접 돌리지 않고 「이것을 돌려 줘」라는 도구 요청을 돌려줍니다. 도구는 내 PC 의 Claude Code 가 돌리고 그 결과를 붙여 컨텍스트 전체를 다시 보냅니다. 답이 나올 때까지 이것을 되풀이합니다<a class="cite" href="#ref-11">[11]</a><a class="cite" href="#ref-2">[2]</a>.<details><summary>가정 · 근거 보기</summary>질문 · 명령 · 출력은 보기입니다. Grep · Read · Bash 는 Claude Code 의 도구 이름입니다. 서버는 한 번에 도구 여러 개를 돌려 달라고 하기도 합니다<a class="cite" href="#ref-11">[11]</a>. 실제로는 질문 하나에 요청이 10번 넘게 가기도 합니다<a class="cite" href="#ref-m10">[M10]</a>. 컨텍스트 양은 새 세션의 지시문 · 도구 설명 3.7만<a class="cite" href="#ref-m13">[M13]</a>에 질문 1,500 · 검색 결과 500 · 파일 1.4만 · 시험 결과 1.2만 토큰을 차례로 붙인 셈입니다.</details></figcaption>
+  </figure>
+  <p>요청이 갈 때마다 컨텍스트 전체를 다시 실으니 값도 요청마다 붙습니다.</p>
+  <figure id="fig1">
+    <div class="fhead"><span class="tag">그림 2</span><span class="how"><b>「질문하기 ▶」</b>를 누르면 컨텍스트 전체가 서버로 가고 요청마다 든 값이 아래 표에 더해집니다. <b>「펼치기」</b>를 누르면 그 값이 어떻게 나왔는지 봅니다.</span></div>
+    <div class="row"><button class="btn primary nudge" id="f1-send" type="button">질문하기 ▶</button><button class="btn" id="f1-more" type="button">질문 5개 더 ▶▶</button><button class="btn" id="f1-reset" type="button">처음부터(새 세션)</button><span class="note" id="f1-state">누르면 왼쪽 컨텍스트가 통째로 오른쪽으로 갑니다</span></div>
+    <div class="f2grid">
+      <div class="f2l">
+    <div class="f1v" id="f1-wrap">
+      <div class="f1side"><div class="bigl">내 PC · Claude Code 가 쥔 컨텍스트</div><div class="stack" id="f1-stack"></div></div>
+      <div class="f1mid" aria-hidden="true">→</div>
+      <div class="f1side"><div class="bigl">Claude (서버)</div><div class="srv" id="f1-srv"><span id="f1-srvmsg">기다리는 중</span></div></div>
+      <div class="parcel" id="f1-parcel" aria-hidden="true"></div>
+    </div>
+    <div class="legend"><span><i style="background:#8c96a6"></i>지시문 · 도구 설명</span><span><i class="c-input"></i>질문</span><span><i style="background:#c9a5f2"></i>도구 결과(검색 · 파일 · 시험)</span><span><i class="c-out"></i>답</span><span><i class="old-sw"></i>앞서 보낸 것(또 실음)</span></div>
+    <div class="bigl">질문마다 값 · 컨텍스트가 클수록 오름</div>
+    <div class="rpast" id="f1-rpast"></div>
+    <div class="kpis">
+      <div class="kpi"><div class="n" id="f1-now">0</div><div class="t">이번 요청에 실은 양(토큰)</div></div>
+      <div class="kpi"><div class="n" id="f1-sum">0</div><div class="t">지금까지 실은 양 합계</div></div>
+      <div class="kpi"><div class="n" id="f1-tot">$0</div><div class="t">세션 값 합계 · 질문 <span id="f1-totn">1</span>개</div></div>
+    </div>
+    <div class="bigl">요청마다 실은 양 · 색이 바뀌는 곳이 질문의 경계</div>
+    <div class="stair" id="f1-bars"></div>
+      </div>
+      <div class="f2r">
+    <div class="bigl" style="margin-top:12px">요청마다 든 값</div>
+    <div class="rcpt" id="f1-rcpt">
+      <div class="rhead"><b id="f1-rtitle">요청마다 든 값</b><span class="rsum"><span id="f1-rst"></span> <b id="f1-rsv">$0</b></span></div>
+      <ol class="rlines" id="f1-rlines"></ol>
+      <div class="legend"><span><i class="c-read"></i>꺼내 읽기(앞서 보낸 부분)</span><span><i class="c-write"></i>맡기기(새로 붙은 부분)</span><span><i class="c-out"></i>답 쓰기(생각 포함)</span><span>막대 끝 = 요청 한 번 $0.25</span></div>
+    </div>
+      </div>
+    </div>
+    <figcaption><b>그림 2.</b> 질문 하나에 요청 네 번이 가고 요청마다 컨텍스트 전체를 다시 싣습니다. 질문 값은 요청 값을 더한 것이고 요청 값은 꺼내 읽기 · 맡기기 · 답 쓰기를 더한 것입니다<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-3">[3]</a>.<details><summary>가정 · 근거 보기</summary>새 세션도 지시문과 도구 설명으로 수만 토큰에서 시작합니다<a class="cite" href="#ref-m13">[M13]</a>. 새 세션의 첫 요청도 앞부분의 72%는 이미 캐시에 있었습니다<a class="cite" href="#ref-m13">[M13]</a>. 지시문처럼 늘 같은 앞부분은 다른 세션이 맡긴 캐시를 같이 쓰기 때문입니다<a class="cite" href="#ref-1">[1]</a>. 그래서 질문 1 은 지시문의 나머지를 처음 맡기느라 다음 질문보다 조금 비쌉니다. 그림은 질문 하나를 그림 1 과 같은 요청 4번으로 줄였습니다. 실제로는 질문 하나에 요청이 10번 넘게 가기도 합니다<a class="cite" href="#ref-m10">[M10]</a>. 요청 값은 Opus 5.5 로 앞서 보낸 부분은 꺼내 읽기($0.20/백만 토큰), 새로 붙은 부분은 맡기기($8), 쓰기는 답 쓰기($20)로 셌습니다. 생각한 글도 답 쓰기 값에 들어갑니다<a class="cite" href="#ref-3">[3]</a><a class="cite" href="#ref-4">[4]</a>.</details></figcaption>
+  </figure>
+</section>
+
+<section id="s2">
+  <h2>2.3 모델별 요금</h2>
+  <p class="lead">API 요금은 토큰 수로 계산합니다. 같은 토큰도 하는 일(새로 읽기 · 맡기기 · 꺼내 읽기 · 답 쓰기)마다 단가가 다르고 모델마다 또 다릅니다<a class="cite" href="#ref-3">[3]</a>.
+  <small>답 쓰기 값에는 Claude 가 답하기 전에 속으로 생각한 글도 들어갑니다<a class="cite" href="#ref-4">[4]</a><a class="cite" href="#ref-5">[5]</a>.</small></p>
+  <figure id="fig2">
+    <div class="fhead"><span class="tag">그림 3</span><span class="how">모델 단추로 요금을 바꾸고 <b>「질문 진행 ▶」</b>으로 질문 30개 동안 쌓이는 합계(위 선)와 요청 한 번 값(아래 막대)을 봅니다. 막대에 마우스를 올리면 그 질문의 값이 나뉘어 나옵니다.</span></div>
+    <div class="row"><span class="lbl">모델</span><div class="seg" id="f2-model"><button data-v="opus" aria-pressed="true">Opus 5.5</button><button data-v="sonnet">Sonnet 5.5</button><button data-v="haiku">Haiku 5.5</button><button data-v="fable">Fable 5.1</button></div></div>
+    <div class="tblwrap"><table class="price" id="f2-table"></table></div>
+    <div class="row"><span class="chip" id="f2-ratio"></span><span class="chip warn" id="f2-haiku" hidden>Haiku 5.5 는 요청이 10만 토큰을 넘으면 모두 5배 요율</span></div>
+    <div class="row" style="margin-top:14px"><span class="bigl">같은 세션을 질문 30개까지 끌고 가면</span><button class="btn primary nudge" id="f2-play" type="button">질문 진행 ▶</button></div>
+    <svg class="chart" id="f2-chart" viewBox="0 0 640 372" role="img" aria-label="같은 세션의 질문 30개 동안 모델마다 쌓이는 합계와 고른 모델의 질문 하나 값"></svg>
+    <div class="kpis">
+      <div class="kpi"><div class="n" id="f2-tot">$0</div><div class="t" id="f2-tott">질문 30개 합계</div></div>
+      <div class="kpi"><div class="n"><span id="f2-r1">$0</span> → <span id="f2-r30">$0</span></div><div class="t" id="f2-rt">요청 한 번 값 · 첫 질문 → 30번째</div></div>
+      <div class="kpi"><div class="n"><span id="f2-q1">$0</span> → <span id="f2-q30">$0</span></div><div class="t" id="f2-qt">질문 하나(요청 10번) 값 · 첫 질문 → 30번째</div></div>
+    </div>
+    <figcaption><b>그림 3.</b> 같은 세션도 모델에 따라 합계가 몇 배 차이 납니다. 컨텍스트가 커질수록 요청 한 번 값이 올라 Opus 5.5 는 30번째 질문의 요청이 첫 질문의 약 3.6배입니다(약 $0.066 → $0.24). 질문 하나는 요청 10번으로 셌으므로 질문 하나의 값도 같은 비율로 오릅니다($0.66 → $2.40). 값만 견준 것이라 비싼 모델이 더 잘하는 일도 있습니다<a class="cite" href="#ref-3">[3]</a>.<details><summary>가정 · 근거 보기</summary>새 세션 5만에서 시작해 질문마다 컨텍스트가 3만 토큰 자란다고 봤습니다<a class="cite" href="#ref-m4">[M4]</a>. 질문 1개는 요청 10번, 생각 깊이는 엑스트라, 캐시는 따뜻하다고 봤습니다. 요율은 2026-10-23 가격표입니다<a class="cite" href="#ref-3">[3]</a>.</details></figcaption>
+  </figure>
+  <div class="callout"><b>구독 플랜과 API 요금제</b> API 요금제(API 키로 쓸 때)는 쓴 토큰만큼 돈이 청구됩니다. 구독 플랜(Pro, Max, Team · Enterprise 좌석)은 정해진 요금을 내고 5시간 한도와 주간 한도 안에서 씁니다. 구독 플랜에서도 한도가 깎이는 속도는 컨텍스트 양 · 모델 · 생각 깊이를 따르므로<a class="cite" href="#ref-6">[6]</a> 여기 나온 API 금액을 한도가 깎이는 눈금으로 읽으면 됩니다. 글쓴이(Max 20)는 5시간 한도 1번이 API 값으로 $95~120 쯤이었습니다(추정)<a class="cite" href="#ref-m6">[M6]</a>.</div>
+</section>
+
+<div class="chap" id="ch3"><h2><span>3</span>캐시와 컨텍스트 양</h2><p>캐시는 서버가 앞 요청의 컨텍스트를 잠시 저장해 둔 것입니다. 다음 요청의 앞부분이 이 캐시와 같으면 새로 읽지 않고 캐시를 그대로 쓰는데 이것을 적중(캐시 히트)이라고 하며 값은 20분의 1입니다. 보관 시간(보통 1시간)이 지나 캐시가 지워지는 것을 「캐시가 식는다」고 합니다. 식으면 컨텍스트 전체를 다시 맡기고 컨텍스트가 클수록 매번 읽는 양이 늘어 값이 오릅니다.</p></div>
+
+<section id="s3">
+  <h2>3.1 캐시 적중</h2>
+  <p class="lead">서버는 방금 받은 컨텍스트를 캐시로 저장해 둡니다. 다음 요청이 오면 앞에서부터 캐시와 맞춰 보고 같은 부분은 새로 읽지 않고 그대로 씁니다(적중). 그 값은 새로 읽기의 20분의 1입니다<a class="cite" href="#ref-3">[3]</a><a class="cite" href="#ref-7">[7]</a>.
+  <small>Claude Code 의 <code>/usage</code> 에는 세션 적중률이 「Prompt cache (main)」 줄로 나옵니다<a class="cite" href="#ref-1">[1]</a>. 글쓴이의 10월 세션은 토큰으로 99.0% 가 적중이었습니다<a class="cite" href="#ref-m2">[M2]</a>.</small></p>
+  <figure id="fig3">
+    <div class="fhead"><span class="tag">그림 4</span><span class="how"><b>「요청 보내기 ▶」</b>를 누르면 캐시와 같은 앞부분은 싸게 꺼내 읽고 새로 붙은 끝부분만 맡기는 모습을 봅니다.</span></div>
+    <div class="row"><button class="btn primary nudge" id="f3-go" type="button">요청 보내기 ▶</button><span class="note" id="f3-state">캐시가 있는 서버에 컨텍스트 30.6만을 보냅니다</span></div>
+    <div class="match" id="f3-match"></div>
+    <div class="legend"><span><i class="c-read"></i>적중 · 캐시를 그대로 씀(꺼내 읽기)</span><span><i class="c-write"></i>새로 맡김</span></div>
+    <div class="meter2">
+      <div class="mrow"><span>캐시가 없었다면 들 값</span><div class="mbar"><i id="f3-mnone" class="none"></i></div><b id="f3-vnone">$0</b></div>
+      <div class="mrow"><span>실제로 든 값</span><div class="mbar"><i id="f3-mreal" class="real"></i></div><b id="f3-vreal">$0</b></div>
+    </div>
+    <div class="kpis"><div class="kpi"><div class="n" id="f3-hit">—</div><div class="t">이번 요청 적중률</div></div><div class="kpi"><div class="n" id="f3-save">—</div><div class="t">덜 든 값</div></div></div>
+    <figcaption><b>그림 4.</b> 캐시와 같은 부분은 그대로 써서 값이 거의 들지 않고 새로 붙은 부분만 맡깁니다. 적중률이 99% 에서 98% 로만 내려가도 이 요청 값은 약 28% 오릅니다. 맡기기가 꺼내 읽기의 40배 값이라서입니다<a class="cite" href="#ref-3">[3]</a>.<details><summary>가정 · 근거 보기</summary>캐시가 없었다면 컨텍스트 전체를 새로 읽습니다($4/백만 토큰). 적중한 부분은 꺼내 읽기($0.20), 새 부분은 1시간 맡기기($8)로 셌습니다<a class="cite" href="#ref-3">[3]</a>. 컨텍스트를 다섯 부분으로 나눈 것은 보기입니다. 적중률은 토큰으로 셌습니다. <code>/usage</code> 의 적중률을 어떻게 세는지는 문서에 자세히 없습니다<a class="cite" href="#ref-1">[1]</a>.</details></figcaption>
+  </figure>
+</section>
+
+<section id="s4">
+  <h2>3.2 캐시 만료와 모델 변경</h2>
+  <p class="lead">맡긴 캐시는 보관 시간(보통 1시간)이 지나면 지워지고 모델을 바꾸면 쓸 수 없습니다. 그러면 다음 요청이 컨텍스트 전체를 처음부터 다시 맡깁니다<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-4">[4]</a>.
+  <small>보관 시간은 쓰는 방식과 설정에 따라 5분이기도 합니다. 내 보관 시간과 적중률은 <code>/usage</code> 의 Prompt cache 줄에서 봅니다<a class="cite" href="#ref-1">[1]</a>.</small></p>
+  <figure id="fig4">
+    <div class="fhead"><span class="tag">그림 5</span><span class="how">무슨 일을 고르고 <b>「다음 질문 보내기 ▶」</b>를 누르면 다음 요청이 캐시를 꺼내 읽는지 전부 다시 맡기는지와 그 값이 나옵니다. 컨텍스트 양 막대를 끌면 아래 선 그래프에서 컨텍스트가 클수록 두 값의 차이가 커지는 것을 봅니다.</span></div>
+    <div class="row"><span class="lbl">무슨 일</span><div class="seg" id="f4-ev"><button data-v="warm">1시간 안에 돌아옴</button><button data-v="cold" aria-pressed="true">1시간 넘게 쉼</button><button data-v="model">모델을 바꿈</button><button data-v="effort">생각 깊이를 바꿈</button></div></div>
+    <div class="row"><span class="lbl">컨텍스트 양</span><input type="range" id="f4-ctx" min="100000" max="967000" step="1000" value="400000" aria-label="컨텍스트 양(토큰)"><span class="val" id="f4-ctxv">40만</span></div>
+    <div class="row"><button class="btn primary nudge" id="f4-go" type="button">다음 질문 보내기 ▶</button></div>
+    <p class="evmsg" id="f4-evmsg"></p>
+    <div class="timerrow"><span class="note">서버 캐시의 보관 시간</span><div class="timer"><div id="f4-timer"></div></div><span class="note" id="f4-timel"></span></div>
+    <div class="f4b" id="f4-match"></div>
+    <div class="f4leg"><span><i style="background:#6f7887"></i>지시문 · 도구 설명 3.7만</span><span><i style="background:var(--input)"></i>대화</span><span><i style="background:var(--out)"></i>새 질문 3천</span><span><i style="background:var(--read)"></i>캐시 · 꺼내 읽기(백만 토큰당 $0.20)</span><span><i style="background:var(--write)"></i>맡기기(백만 토큰당 $8 · 꺼내 읽기의 40배)</span></div>
+    <svg class="chart" id="f4-line" viewBox="0 0 640 200" role="img" aria-label="컨텍스트 양에 따른 다음 질문 첫 요청 값. 캐시가 있을 때와 없을 때"></svg>
+    <div class="kpis"><div class="kpi"><div class="n" id="f4-first">$0</div><div class="t">다음 질문 첫 요청 값</div></div><div class="kpi"><div class="n" id="f4-warmv">$0</div><div class="t">캐시가 있었다면</div></div><div class="kpi"><div class="n" id="f4-ratio">—</div><div class="t">차이</div></div></div>
+    <p class="note" id="f4-real"></p>
+    <div id="f4-choicebox">
+      <div class="bigl" style="margin-top:14px">식었을 때 무엇이 쌀까 · 지금 한 번에 드는 값</div>
+      <div class="choice" id="f4-choice"></div>
+      <p class="note" id="f4-choicemsg"></p>
+    </div>
+    <figcaption><b>그림 5.</b> 캐시가 있으면 꺼내 읽고 없으면 컨텍스트 전체를 처음부터 맡깁니다. 맡기기가 꺼내 읽기의 40배 값이라 컨텍스트가 클수록 그 한 번이 비쌉니다. 생각 깊이는 이 모델들에선 캐시를 그대로 씁니다<a class="cite" href="#ref-1">[1]</a>.<details><summary>가정 · 근거 보기</summary>얼마나 오래 쉬었는지가 아니라 보관 시간을 넘겼느냐만 값을 바꿉니다. 82분 쉰 뒤와 64시간 쉰 뒤 다시 맡긴 값이 거의 같았습니다<a class="cite" href="#ref-m3">[M3]</a>. 캐시는 모델마다 따로입니다. 생각 깊이는 Opus 5.5 · Sonnet 5.5 · Haiku 5.5 · Fable 5.1 을 API 키나 Claude 구독으로 쓸 때 캐시를 그대로 씁니다. 그 밖의 모델이나 Amazon Bedrock · Google Cloud 에서는 바꾸면 처음부터 다시 맡깁니다<a class="cite" href="#ref-1">[1]</a>. 「무엇이 쌀까」는 이어 가기 = 컨텍스트 전체 다시 맡기기, 컴팩트 = 캐시 없이 컨텍스트 읽기($4) + 요약 쓰기 1.5만 + 줄어든 컨텍스트 10만 맡기기, 새 세션 = 지시문 · 도구 3.7만 맡기기로 셌습니다<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-m13">[M13]</a>. 보관 시간 기본값은 Claude 계정으로 요금제 안에서 쓰는 메인 컨텍스트가 1시간입니다. API 키, 클라우드 제공자, 사용 크레딧, 하위 에이전트는 5분이고 설정(promptCacheTtl)이나 회사 관리 설정으로 1시간으로 바꿀 수 있습니다<a class="cite" href="#ref-1">[1]</a>.</details></figcaption>
+  </figure>
+  <div class="keepbreak">
+    <div class="kb bad"><b>캐시를 깨는 일</b><span>모델 바꾸기</span><span>보관 시간 넘게 쉬기</span><span>빠른 모드 켜기(그 뒤 첫 요청)</span><span>MCP 서버 연결 · 해제(도구를 미리 싣는 설정일 때)</span><span>컴팩트(대화 부분만 새로)</span><span>이미지가 많이 쌓여 오래된 것이 빠질 때</span><span>Claude Code 업그레이드 뒤 첫 세션</span></div>
+    <div class="kb good"><b>캐시를 지키는 일</b><span>생각 깊이 바꾸기(위 모델들)</span><span>파일 고치기</span><span>CLAUDE.md 고치기(다음 세션부터 반영)</span><span>권한 모드 바꾸기</span><span>스킬 · 명령 쓰기</span><span>하위 에이전트 띄우기</span><span>/rewind 로 되돌리기</span></div>
+  </div>
+  <p class="note">목록은 공식 문서의 요지입니다<a class="cite" href="#ref-1">[1]</a>. 모델과 생각 깊이는 세션 처음에 정하고 컴팩트는 일이 끊기는 곳에서 하면 캐시가 덜 깨집니다.</p>
+</section>
+
+<section id="s5">
+  <h2>3.3 긴 세션</h2>
+  <p class="lead">세션을 끌고 가며 질문 하나의 값이 어떻게 변하는지, 컴팩트하면 얼마나 줄어드는지 봅니다.
+  <small>컴팩트는 지금까지의 대화를 요약 하나로 줄이는 일입니다. 직접 <code>/compact</code> 로 하거나 컨텍스트가 약 96.7만 토큰에 닿으면 Claude Code 가 스스로 합니다(자동 컴팩트)<a class="cite" href="#ref-5">[5]</a>.</small></p>
+  <figure id="fig5">
+    <div class="fhead"><span class="tag">그림 6</span><span class="how">모델 · 생각 깊이 · 컴팩트 시점(컨텍스트가 이 양이 되면 컴팩트)을 고르고 <b>「세션 진행 ▶」</b>을 누르면 질문 60개 동안 쌓이는 값을 컴팩트 없이 할 때와 견줍니다.</span></div>
+    <div class="row"><span class="lbl">모델</span><div class="seg" id="f5-model"><button data-v="opus" aria-pressed="true">Opus 5.5</button><button data-v="sonnet">Sonnet 5.5</button><button data-v="haiku">Haiku 5.5</button><button data-v="fable">Fable 5.1</button></div></div>
+    <div class="row"><span class="lbl">생각 깊이</span><div class="seg" id="f5-effort"><button data-v="low">낮음<sup>*</sup></button><button data-v="medium">중간</button><button data-v="high">높음<sup>*</sup></button><button data-v="xhigh" aria-pressed="true">엑스트라</button><button data-v="max">최대</button></div></div>
+    <div class="row"><span class="lbl">컴팩트 시점</span><div class="sl"><input type="range" id="f5-t" min="150000" max="600000" step="10000" value="250000" aria-label="컴팩트하는 컨텍스트 양"></div><span class="val" id="f5-tv">25만</span></div>
+    <div class="row"><button class="btn primary nudge" id="f5-play" type="button">세션 진행 ▶</button><div class="sl"><input type="range" id="f5-q" min="1" max="60" step="1" value="60" aria-label="몇 번째 질문까지"></div><span class="val" id="f5-qv">60번째</span></div>
+    <svg class="chart" id="f5-chart" viewBox="0 0 640 280" role="img" aria-label="질문마다 값 막대(컴팩트 없이 · 컴팩트)와 합계 선 둘"></svg>
+    <div class="legend"><span><i style="background:none;border:1px solid var(--muted)"></i>테두리 막대 · 컴팩트 없이</span><span>채운 막대 · 정한 시점에 컴팩트할 때</span><span><i class="c-read"></i>다시 읽기</span><span><i class="c-write"></i>새 글 맡기기</span><span><i class="c-out"></i>답 쓰기</span><span><i style="background:#c9a5f2"></i>컴팩트 실행 값(요약 · 다시 맡기기) · 보라 점선이 컴팩트한 자리</span><span><i style="background:var(--accent)"></i>합계(점선은 컴팩트 없이)</span></div>
+    <div class="kpis">
+      <div class="kpi"><div class="n" id="f5-a">$0</div><div class="t">컴팩트 없이 합계</div></div>
+      <div class="kpi"><div class="n" id="f5-b">$0</div><div class="t">컴팩트할 때 합계</div></div>
+      <div class="kpi"><div class="n" id="f5-s">$0</div><div class="t">아낀 값</div></div>
+      <div class="kpi"><div class="n" id="f5-c">0번</div><div class="t">컴팩트 횟수</div></div>
+    </div>
+    <p class="note" id="f5-msg"></p>
+    <figcaption><b>그림 6.</b> 컴팩트 없이 가면 질문 하나의 값이 계속 커지다 96.7만에서야 자동 컴팩트로 줄어듭니다. 정한 크기에서 컴팩트하면 막대가 낮게 머물러 합계가 덜 쌓입니다<a class="cite" href="#ref-5">[5]</a>.<details><summary>가정 · 근거 보기</summary>새 세션 5만에서 시작해 질문마다 컨텍스트가 3만 토큰 자랍니다. 질문 1개는 요청 10번, 요청마다 새 글 3,000 토큰을 맡깁니다<a class="cite" href="#ref-m4">[M4]</a>. 생각 깊이별 요청당 출력은 실측(최대 2,434, 엑스트라 1,458, 중간 385 토큰)<a class="cite" href="#ref-m8">[M8]</a>이고 *낮음과 높음은 그 사이를 이은 가정입니다. 컴팩트 1번은 컨텍스트 읽기 + 요약 쓰기 1.5만 + 다시 맡기기 4.3만 토큰이고 뒤 크기는 10만입니다<a class="cite" href="#ref-m5">[M5]</a>. Haiku 5.5 는 요청이 10만 토큰을 넘으면 5배 요율입니다<a class="cite" href="#ref-3">[3]</a>.</details></figcaption>
+  </figure>
+</section>
+
+<section id="real">
+  <h2>3.4 실제 세션 사례</h2>
+  <div class="hook">
+    <div class="hook-n"><span class="a" id="hook-a">$242</span><span class="arr">→</span><span class="b" id="hook-b">약 $164</span></div>
+    <p>글쓴이의 실제 세션 하나(2026-10-20 ~ 23, Opus 5.5, 요청 1,821번)를 다시 셈했습니다. 25만에서 컴팩트만 했어도 합계가 약 3분의 1 줄었습니다(추정)<a class="cite" href="#ref-m11">[M11]</a>.</p>
+  </div>
+  <figure id="fig8">
+    <div class="fhead"><span class="tag">그림 7</span><span class="how"><b>「처음부터 따라가기 ▶」</b>를 누르거나 막대를 끌면 예시 세션의 값이 요청마다 쌓이는 모습을 봅니다. ① ~ ④ 에 마우스를 올리면 그때 무슨 일이 있었는지 나옵니다.</span></div>
+    <div class="row"><button class="btn primary nudge" id="f8-play" type="button">처음부터 따라가기 ▶</button><div class="sl"><input type="range" id="f8-k" min="1" max="1821" step="1" value="1821" aria-label="여기까지 보기(요청 번호)"></div><span class="val" id="f8-kv">1,821번째</span></div>
+    <div class="key9">
+      <div class="kg"><b>예시 세션 · 글쓴이의 실제 기록</b><span><i class="kl" style="background:var(--read)"></i>위 청록 면 · 예시 세션의 컨텍스트 양(컴팩트를 늦게 한 세션), 노란 숫자는 컴팩트할 때의 양</span><span><i class="kl" style="background:var(--out)"></i>아래 빨강 선 · 쌓인 값</span><span><i class="kd" style="background:var(--write)"></i>① ~ ④ · 오래 쉰 뒤 첫 요청(컨텍스트 전체를 다시 맡김)</span></div>
+      <div class="kg"><b>추정 · 25만마다 컴팩트했다면</b><span><i class="kl" style="background:var(--good)"></i>초록 선 · 25만이 될 때마다 꾸준히 컴팩트했다면(위는 컨텍스트 양, 아래는 쌓인 값)</span><span><i class="kband" style="background:var(--good)"></i>옅은 초록 띠 · 값이 가장 싼 자리 20만~25만(그림 8 의 셈)</span></div>
+    </div>
+    <svg class="chart" id="f8-chart" viewBox="0 0 640 330" role="img" aria-label="실제 세션과 이상적으로 했을 때의 컨텍스트 양과 쌓인 값"></svg>
+        <div class="kpis">
+      <div class="kpi"><div class="n" id="f8-a">$0</div><div class="t">예시 세션 합계(거기까지)</div></div>
+      <div class="kpi"><div class="n" id="f8-b">$0</div><div class="t">25만마다 컴팩트했다면</div></div>
+      <div class="kpi"><div class="n" id="f8-s">$0</div><div class="t">차이</div></div>
+      <div class="kpi"><div class="n" id="f8-ctx">0</div><div class="t">그때 컨텍스트 양(예시 세션 대 25만마다 컴팩트)</div></div>
+    </div>
+    <div class="coldlist" id="f8-colds"></div>
+    <div class="cards">
+      <div class="card"><div class="n" id="f8-c1">7번</div><div class="t">컴팩트 횟수(예시 세션 대 25만마다 컴팩트). 예시 세션이 컴팩트한 때의 컨텍스트 양은 가운데 값이 <b id="f8-c1b">52만</b>으로 가장 싼 자리(약 23만)의 두 배가 넘습니다.</div></div>
+      <div class="card"><div class="n" id="f8-c2">$15</div><div class="t">식은 캐시로 더 낸 값(예시 세션 대 25만마다 컴팩트). 컨텍스트가 작으면 다시 맡겨도 덜 듭니다.</div></div>
+      <div class="card"><div class="n" id="f8-c3">59%</div><div class="t" id="f8-c3t">컨텍스트가 40만을 넘을 때 보낸 요청(46%)이 낸 비용의 몫</div></div>
+    </div>
+    <figcaption><b>그림 7.</b> 실제로는 컨텍스트를 크게 키운 채 이어 가 합계가 가파르게 쌓였습니다. 25만에서 컴팩트했다면 같은 일을 약 3분의 1 덜 내고 했다는 셈입니다(추정)<a class="cite" href="#ref-m11">[M11]</a>.<details><summary>가정 · 근거 보기</summary>세션 기록에서 Opus 5.5 메인 요청만 셌습니다(에이전트 몫 뺌). 요청 5번씩 묶어 그렸습니다. 이상적인 쪽은 같은 요청 · 같은 새 글 · 같은 출력을 두고 컨텍스트 양만 줄여 셌습니다. 컴팩트 1번은 컨텍스트 읽기 + 요약 쓰기 1.5만 + 다시 맡기기 4.3만 토큰<a class="cite" href="#ref-m5">[M5]</a>이고 식은 캐시 때는 줄어든 컨텍스트만 다시 맡깁니다. 컴팩트 뒤 파일을 다시 읽는 값은 넣지 않아 실제로 덜 내는 값은 이보다 작을 수 있습니다. 실제 쪽엔 세션 기록에 없는 컴팩트 요약 요청이 빠져 있습니다. 값은 API 요율로 셌습니다(구독이라 청구액은 아님).</details></figcaption>
+  </figure>
+  <p class="note">여러 세션(질문 1,980개)을 모아 봐도 요청 한 번 값은 20만 아래 약 $0.11, 70만 넘으면 약 $0.21 이었습니다<a class="cite" href="#ref-m10">[M10]</a>. 그래서 평균 질문당 값이 높을 때는 요청 한 번 값을 먼저 봅니다. 그것도 높으면 컨텍스트가 커서이고(컴팩트할 때), 아니면 질문 하나가 일을 많이 시켜서입니다.</p>
+</section>
+
+<div class="chap" id="ch4"><h2><span>4</span>비용을 늘리는 습관</h2><p>같은 일을 맡겨도 쓰는 습관에 따라 비용이 몇 배까지 차이 납니다. 세션을 길게 끌면 요청마다 다시 읽는 양이 늘고 오래 쉬면 캐시가 지워져 컨텍스트 전체를 다시 맡겨야 합니다. 실제 기록에서 비용을 키운 습관은 아래와 같습니다. 이지 컴팩트가 습관마다 돕는 것은 5.3 에 있습니다.</p></div>
+
+<section class="habit" id="h1">
+  <div class="hn">습관 1</div><h2>일이 바뀌어도 한 세션을 계속 쓴다</h2>
+  <div class="hg">
+    <div class="hc why"><b>비용이 느는 까닭</b><p>일이 바뀌어도 앞 일의 컨텍스트가 그대로 실려 있어 한 줄 질문도 쌓인 컨텍스트 전체를 읽는 값을 냅니다<a class="cite" href="#ref-4">[4]</a>. 글쓴이의 기록(질문 1,980개)에서 요청 한 번 값은 컨텍스트가 20만 아래일 때 약 $0.11, 70만을 넘었을 때 약 $0.21 로 두 배 가까이 됐습니다<a class="cite" href="#ref-m10">[M10]</a>.</p><button class="btn" type="button" data-go="fig5">그림 6 에서 보기 →</button></div>
+    <div class="hc fix"><b>직접 고치는 법</b><p>일이 바뀌면 먼저 「지금까지 정한 것과 다음 할 일을 진행메모.md 에 적어 줘」라고 시킵니다. 새 일은 새 세션을 열어 시작하고 앞 일로 돌아올 때는 「진행메모.md 부터 읽고 이어 가」라고 합니다(5.2). <code>/clear</code> 는 컨텍스트를 모두 비우므로 메모를 남긴 뒤에만 씁니다<a class="cite" href="#ref-9">[9]</a>.</p></div>
+  </div>
+</section>
+
+<section class="habit" id="h2">
+  <div class="hn">습관 2</div><h2>컴팩트를 자동 컴팩트까지 미룬다</h2>
+  <div class="hg">
+    <div class="hc why"><b>비용이 느는 까닭</b><p>자동 컴팩트는 컨텍스트가 약 96.7만 토큰에 닿으면 Claude Code 가 스스로 하는 컴팩트입니다<a class="cite" href="#ref-5">[5]</a>. 그때까지 미루면 질문마다 큰 컨텍스트를 읽는 값이 쌓입니다. 글쓴이가 개발 열흘 동안 실제로 컴팩트한 때의 컨텍스트 양은 가운데 값이 65만이었습니다<a class="cite" href="#ref-m4">[M4]</a>. 그림 8 의 셈으로는 65만에서 할 때 질문 60개 총액이 가장 싼 자리(약 23만)의 약 1.3배입니다.</p><button class="btn" type="button" data-go="fig6">그림 8 에서 보기 →</button></div>
+    <div class="hc fix"><b>직접 고치는 법</b><p>기능 하나를 끝냈을 때처럼 일이 끊기는 곳에서 직접 <code>/compact</code> 를 입력합니다<a class="cite" href="#ref-1">[1]</a>. 컨텍스트가 20만~25만쯤이면 비용으로도 가장 싼 때입니다(그림 8).</p></div>
+  </div>
+</section>
+
+<section class="habit" id="h3">
+  <div class="hn">습관 3</div><h2>잃을까 봐 컴팩트도 새 세션도 미룬다</h2>
+  <div class="hg">
+    <div class="hc why"><b>비용이 느는 까닭</b><p>정한 것과 다음 할 일이 대화 속에만 있으면 컴팩트나 새 세션 뒤에 사라질까 봐 한 세션을 계속 끌게 됩니다. 그러면 습관 1 · 2 처럼 커진 컨텍스트를 질문마다 다시 읽어 값이 오릅니다. 걱정 자체는 틀리지 않습니다. 글쓴이도 적어 두지 않은 결정을 찾느라 닫은 세션 4개의 대화 기록을 다시 뒤졌습니다<a class="cite" href="#ref-m9">[M9]</a>.</p><button class="btn" type="button" data-go="fig7">그림 9 에서 보기 →</button></div>
+    <div class="hc fix"><b>직접 고치는 법</b><p>컴팩트하거나 새 세션을 열기 전에 「지금까지 정한 것과 그 까닭, 다음 할 일을 진행메모.md 에 적어 줘」라고 시킵니다. 파일에 적은 것은 컴팩트 뒤에도 새 세션에서도 그대로 남습니다. 컴팩트할 때는 <code>/compact</code> 뒤에 남길 것을 적으면(예: <code>/compact 정한 것과 다음 할 일 위주로</code>) 요약이 그것을 챙깁니다<a class="cite" href="#ref-9">[9]</a>. 순서는 5.2 에 있습니다.</p></div>
+  </div>
+</section>
+
+<section class="habit" id="h4">
+  <div class="hn">습관 4</div><h2>캐시를 식힌다(오래 쉬기 · 도중에 모델 바꾸기)</h2>
+  <div class="hg">
+    <div class="hc why"><b>비용이 느는 까닭</b><p>캐시는 정해진 시간 동안 쓰지 않으면 지워집니다(Claude 계정 요금제면 1시간)<a class="cite" href="#ref-1">[1]</a>. 지워진 뒤 첫 요청은 컨텍스트 전체를 처음부터 다시 맡깁니다. 글쓴이의 기록에서 15시간 쉬고 돌아온 첫 요청 하나가 $7.08 이었습니다. 캐시가 남아 있었다면 약 $0.21 이었을 요청입니다<a class="cite" href="#ref-m11">[M11]</a>. 도중에 모델을 바꿔도 캐시를 쓰지 못해 처음부터 다시 맡깁니다<a class="cite" href="#ref-1">[1]</a>.</p><button class="btn" type="button" data-go="fig4cold">그림 5 에서 보기 →</button></div>
+    <div class="hc fix"><b>직접 고치는 법</b><p>점심이나 퇴근처럼 오래 비우기 전에 <code>/compact</code> 로 컨텍스트를 줄여 둡니다. 돌아와서 다시 맡기는 양이 작아집니다. 일을 마칠 거면 진행 메모를 쓰고 닫습니다. 모델은 세션을 시작할 때 고르고 도중에 바꾸지 않습니다<a class="cite" href="#ref-1">[1]</a>.</p></div>
+  </div>
+</section>
+
+<section class="habit" id="h5">
+  <div class="hn">습관 5</div><h2>생각 깊이를 늘 최대로 둔다</h2>
+  <div class="hg">
+    <div class="hc why"><b>비용이 느는 까닭</b><p>생각 깊이를 올리면 Claude 가 답을 쓰기 전에 하는 생각도 출력 토큰으로 값을 냅니다<a class="cite" href="#ref-4">[4]</a>. 출력(답 쓰기)은 꺼내 읽기의 100배 값입니다<a class="cite" href="#ref-3">[3]</a>. 글쓴이의 기록에서 요청 한 번의 출력은 깊이 최대일 때 2,434 토큰, 엑스트라일 때 1,458 토큰이었습니다. 맡긴 일이 달라 깊이만의 차이는 아닙니다<a class="cite" href="#ref-m8">[M8]</a>.</p><button class="btn" type="button" data-go="fig5max">그림 6 에서 보기 →</button></div>
+    <div class="hc fix"><b>직접 고치는 법</b><p>평소에는 한 단계 낮춰 두고 어려운 설계나 잘 안 풀리는 버그처럼 깊이 생각해야 할 때만 최대로 올립니다<a class="cite" href="#ref-4">[4]</a>. 이 모델들은 깊이를 바꿔도 캐시가 그대로라 도중에 바꿔도 됩니다(3.2).</p></div>
+  </div>
+</section>
+
+<section class="habit" id="h6">
+  <div class="hn">습관 6</div><h2>막연하게 크게 시킨다</h2>
+  <div class="hg">
+    <div class="hc why"><b>비용이 느는 까닭</b><p>막연하게 시키면 Claude 가 이것저것 찾아 읽느라 질문 하나에 요청을 여러 번 보냅니다<a class="cite" href="#ref-4">[4]</a>. 요청마다 컨텍스트 전체를 다시 읽으므로 요청 수만큼 값이 붙습니다(그림 1). 글쓴이의 기록에서 컨텍스트가 10만 아래인 작은 세션에서도 질문 하나가 평균 약 32번 요청을 보냈고 질문 하나의 값은 가운데 $0.96 이었습니다. 질문 값을 가장 크게 흔든 것은 컨텍스트 양보다 요청 수였습니다<a class="cite" href="#ref-m10">[M10]</a>.</p><button class="btn" type="button" data-go="fig1loop">그림 1 에서 보기 →</button></div>
+    <div class="hc fix"><b>직접 고치는 법</b><p>고칠 파일 · 함수와 원하는 결과를 적어 시킵니다(예: 「upload/chunker.ts 의 재시도 간격을 2초로 바꿔 줘」). 저장소 전체를 훑는 조사처럼 큰 읽기는 하위 에이전트에게 맡기면 그 읽기가 이 세션의 컨텍스트에 쌓이지 않습니다<a class="cite" href="#ref-4">[4]</a>.</p></div>
+  </div>
+</section>
+
+<div class="chap" id="ch5"><h2><span>5</span>비용 줄이는 법</h2><p>컨텍스트가 커지면 적당한 때 컴팩트하거나 새 세션으로 인계해야 비용이 줄어듭니다. 이 셈으로는 컨텍스트가 20만~25만일 때 줄이는 것이 가장 쌌습니다. 이지 컴팩트는 그때를 바에 알려 줍니다.</p></div>
+
+<section id="s6">
+  <h2>5.1 컴팩트는 언제 하나</h2>
+  <p class="lead">컴팩트하면 컨텍스트가 <b>요약 하나</b>로 줄어 그 뒤 질문마다 읽는 양이 작아집니다<a class="cite" href="#ref-1">[1]</a>.
+  <small>너무 이르면 요약하는 값이 자주 들고 너무 늦으면 큰 컨텍스트를 읽는 값이 쌓입니다. 막대를 끌어 가장 싼 자리를 찾아보세요.</small></p>
+  <figure id="fig6">
+    <div class="fhead"><span class="tag">그림 8</span><span class="how">막대를 끌어 컴팩트 시점을 바꾸면 질문 60개 동안의 컨텍스트 양 · 요청 한 번 값 · 합계가 바뀝니다. 가운데 막대에 마우스를 올리면 그 질문의 값이 나옵니다. <b>「가장 싼 자리로 ★」</b>는 합계가 가장 작은 자리로 옮깁니다.</span></div>
+    <div class="row"><span class="lbl">컴팩트 시점</span><input type="range" id="f6-t" min="120000" max="967000" step="10000" value="500000" aria-label="컴팩트하는 컨텍스트 양"><span class="val" id="f6-tv">50만</span><button class="btn nudge" id="f6-best" type="button">가장 싼 자리로 ★</button></div>
+    <svg class="chart" id="f6-saw" viewBox="0 0 640 336" role="img" aria-label="질문 60개 동안 적재된 컨텍스트 양과 요청 한 번 값. 컴팩트한 자리에서 둘 다 떨어진다"></svg>
+    <svg class="chart" id="f6-u" viewBox="0 0 640 220" role="img" aria-label="컴팩트 시점에 따른 질문 60개 총액 곡선"></svg>
+    <div class="kpis"><div class="kpi"><div class="n" id="f6-avg">$0</div><div class="t">평균 질문당 값 · 이 시점</div></div><div class="kpi"><div class="n" id="f6-cost">$0</div><div class="t" id="f6-costt">질문 60개 총액</div></div><div class="kpi"><div class="n" id="f6-auto">$0</div><div class="t">자동 컴팩트(96.7만)만 기다리면</div></div><div class="kpi"><div class="n" id="f6-comp">0번</div><div class="t">컴팩트 횟수</div></div></div>
+    <div class="row"><span class="chip" id="f6-sig"></span></div>
+    <figcaption><b>그림 8.</b> 이 가정에서 가장 싼 자리는 약 <b id="f6-bestv">23만</b>입니다. Claude Code 가 그냥 두면 스스로 컴팩트하는 자리는 약 96.7만입니다<a class="cite" href="#ref-5">[5]</a>.<details><summary>가정 · 근거 보기</summary>그림 6 과 같은 가정(Opus 5.5 · 엑스트라)입니다. 질문마다 요청 수를 고정해서 여기선 평균 질문당 값이 컴팩트 시점만 따라 움직입니다. 실제로는 요청 수가 더 크게 흔듭니다(3.4).</details></figcaption>
+  </figure>
+  <div class="callout"><b>요금으로만 정한 자리입니다.</b> 꼭 여기서 할 필요는 없습니다. 기능 하나를 끝냈을 때나 주제가 바뀔 때처럼 일이 끊기는 곳에서 하는 편이 일의 흐름에 맞습니다. 하던 일 한가운데서 컴팩트하면 세부를 잃기 쉽습니다(5.2).</div>
+</section>
+
+<section id="s7">
+  <h2>5.2 컴팩트와 세션 인계</h2>
+  <p class="lead">컨텍스트가 커졌을 때 고를 수 있는 길은 그대로 이어 가기 · 컴팩트 · 세션 인계입니다. 컴팩트는 같은 세션에서 지금까지의 대화를 요약 하나로 줄입니다. 세션 인계는 진행 메모를 남긴 뒤 새 세션을 열어 그 메모부터 읽게 하는 것입니다. 셋은 남는 것과 드는 값이 다릅니다.</p>
+  <figure id="fig7">
+    <div class="fhead"><span class="tag">그림 9</span><span class="how">컨텍스트 양 단추나 막대 묶음을 누르면 그 양에서 컴팩트하거나 인계할 때 무엇이 남고 얼마가 드는지 아래 카드에 나옵니다.</span></div>
+    <div class="row"><span class="lbl">줄일 때 컨텍스트 양</span><div class="seg nudge" id="f7-size"><button data-v="200000" aria-pressed="false">20만</button><button data-v="500000" aria-pressed="true">50만</button><button data-v="800000" aria-pressed="false">80만</button></div></div>
+    <div class="bigl">줄인 뒤 질문 10개를 더 할 때의 합계(컴팩트 · 메모 쓰기 값 포함)</div>
+    <div class="gbars" id="f7-bars"></div>
+    <div class="legend"><span><i style="background:var(--muted)"></i>그대로 이어 가기</span><span><i style="background:var(--accent)"></i>컴팩트</span><span><i style="background:var(--good)"></i>세션 인계(진행 메모 + 새 세션)</span></div>
+    <p class="note" id="f7-msg"></p>
+    <div class="bigl" style="margin-top:14px">고른 양에서 줄이면 무엇이 남고 얼마가 드는지</div>
+    <div class="ways" id="f7-ways"></div>
+    <div class="legend"><span>✓ 남음</span><span>◐ 일부만 남음</span><span style="text-decoration:line-through">줄 그음</span><span>= 잃음</span></div>
+    <figcaption><b>그림 9.</b> 컴팩트는 남길 것을 요약이 정하고 세션 인계는 내가 정합니다. 컨텍스트가 클수록 줄여서 아끼는 값이 커집니다<a class="cite" href="#ref-1">[1]</a><a class="cite" href="#ref-9">[9]</a>.<details><summary>가정 · 근거 보기</summary>컴팩트 뒤에는 CLAUDE.md, 자동 메모리, 계획이 디스크에서 다시 붙고 최근에 고친 파일도 다섯 개까지 다시 읽힙니다(긴 파일은 이름만)<a class="cite" href="#ref-9">[9]</a>. 어떤 세부가 빠질지는 요약마다 달라서 ◐ · 줄 그음은 개념 그림입니다. 값은 질문 10개 더(질문마다 3만 자람, Opus 5.5 · 엑스트라)로 셌습니다. 컴팩트는 컨텍스트 읽기 + 요약 쓰기 1.5만 + 다시 맡기기 4.3만, 뒤 크기 10만입니다<a class="cite" href="#ref-m5">[M5]</a>. 세션 인계는 진행 메모 쓰기(컨텍스트 읽기 + 출력 4천 토큰) 뒤 약 3.7만에서 시작하고 첫 요청에서 앞부분 72% 를 꺼내 읽는다고 봤습니다<a class="cite" href="#ref-m13">[M13]</a>.</details></figcaption>
+  </figure>
+  <h3 style="font-size:17px;margin:22px 0 4px">진행 메모를 남기라는 근거</h3>
+  <p class="note">컴팩트 요약에는 정한 것과 그 까닭이 빠질 수 있습니다. 그래서 진행 메모를 따로 남기라고 권하는데 그 근거는 아래와 같습니다.</p>
+  <div class="evid"><b>공식 · Anthropic 엔지니어링 글(2025-11)<a class="cite" href="#ref-10">[10]</a></b> Anthropic 이 여러 세션에 걸친 긴 일을 Claude 에 맡겨 보니 컴팩트만으로는 일이 잘 이어지지 않았습니다. 진행 메모 파일 · git 기록 · 기능 목록을 남기고 새 세션이 그것부터 읽게 하자 하던 일을 이어 갔습니다. 그 글은 결과를 수치 없이 사례로 적었습니다.</div>
+  <div class="evid"><b>실측 · 글쓴이의 기록<a class="cite" href="#ref-m9">[M9]</a></b> 진행 메모 없이 세션을 닫았더니 대화에만 남은 결정을 찾느라 보관된 세션 4개의 대화 기록을 다시 뒤져야 했습니다.</div>
+  <h3 style="font-size:17px;margin:22px 0 4px">컴팩트하기 전에 남기는 진행 메모 예시</h3>
+  <pre class="tmpl"># 진행 메모 (업로드 고치기)
+목표: 큰 파일 업로드가 멈추지 않게 한다
+정한 것: 파일을 조각으로 나눠 보낸다. 까닭은 한 번에 읽으면 메모리가 모자라서
+한 것: 조각 나누기 끝, 시험 24개 통과
+다음 할 일: 1. 진행률 표시  2. 재시도 간격 시험
+관련 파일: src/upload/chunker.ts, client.test.ts
+열린 물음: 재시도는 몇 번까지?</pre>
+  <ol class="flow">
+    <li><b>쓰게 하기</b><br>「지금까지 정한 것과 다음 할 일을 진행메모.md 에 적어 줘」</li>
+    <li><b>훑어보기</b><br>빠진 결정이 없는지 한 번 봅니다.</li>
+    <li><b>컴팩트 또는 인계</b><br><code>/compact 진행메모 기준, 다음 할 일 위주로</code> 처럼 초점을 주거나<a class="cite" href="#ref-9">[9]</a> 새 세션에서 「진행메모.md 부터 읽고 이어 가」.</li>
+    <li><b>자리 잡기</b><br>오래 갈 일이면 CLAUDE.md 에 「진행메모.md 를 먼저 읽을 것」 한 줄. CLAUDE.md 는 새 세션과 컴팩트 때 저절로 읽힙니다<a class="cite" href="#ref-9">[9]</a>.</li>
+  </ol>
+  <p class="note">메모는 짧게 둡니다. 긴 파일은 컴팩트 뒤에 내용 대신 이름만 다시 붙습니다<a class="cite" href="#ref-9">[9]</a>. 쉬기 전에 써 두면 쌉니다. 캐시가 식은 뒤에 쓰면 그 메모 요청이 컨텍스트 전체를 다시 맡깁니다(3.2).</p>
+</section>
+
+<section id="s9">
+  <h2>5.3 이지 컴팩트</h2>
+  <p class="lead">이지 컴팩트는 Claude Code 플러그인입니다. 입력창 위 바에 요청당 값 · 컨텍스트 양 · 캐시 만료까지 남은 시간을 띄우고 컴팩트할 때를 알려 줍니다. 이지 컴팩트를 쓰는 데 드는 비용은 거의 없습니다. 바와 패널은 Claude Code mod 와 스크립트가 내 PC 에 있는 세션 기록을 읽어 그리므로 보는 데 토큰을 쓰지 않습니다. 토큰이 드는 것은 진행 메모 저장 · 컴팩트처럼 Claude 에 일을 시킬 때뿐입니다. 무료(MIT 라이선스)입니다<a class="cite" href="#ref-8">[8]</a>.</p>
+  <figure id="ecfig">
+    <div class="fhead"><span class="tag">이지 컴팩트 화면</span><span class="how">습관 단추를 누르면 이지 컴팩트에서 그 습관과 관련된 화면이 나옵니다.</span></div>
+    <div class="row"><div class="seg nudge" id="ec-pick"><button data-v="1" aria-pressed="true">1 한 세션 계속</button><button data-v="2" aria-pressed="false">2 컴팩트 미룸</button><button data-v="3" aria-pressed="false">3 잃을까 걱정</button><button data-v="4" aria-pressed="false">4 캐시 식힘</button><button data-v="5" aria-pressed="false">5 깊이 최대</button><button data-v="6" aria-pressed="false">6 막연한 요청</button></div></div>
+    <div class="ecp" data-h="1">
+      <p class="ech"><b>습관 1 · 일이 바뀌어도 한 세션을 계속 쓴다</b><span>입력창 바로 위 바에 요청당 값과 컨텍스트 양이 늘 보여 일이 바뀐 뒤에도 값이 오르는 것을 바로 알 수 있습니다.</span></p>
+      <figure class="shot"><img src="img/ko/band.png" alt="이지 컴팩트 바: 요청당 값 · 컨텍스트 · 캐시 만료까지 남은 시간 · 지난 질문 값" loading="lazy"><figcaption>화면 1. 입력창 위 바. 요청당 ~$0.11 · 컨텍스트 287k · 캐시 만료까지 59분 남음</figcaption></figure>
+    </div>
+    <div class="ecp" data-h="2" hidden>
+      <p class="ech"><b>습관 2 · 컴팩트를 자동 컴팩트까지 미룬다</b><span>사용자가 이지 컴팩트 설정에서 정한 컴팩트 구간에 컨텍스트가 들어서면 바의 컨텍스트 숫자와 컴팩트 버튼이 주황 「컴팩트할 때」로, 구간을 넘으면 빨강 「컴팩트 늦어짐」으로 바뀝니다. 컴팩트 구간은 설치했을 때 25만~30만이고 크기별 값 표(화면 2)를 보고 고칠 수 있습니다. 이지 오토를 켜 두면 컨텍스트가 따로 정해 둔 오토 구간을 넘을 때 알아서 진행 메모를 적고 컴팩트하며 긴 일 도중이었으면 하던 일을 이어 갑니다.</span></p>
+      <div class="shots2"><figure class="shot"><img src="img/ko/settings.png" alt="크기별 비용 표와 판정, 컴팩트 구간" loading="lazy"><figcaption>화면 2. 크기별 값 표. 판정(★ 최적 · 좋음 · 보통 · 비추천)과 지금 크기</figcaption></figure><figure class="shot"><img src="img/ko/auto.png" alt="이지 오토를 켠 모습" loading="lazy"><figcaption>화면 3. 이지 오토. 정한 구간에서 알아서 컴팩트</figcaption></figure></div>
+    </div>
+    <div class="ecp" data-h="3" hidden>
+      <p class="ech"><b>습관 3 · 잃을까 봐 컴팩트도 새 세션도 미룬다</b><span>[이지 컴팩트]를 누르면 Claude 가 먼저 컴팩트로 잃을 만한 것을 살펴 아직 파일에 없는 결정 · 진행 · 다음 할 일을 메모리나 진행 메모(md)에 적습니다. 그다음 컴팩트가 대화를 요약합니다. 파일에 적은 것은 컴팩트 뒤에도 그대로 남고 요약에는 이어서 할 일이 남습니다.</span></p>
+      <div class="shots2"><figure class="shot"><img src="img/ko/confirm.png" alt="컴팩트할까요 카드" loading="lazy"><figcaption>화면 4. 컴팩트할까요. 질문마다 아끼는 값, 먼저 적어 둘 것</figcaption></figure><figure class="shot"><img src="img/ko/summary.png" alt="컴팩트 뒤 요약에 남은 이어서 할 일" loading="lazy"><figcaption>화면 5. 컴팩트 뒤. 요약에 이어서 할 일이 남음</figcaption></figure></div>
+    </div>
+    <div class="ecp" data-h="4" hidden>
+      <p class="ech"><b>습관 4 · 캐시를 식힌다(오래 쉬기 · 도중에 모델 바꾸기)</b><span>바에 캐시 만료까지 남은 시간이 보입니다. 만료된 뒤에는 그냥 이어 가기와 컴팩트 가운데 어느 쪽이 싼지 값으로 알려 줍니다.</span></p>
+      <figure class="shot"><img src="img/ko/keep-working.png" alt="캐시가 만료됐지만 지금은 컴팩트하지 않는 편이 낫다는 카드" loading="lazy"><figcaption>화면 6. 캐시 만료. 그냥 이어 가기 $0.67 대 기본 컴팩트 $0.89, 이어 가라고 알려 줌</figcaption></figure>
+    </div>
+    <div class="ecp" data-h="5" hidden>
+      <p class="ech"><b>습관 5 · 생각 깊이를 늘 최대로 둔다</b><span>깊이를 정하는 것은 쓰는 사람의 몫입니다. 이지 컴팩트는 끝난 질문을 펼치면 출력 값(생각 포함)을 보여 주고 도중에 깊이가 바뀐 질문은 깊이별로 나눠 보여 줍니다. 깊이를 올렸을 때 값이 얼마나 느는지 보고 정할 수 있습니다.</span></p>
+      <figure class="shot"><img src="img/ko/history.png" alt="끝난 질문을 펼쳐 읽기 · 쓰기 · 출력(생각 포함)을 본 모습" loading="lazy"><figcaption>화면 7. 끝난 질문 펼치기. 읽기 · 쓰기 · 출력(생각 포함)과 동작마다 값</figcaption></figure>
+    </div>
+    <div class="ecp" data-h="6" hidden>
+      <p class="ech"><b>습관 6 · 막연하게 크게 시킨다</b><span>답마다 끝에 그 질문의 값과 요청 수가 붙고 펼치면 동작마다 값이 보입니다. 요청이 많았던 질문을 보고 다음에 더 구체적으로 시킬 수 있습니다.</span></p>
+      <figure class="shot"><img src="img/ko/question-cost.png" alt="답변 끝 질문 비용 칩을 펼친 모습" loading="lazy"><figcaption>화면 8. 답 끝 칩. 이 질문 $0.61 · 요청 6회, 동작마다 값</figcaption></figure>
+    </div>
+    <figcaption><b>이지 컴팩트 화면.</b> 이지 컴팩트 데모 화면을 한국어로 옮겨 그린 것이고 숫자는 예시 값입니다<a class="cite" href="#ref-8">[8]</a>.</figcaption>
+  </figure>
+  <h3 class="sub3">3.4 세션의 이지 컴팩트 알림 자리</h3>
+  <p class="note">이지 컴팩트는 입력창 위 바의 색과 글로 컴팩트할 때를 알립니다. 컨텍스트가 컴팩트 구간에 들어서면 주황 「컴팩트할 때」, 구간을 넘으면 빨강 「컴팩트 늦어짐」입니다. 컴팩트 구간은 사용자가 이지 컴팩트 설정에서 정하는 값이고 설치했을 때는 25만~30만입니다<a class="cite" href="#ref-8">[8]</a>. 아래는 3.4 의 세션 기록 위에 그 표시가 바뀌었을 자리를 찍은 것입니다.</p>
+  <figure id="fig9">
+    <div class="fhead"><span class="tag">그림 10</span><span class="how"><b>「따라가기 ▶」</b>를 누르면 예시 세션 위에 바 표시가 바뀌는 자리가 차례로 찍힙니다. 점에 마우스를 올리면 그 알림이 나옵니다.</span></div>
+    <div class="row"><button class="btn primary nudge" id="f9-play" type="button">따라가기 ▶</button><span class="note" id="f9-k"></span></div>
+    <div class="key9">
+      <div class="kg ec"><b>이지 컴팩트에 있는 것</b><span><i class="kband"></i>주황 띠 · 컴팩트 구간(사용자가 이지 컴팩트 설정에서 정함, 설치했을 때 25만~30만)</span><span><i class="kd" style="background:var(--yel)"></i>주황 · 알림 자리(컨텍스트가 구간에 들어섬) 「컴팩트할 때」</span><span><i class="kd" style="background:var(--bad)"></i>빨강 · 구간을 넘음 「컴팩트 늦어짐」</span><span><i class="kdia" style="background:var(--input)"></i>파랑 · 캐시가 식은 뒤 첫 질문(이어 가기와 컴팩트 중 싼 쪽을 알려 줌)</span><span><i class="kl" style="background:var(--muted)"></i>회색 선 · 예시 세션(3.4)의 컨텍스트 양 · 이지 컴팩트 사용량 패널의 컨텍스트 흐름 그래프에 나오는 값</span></div>
+      <div class="kg"><b>추정 · 알림대로 했다면</b><span><i class="kl" style="background:var(--good)"></i>초록 선 · 주황 알림이 뜰 때(25만)마다 바로 컴팩트했다면의 컨텍스트 양</span><span>아래 「아낄 수 있었던 값」도 같은 추정입니다.</span></div>
+    </div>
+    <svg class="chart" id="f9-chart" viewBox="0 0 640 245" role="img" aria-label="실제 컨텍스트 양 위의 이지 컴팩트 알림 자리와 알림대로 했을 때의 컨텍스트 양"></svg>
+        <div class="kpis"><div class="kpi"><div class="n" id="f9-n">0번</div><div class="t" id="f9-nt">알림</div></div><div class="kpi"><div class="n" id="f9-s">$0</div><div class="t">알림 자리에서 컴팩트했다면 아낄 수 있었던 값(추정)</div></div></div>
+    <div class="vsbar"><div class="vsrow"><span>예시 세션</span><div class="vtrack"><i id="f9-a" style="background:var(--out)"></i></div><b id="f9-av">$0</b></div><div class="vsrow"><span>알림 자리에서 컴팩트했다면</span><div class="vtrack"><i id="f9-b" style="background:var(--good)"></i></div><b id="f9-bv">$0</b></div></div>
+    <figcaption><b>그림 10.</b> 이지 컴팩트 알림 자리(25만)에서 컴팩트하고 캐시가 식었을 때 싼 쪽을 골랐다면 약 3분의 1을 아낄 수 있었다는 추정입니다<a class="cite" href="#ref-m11">[M11]</a>.<details><summary>가정 · 근거 보기</summary>점은 실제 컨텍스트 양이 컴팩트 구간에 들어설 때(주황)와 넘을 때(빨강), 그리고 캐시가 식은 뒤 첫 질문(파랑)입니다. 컴팩트하면 다시 주황부터 셉니다. 예상은 그림 7 의 「25만에서 컴팩트했다면」과 같은 셈입니다. 표시를 그냥 넘긴 횟수와 컴팩트 뒤 파일을 다시 읽는 값은 넣지 않았습니다. 처음 설치 구간이 그림 8 의 가장 싼 자리(약 23만)보다 조금 늦은 까닭은 실제 세션 128개를 다시 셈하면 23만~33만이 가장 싼 값의 2% 안이었고 덜 자주 하는 편이 일의 흐름에 낫기 때문입니다<a class="cite" href="#ref-8">[8]</a>.</details></figcaption>
+  </figure>
+  <h3 class="sub3">설치하기 전에 알아 둘 것</h3>
+  <div class="trust">
+    <div><b>내 컴퓨터 안에서만</b>세션 기록만 읽습니다. [업데이트]를 누를 때 말고는 밖으로 아무것도 보내지 않습니다<a class="cite" href="#ref-8">[8]</a>.</div>
+    <div><b>이지 컴팩트는 토큰을 쓰지 않습니다</b>바 · 패널 · 단추를 보는 데는 토큰이 들지 않습니다. 토큰이 드는 것은 Claude 에 글을 보낼 때(진행 메모 저장 · 컴팩트 · 켜 둔 이지 오토)뿐입니다<a class="cite" href="#ref-8">[8]</a>.</div>
+    <div><b>금액 오차는 1달러 안쪽</b>이지 컴팩트가 센 이번 달 금액은 글쓴이의 앱 설정에 나오는 금액과 1달러 안쪽으로 차이 났습니다<a class="cite" href="#ref-m7">[M7]</a>.</div>
+    <div><b>무료</b>MIT 라이선스 오픈 소스입니다<a class="cite" href="#ref-8">[8]</a>.</div>
+  </div>
+  <div class="cta cend" id="install">
+    <h3>이런 습관이 있다면 이지 컴팩트를 써 보세요</h3>
+    <p class="ctag">이지 컴팩트가 대신 해 주는 것</p>
+    <ol class="ctal">
+      <li><b>컴팩트를 자동 컴팩트까지 미룬다</b><i aria-hidden="true">→</i><span>사용자가 정한 컴팩트 구간에 컨텍스트가 들어서면 바가 주황 「컴팩트할 때」로, 넘으면 빨강 「컴팩트 늦어짐」으로 알립니다. 이지 오토를 켜 두면 알아서 컴팩트합니다</span></li>
+      <li><b>잃을까 봐 컴팩트도 새 세션도 미룬다</b><i aria-hidden="true">→</i><span>[이지 컴팩트]를 누르면 아직 파일에 없는 결정 · 진행 · 다음 할 일을 메모리나 진행 메모(md)로 남긴 뒤 컴팩트가 대화를 요약합니다. 파일로 남긴 것은 컴팩트 뒤에도 그대로 있습니다</span></li>
+      <li><b>캐시를 식힌다</b><i aria-hidden="true">→</i><span>바에 캐시 만료까지 남은 시간이 보이고 만료된 뒤에는 컴팩트와 그냥 이어 가기 가운데 어느 쪽이 싼지 알려 줍니다</span></li>
+    </ol>
+    <p class="ctag">이지 컴팩트가 값을 보여 주는 것</p>
+    <ol class="ctal">
+      <li><b>일이 바뀌어도 한 세션을 계속 쓴다</b><i aria-hidden="true">→</i><span>바에 요청당 값과 컨텍스트 양이 늘 보여 값이 오르는 것을 바로 압니다</span></li>
+      <li><b>생각 깊이를 늘 최대로 둔다</b><i aria-hidden="true">→</i><span>끝난 질문의 출력 값(생각 포함)을 보여 주고 도중에 깊이가 바뀐 질문은 깊이별로 나눠 보여 줍니다</span></li>
+      <li><b>막연하게 크게 시킨다</b><i aria-hidden="true">→</i><span>답마다 그 질문의 값과 요청 수가 붙어 요청이 많았던 질문을 바로 압니다</span></li>
+    </ol>
+    <p class="ctai"><b>설치</b> Claude 데스크톱 앱의 Code 탭이나 터미널의 claude 에 아래 한 줄을 보낸 뒤 앱을 완전히 껐다 켭니다. Claude Code 2.1.295 이상과 git 이 필요합니다(없으면 Claude 가 안내합니다).</p>
+    <pre class="install" id="inst-cmd">이 플러그인 설치해줘: github.com/JaeSeongHa5280/easy-compact (claude plugin marketplace add JaeSeongHa5280/easy-compact 후 claude plugin install easy-compact@easy-compact)</pre>
+    <div class="row"><button class="btn primary" id="inst-copy" type="button">한 줄 복사</button><span class="note" id="inst-msg"></span></div>
+  </div>
+</section>
+
+<section id="lim">
+  <h2 class="cnum"><span>6</span>계산의 한계</h2>
+  <ul class="limits">
+    <li>금액은 API 정가로 환산한 값입니다. 구독 플랜이면 청구액이 아니라 한도를 얼마나 쓰는지의 눈금입니다<a class="cite" href="#ref-4">[4]</a>.</li>
+    <li>실측은 글쓴이 한 사람의 기록이라 일의 종류에 따라 다릅니다. 생각 깊이별 출력도 일이 달라 순수한 효과가 아닙니다<a class="cite" href="#ref-m8">[M8]</a>.</li>
+    <li>그림 3, 6, 8, 9 의 셈은 단순화한 가정입니다(질문 1개 = 요청 10번 등). 내 실제 값은 이지 컴팩트나 /usage 로 봅니다.</li>
+    <li>그림 7 · 10 의 「25만 · 알림 자리에서 컴팩트했다면」은 추정입니다. 컨텍스트 양만 줄여 셌습니다. 컴팩트 뒤 파일을 다시 읽는 값은 넣지 않았습니다.</li>
+    <li>글자 · 토큰 비율과 새 세션 구성은 글쓴이의 값입니다. 설치한 도구, 메모리, 글의 종류에 따라 다릅니다<a class="cite" href="#ref-m12">[M12]</a><a class="cite" href="#ref-m13">[M13]</a>.</li>
+    <li>한도가 토큰 몇 개인지, 5시간을 언제부터 세는지는 공개돼 있지 않습니다<a class="cite" href="#ref-6">[6]</a>.</li>
+    <li>터미널의 claude 는 1시간 캐시로 쉬는 긴 세션을 식기 직전에 스스로 컴팩트하기도 합니다(데스크톱 앱은 문서에 없음)<a class="cite" href="#ref-1">[1]</a>.</li>
+    <li>요율과 보관 시간은 바뀔 수 있습니다. 2026-10-23 기준입니다.</li>
+  </ul>
+</section>
+
+<section id="refs">
+  <h2>참고 문헌</h2>
+  <ol class="refs" style="list-style:none;padding-left:0">
+    <li id="ref-1"><span class="k">[1]</span>Claude Code, 「How Claude Code uses prompt caching」. <a href="https://code.claude.com/docs/en/prompt-caching" target="_blank" rel="noopener">code.claude.com/docs/en/prompt-caching</a><br><small>요청마다 전체를 다시 보냄 · 캐시의 세 층(지시문 · 프로젝트 · 대화) · 보관 시간 기본값(Claude 계정 요금제 안 메인 컨텍스트 1시간, API 키 · 클라우드 · 사용 크레딧 · 하위 에이전트 5분)과 1시간으로 바꾸는 설정 · <code>/usage</code> 의 Prompt cache (main) 줄(적중률 · 놓친 횟수 · 지금 따뜻한지) · 캐시를 깨는 일(모델 · 빠른 모드 · MCP · 컴팩트 등)과 지키는 일(생각 깊이 — Opus 5.5 · Sonnet 5.5 · Haiku 5.5 · Fable 5.1 을 API 키 · 구독으로) · 식은 뒤 컴팩트는 캐시 없이 읽음 · 같은 폴더의 세션끼리 앞부분 공유 · 터미널의 쉬는 세션 자동 컴팩트.</small></li>
+    <li id="ref-2"><span class="k">[2]</span>Claude API, 「Using the Messages API」. <a href="https://platform.claude.com/docs/en/build-with-claude/working-with-messages" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/working-with-messages</a><br><small>API 는 상태가 없어 대화 기록 전체를 보냅니다.</small></li>
+    <li id="ref-3"><span class="k">[3]</span>Claude API, 「Pricing」. <a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">platform.claude.com/docs/en/about-claude/pricing</a><br><small>모델별 요율 · 캐시 배수(Opus 5.5 · Sonnet 5.5 의 캐시 읽기는 새로 읽기의 0.05배) · 100만 토큰 창도 같은 요율.</small></li>
+    <li id="ref-4"><span class="k">[4]</span>Claude Code, 「Manage costs effectively」. <a href="https://code.claude.com/docs/en/costs" target="_blank" rel="noopener">code.claude.com/docs/en/costs</a><br><small>비용은 컨텍스트 크기를 따라 커짐 · 생각 토큰은 출력으로 청구 · 긴 세션은 한 줄 질문에도 컨텍스트 전체만큼 씀 · 쉰 뒤 첫 메시지는 캐시를 놓침 · /clear 는 값이 없음 · 구독자에게 보이는 금액은 청구액이 아님.</small></li>
+    <li id="ref-5"><span class="k">[5]</span>Claude Code, 「Model configuration」. <a href="https://code.claude.com/docs/en/model-config" target="_blank" rel="noopener">code.claude.com/docs/en/model-config</a><br><small>기본 모델 Opus 5.5 · 100만 토큰 창 · 자동 컴팩트 약 96.7만 · 생각 깊이 단계 · 생각 토큰은 모두 청구.</small></li>
+    <li id="ref-6"><span class="k">[6]</span>Claude 도움말, 「How do usage and length limits work」. <a href="https://support.claude.com/en/articles/11647753-how-do-usage-and-length-limits-work" target="_blank" rel="noopener">support.claude.com/en/articles/11647753</a><br><small>5시간 · 주간 한도 · claude.ai · Claude Code · 데스크톱이 함께 씀 · 컨텍스트 양 · 기능 · 모델 · 생각 깊이에 따라 깎임 · 사용 크레딧.</small></li>
+    <li id="ref-7"><span class="k">[7]</span>Claude API, 「Prompt caching」. <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching" target="_blank" rel="noopener">platform.claude.com/docs/en/build-with-claude/prompt-caching</a><br><small>캐시 원리 · 1시간 보관.</small></li>
+    <li id="ref-8"><span class="k">[8]</span>easy-compact. <a href="https://github.com/JaeSeongHa5280/easy-compact" target="_blank" rel="noopener">github.com/JaeSeongHa5280/easy-compact</a><br><small>공개 README · 변경 기록(1.0.5) · 소개용 데모(화면 그림의 원본) · MIT 라이선스.</small></li>
+    <li id="ref-9"><span class="k">[9]</span>Claude Code, 「Explore the context window」. <a href="https://code.claude.com/docs/en/context-window" target="_blank" rel="noopener">code.claude.com/docs/en/context-window</a><br><small>컴팩트 뒤 남는 것: CLAUDE.md · 자동 메모리 · 계획은 디스크에서 다시, 최근 고친 파일 다섯까지 다시 읽음(긴 파일은 경로만) · /compact 에 초점 주기 · /clear.</small></li>
+    <li id="ref-10"><span class="k">[10]</span>Anthropic Engineering, 「Effective harnesses for long-running agents」(2025-11-26). <a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents" target="_blank" rel="noopener">anthropic.com/engineering/effective-harnesses-for-long-running-agents</a><br><small>여러 세션에 걸친 긴 일은 컴팩트만으로 이어지지 않았음 · 진행 파일 · git 기록 · 기능 목록을 남기고 새 세션이 그것부터 읽게 함 · 결과는 숫자 없는 질적 보고.</small></li>
+    <li id="ref-11"><span class="k">[11]</span>Claude API, 「Tool use with Claude」. <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview" target="_blank" rel="noopener">platform.claude.com/docs/en/agents-and-tools/tool-use/overview</a><br><small>Claude 가 도구 요청(tool_use)을 돌려주면 앱이 도구를 돌리고 결과(tool_result)를 다음 요청에 붙여 보냄 · Bash 같은 도구는 앱 쪽에서 돎 · 한 응답에 도구 여럿 · 도구 요청과 결과도 토큰으로 값을 냄.</small></li>
+    <li id="ref-m1"><span class="k">[M1]</span>새 세션 첫 요청 크기 — 2026-09 실측. 데스크톱 앱 4.2만 ~ 6.0만(가운데 5.3만) · 터미널 3.7만 토큰.</li>
+    <li id="ref-m2"><span class="k">[M2]</span>캐시 적중률 — 2026-10 실측, 글쓴이의 세션 기록(Opus 5.5 메인, 토큰 기준) 99.0%(요청 150번 넘는 세션 36개 가운데 99.1%, 낮은 쪽 10% 97.7%). 2026-08 세션 21개 · 1,510번에선 95.9%.</li>
+    <li id="ref-m3"><span class="k">[M3]</span>캐시 만료 사례 — 2026-09 실측. 23번 주고받은 세션에서 6시간 쉬고 돌아온 질문 하나 = 그 세션 비용의 17% · 세션 44개에서 1시간 넘게 쉬고 돌아온 첫 요청 21번 = 전체 비용의 약 12% · 82분과 64시간 쉰 뒤 다시 맡긴 값이 거의 같음(둘 다 약 40만 토큰).</li>
+    <li id="ref-m4"><span class="k">[M4]</span>이지 컴팩트 개발 열흘 — 2026-10-10 ~ 19 실측. 요청 16,909번(에이전트 포함), API 값 $2,374: 캐시 읽기 62% · 답 쓰기 20% · 1시간 맡기기 17% · 5분 맡기기 1%, 요청 평균 44.8만 토큰, 40만 넘는 요청 52% 가 비용 67%, 컴팩트한 때 24.3만 ~ 95.2만(가운데 약 65만). 요청당 새로 맡기는 양 약 3,000 토큰은 이 구성에서 거꾸로 셈.</li>
+    <li id="ref-m5"><span class="k">[M5]</span>컴팩트 뒤 크기와 다시 맡기는 양 — 개발 중 실측 9.7만 ~ 12.5만 토큰. 2026-10-23 글쓴이의 세션 기록의 컴팩트 114번: 뒤 크기 가운데 9.8만, 컴팩트 직후 첫 요청이 다시 맡긴 양 가운데 4.3만(가운데 절반 2.8만 ~ 4.9만).</li>
+    <li id="ref-m6"><span class="k">[M6]</span>5시간 한도와 API 값 — 2026-10-06 · 07, 글쓴이(Max 20)의 한도 두 번 소진 기록. 5시간 한도 1번 ≈ API 값 $95 ~ 120(추정).</li>
+    <li id="ref-m7"><span class="k">[M7]</span>이지 컴팩트 금액 대조 — 2026-10-16, 글쓴이의 앱 설정의 이번 달 금액과 1달러 안쪽.</li>
+    <li id="ref-m8"><span class="k">[M8]</span>생각 깊이별 요청당 출력 — 글쓴이의 질문 기록(Opus 5.5). 최대 302질문 · 2,434 토큰 / 엑스트라 190질문 · 1,458 / 중간 6질문 · 385. 일이 달라 순수한 효과는 아님(추정).</li>
+    <li id="ref-m9"><span class="k">[M9]</span>대화에만 남은 결정 — 2026-10-21 사례. 보관된 세션 4개의 대화 기록에서, 문서에 안 적힌 결정 · 조사 결과를 다시 찾아 옮김.</li>
+    <li id="ref-m10"><span class="k">[M10]</span>질문당 값과 컨텍스트 양 — 2026-10-23 실측. 글쓴이의 세션 기록 139개 · Opus 5.5 메인 요청(에이전트 몫 뺌) · 질문 1,980개. 요청 한 번 값 약 $0.11(20만 아래) → $0.21(70만 넘음) · 10만 아래에서 질문 하나의 요청 수 평균 31.7 · 질문 값 가운데 $0.96, 질문 10개 이상 세션 41개에서 평균 질문당 값과의 순위 상관 — 요청 수/질문 0.91 · 컨텍스트 양 0.69.</li>
+    <li id="ref-m11"><span class="k">[M11]</span>실제 세션 하나 — 2026-10-20 ~ 23 실측. 글쓴이의 Claude Code 세션 기록, Opus 5.5 메인 요청 <span id="m11-n">1,821</span>번 · 약 52시간, API 값 <span id="m11-t">$242.28</span>: 오래 쉰 뒤 컨텍스트를 다시 맡긴 요청 4번(1시간 47분 ~ 15시간 4분 쉼)이 캐시가 있었을 때보다 $15.43 더 냄 · 40만 넘는 요청 46% 가 비용 59% · 컴팩트 7번(44.7만 ~ 83.3만, 가운데 52.4만). 「권장대로였다면」은 같은 요청 · 새 글 · 출력에 컨텍스트 양만 25만에서 컴팩트해 10만으로 줄였다고 본 추정($163.85, 컴팩트 22번).</li>
+    <li id="ref-m12"><span class="k">[M12]</span>글자와 토큰 — 2026-10-23 실측. 글쓴이의 기록에서 Read 로 읽은 큰 파일(8천 자 이상)이 다음 요청의 컨텍스트를 늘린 양: 한국어 md 103개(한글 비율 가운데 37%) 글자/토큰 가운데 1.09(가운데 절반 1.04 ~ 1.11) · 코드 175개 1.54(1.49 ~ 1.61), 한 줄 약 32토큰.</li>
+    <li id="ref-m13"><span class="k">[M13]</span>새 세션의 컨텍스트 — 2026-10-23 실측. 글쓴이의 터미널 새 세션의 <code>/context</code>: 3.66만 토큰(지시문 2,800 · 도구 설명 19,600 · MCP 1,344 · 메모리 파일 5,600 · 스킬 7,200 · 대화 10, 미뤄 둔 도구 설명 약 8.5만은 안 실림). 글쓴이의 세션 154개의 첫 요청은 모두 앞부분을 캐시에서 꺼내 읽었음(꺼내 읽은 몫 가운데 72%, 첫 요청 크기 가운데 6.8만).</li>
+  </ol>
+  <p class="foot">2026-10-23 기준 · Claude Code(데스크톱 앱 Code 탭 · 터미널) · 이지 컴팩트 1.0.5</p>
+</section>
+<pre id="__err"></pre>
+</main>
+<script>
+(function(){
+'use strict';
+var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var R = {
+  opus:{name:'Opus 5.5',in:4,w1:8,w5:5,rd:0.20,out:20},
+  sonnet:{name:'Sonnet 5.5',in:2,w1:4,w5:2.5,rd:0.10,out:10},
+  haiku:{name:'Haiku 5.5',in:0.10,w1:0.20,w5:0.125,rd:0.01,out:0.50,long:{in:0.50,w1:1,w5:0.625,rd:0.05,out:2.50}},
+  fable:{name:'Fable 5.1',in:10,w1:20,w5:12.5,rd:0.25,out:50}
+};
+var EF = {low:{n:'낮음',o:200},medium:{n:'중간',o:385},high:{n:'높음',o:750},xhigh:{n:'엑스트라',o:1458},max:{n:'최대',o:2434}};
+var NEWTOK = 3000, RPQ = 10;
+function rateOf(m, ctx){ var r = R[m]; if (r.long && ctx > 100000){ var o = {}; for (var k in r) o[k] = r[k]; for (var j in r.long) o[j] = r.long[j]; return o; } return r; }
+function req(m, ctx, ef, ttl){ var r = rateOf(m, ctx); var read = ctx*r.rd/1e6, write = NEWTOK*(ttl === '5m' ? r.w5 : r.w1)/1e6, out = EF[ef].o*r.out/1e6; return {read:read, write:write, out:out, total:read+write+out}; }
+function money(x){ if (x >= 1000) return '$' + Math.round(x).toLocaleString('en-US'); if (x >= 10) return '$' + x.toFixed(1); if (x >= 0.1) return '$' + x.toFixed(2); if (x >= 0.01) return '$' + x.toFixed(3); return '$' + x.toFixed(4); }
+function man(t){ var v = Math.round(t/1000)/10; return (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(1)) + '만'; }
+function kk(t){ return Math.round(t/1000) + 'k'; }
+function fr(v){ if (Math.abs(v*100 - Math.round(v*100)) < 1e-9) return (v >= 1 && Math.abs(v - Math.round(v)) < 1e-9) ? String(Math.round(v)) : v.toFixed(2); return String(v); }
+function $id(id){ return document.getElementById(id); }
+function seg(el, cb){ el.querySelectorAll('button').forEach(function(b){ b.addEventListener('click', function(){ segSet(el, b.dataset.v); cb(b.dataset.v); }); }); }
+function segSet(el, v){ el.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', x.dataset.v === v ? 'true' : 'false'); }); }
+function tween(el, to, fmt, dur){
+  dur = dur || 450; var from = parseFloat(el.dataset.v || '0'); el.dataset.v = to;
+  if (reduce || !isFinite(from)) { el.textContent = fmt(to); return; }
+  var t0 = performance.now();
+  function step(t){ var k = Math.min(1, (t - t0)/dur); var e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(from + (to - from)*e); if (k < 1) requestAnimationFrame(step); }
+  el.textContent = fmt(from); requestAnimationFrame(step);
+  setTimeout(function(){ if (el.dataset.v === String(to)) el.textContent = fmt(to); }, dur + 120);
+}
+function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+function svg(tag, attrs, parent){ var e = document.createElementNS('http://www.w3.org/2000/svg', tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function css(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+(function(){
+  var b = $id('theme'), v = 'dark';
+  try { v = localStorage.getItem('cost-primer-theme') || 'dark'; } catch (e) {}
+  function apply(){ if (v === 'light'){ document.documentElement.dataset.theme = 'light'; b.textContent = '어둡게'; } else { delete document.documentElement.dataset.theme; b.textContent = '밝게'; } window.dispatchEvent(new Event('themechange')); }
+  b.addEventListener('click', function(){ v = v === 'light' ? 'dark' : 'light'; try { localStorage.setItem('cost-primer-theme', v); } catch (e) {} apply(); });
+  apply();
+})();
+
+var SESS = {"summary":{"n":1821,"hours":52.2,"start":"2026-10-20 22:03","total":242.28,"perReq":0.133,"maxCtx":936303,"colds":4,"coldBig":2,"coldExtra":15.43,"comps":[637,526,514,447,833,510,524],"bigShareReq":46,"bigShareCost":59},"whatIf":{"total":163.85,"comp":22,"coldX":5.17,"rewrite":43000},"colds":[{"gapMin":404,"ctxK":292,"cost":2.06,"warm":0.13},{"gapMin":294,"ctxK":238,"cost":1.76,"warm":0.25},{"gapMin":107,"ctxK":709,"cost":5.3,"warm":0.19},{"gapMin":904,"ctxK":934,"cost":7.08,"warm":0.21}],"pts":[[5,116,73,0,73,0,116],[10,130,35.5,0,35.5,0,130],[15,157,44.7,0,44.7,0,157],[20,175,40.7,0,40.7,0,175],[25,205,69.9,0,69.9,0,205],[30,224,49.7,0,49.7,0,224],[35,250,63.4,0,63.4,0,250],[40,260,38.4,0,95.4,0,105],[45,273,61.6,0,46,0,118],[50,294,65,0,49.5,0,138],[55,304,47.8,0,32.2,0,149],[60,313,55.1,0,39.5,0,157],[65,326,49.1,0,33.6,0,171],[70,338,52.3,0,36.7,0,182],[75,354,72,0,56.5,0,199],[80,359,45.2,0,29.6,0,204],[85,364,45.9,0,30.4,0,208],[90,369,48.1,0,32.5,0,214],[95,381,67.7,0,52.1,0,225],[100,396,71.8,0,56.3,0,241],[105,402,53.3,0,37.8,0,246],[110,411,58.7,0,106.5,0,106],[115,417,56.9,0,26.3,0,111],[120,423,53,0,22.5,0,118],[125,432,56.8,0,26.2,0,126],[130,438,59.5,0,29,0,133],[135,456,82.1,0,51.5,0,151],[140,471,77.4,0,46.8,0,166],[145,488,84.9,0,54.4,0,182],[150,520,101.7,0,71.2,0,215],[155,529,66.7,0,36.1,0,224],[160,539,71.3,0,40.8,0,233],[165,544,65.6,0,35.1,0,239],[170,552,71.7,0,41.1,0,247],[175,559,68.8,0,104.7,0,103],[180,565,71.4,0,25.8,0,109],[185,584,85.4,0,39.8,0,129],[190,598,84.2,0,38.6,0,142],[195,608,75.6,0,30,0,152],[200,617,82.6,0,37,0,161],[205,622,75.3,0,29.7,0,166],[210,632,86.7,0,41.1,0,176],[212,637,37.8,0,19.6,0,181],[213,78,33,2,33,0,78],[218,110,53.4,0,53.4,0,110],[223,115,17.7,0,17.7,0,115],[228,131,48.3,0,48.3,0,131],[233,149,44.6,0,44.6,0,149],[238,159,33.7,0,33.7,0,159],[243,170,35.8,0,35.8,0,170],[248,179,44.7,0,44.7,0,179],[253,202,69.8,0,69.8,0,202],[258,220,42.4,0,42.4,0,220],[263,237,54.8,0,54.8,0,237],[268,252,51.8,0,118.2,0,101],[273,257,33.6,0,18.6,0,106],[278,263,34.6,0,19.5,0,112],[283,270,40.6,0,25.6,0,119],[288,281,54.4,0,39.3,0,131],[293,298,68.6,0,53.5,0,147],[298,307,43.6,0,28.5,0,157],[303,330,80.9,0,65.9,0,180],[308,348,58.4,0,43.4,0,197],[313,361,56.9,0,41.9,0,210],[318,372,59,0,43.9,0,221],[323,383,58.4,0,43.3,0,232],[328,398,62.1,0,47,0,247],[333,407,55,0,100.3,0,105],[338,415,50.6,0,20.5,0,113],[343,423,57.1,0,26.9,0,121],[348,429,57.2,0,27,0,128],[353,450,63,0,32.8,0,148],[358,472,76.4,0,46.2,0,170],[363,479,64.8,0,34.6,0,177],[368,489,61.8,0,31.6,0,187],[373,495,60.6,0,30.4,0,194],[378,501,61.7,0,31.5,0,199],[383,519,86.9,0,56.7,0,218],[386,526,43.6,0,25.5,0,224],[387,81,26.1,2,26.1,0,81],[392,94,23.1,0,23.1,0,94],[397,101,20,0,20,0,101],[402,114,35.6,0,35.6,0,114],[407,132,35.5,0,35.5,0,132],[412,138,23.4,0,23.4,0,138],[417,141,23.7,0,23.7,0,141],[422,159,39.5,0,39.5,0,159],[427,162,22.2,0,22.2,0,162],[432,172,34,0,34,0,172],[437,187,69.5,0,69.5,0,187],[442,204,37.8,0,37.8,0,204],[447,227,77.8,0,77.8,0,227],[452,242,52.4,0,52.4,0,242],[457,258,52.9,0,116.3,0,106],[462,266,49.5,0,34.4,0,115],[467,276,41,0,25.8,0,124],[472,288,46,0,30.8,0,136],[477,299,47.2,0,32.1,0,147],[482,304,42.3,0,27.1,0,152],[487,316,56.9,0,41.8,0,164],[492,323,57,0,41.8,0,171],[497,343,59.1,0,43.9,0,191],[502,353,56,0,40.8,0,201],[507,359,47.3,0,32.1,0,208],[512,366,51.5,0,36.3,0,214],[517,406,112.6,0,163.8,0,102],[522,465,160.2,0,129.9,0,161],[527,512,137.2,0,106.9,0,209],[529,514,24.9,0,12.8,0,211],[530,77,22.4,2,22.4,0,77],[535,92,35.2,0,35.2,0,92],[540,111,40.7,0,40.7,0,111],[545,118,23.8,0,23.8,0,118],[550,127,33.1,0,33.1,0,127],[555,134,22.7,0,22.7,0,134],[560,163,62.1,0,62.1,0,163],[565,170,31.9,0,31.9,0,170],[570,187,40.2,0,40.2,0,187],[575,192,31.1,0,31.1,0,192],[580,197,30,0,30,0,197],[585,202,33.1,0,33.1,0,202],[590,213,41.9,0,41.9,0,213],[595,229,44.7,0,44.7,0,229],[600,239,40.9,0,40.9,0,239],[605,253,55.8,0,122.2,0,101],[610,267,53,0,37.8,0,115],[614,275,50.2,0,38,0,123],[615,292,206.1,1,118.5,404,139],[620,315,114,0,98.8,0,163],[625,348,74,0,58.7,0,196],[630,364,58.3,0,43.1,0,212],[635,372,48.4,0,33.2,0,219],[640,378,49.1,0,33.9,0,226],[645,389,48,0,32.8,0,236],[650,394,46.8,0,31.6,0,242],[655,399,46.4,0,31.2,0,247],[660,409,61.2,0,106.3,0,105],[665,416,52.4,0,22.1,0,112],[670,426,59.5,0,29.1,0,122],[675,432,54.7,0,24.3,0,128],[680,437,59.2,0,28.8,0,134],[685,447,65.2,0,34.9,0,143],[686,90,47.4,2,47.4,0,90],[691,119,40.4,0,40.4,0,119],[696,124,18.6,0,18.6,0,124],[701,133,31.4,0,31.4,0,133],[706,148,41.8,0,41.8,0,148],[711,154,23.9,0,23.9,0,154],[716,162,29.8,0,29.8,0,162],[721,180,52.9,0,52.9,0,180],[726,211,51.7,0,51.7,0,211],[731,216,28.6,0,28.6,0,216],[736,224,37.8,0,37.8,0,224],[741,235,42,0,42,0,235],[746,258,65.7,0,135.2,0,100],[751,266,36.7,0,21,0,109],[756,271,44.9,0,29.2,0,114],[761,280,40.5,0,24.7,0,123],[766,302,68.6,0,52.9,0,144],[771,312,53.5,0,37.8,0,154],[776,341,82.7,0,66.9,0,184],[781,351,54.2,0,38.5,0,194],[786,359,59.9,0,44.2,0,202],[791,373,60.9,0,45.1,0,216],[796,384,59.9,0,44.1,0,226],[801,395,79.2,0,63.5,0,237],[806,415,62.8,0,107.4,0,105],[811,424,58.1,0,27.1,0,114],[816,443,83.4,0,52.4,0,133],[821,456,71.6,0,40.6,0,146],[826,462,60,0,29,0,152],[831,468,59.1,0,28.1,0,158],[836,477,66.3,0,35.3,0,168],[841,483,57.9,0,26.9,0,173],[846,491,72.1,0,41.1,0,182],[851,504,79.3,0,48.3,0,195],[856,514,66.3,0,35.3,0,204],[861,522,71.5,0,40.5,0,212],[866,528,66,0,35,0,218],[871,536,67.9,0,36.9,0,226],[876,545,71.8,0,40.8,0,235],[881,554,67.3,0,36.3,0,244],[886,563,71,0,106.4,0,103],[891,577,81,0,34.9,0,117],[896,584,70,0,24,0,124],[901,592,72,0,25.9,0,131],[906,600,79,0,33,0,140],[911,610,76.4,0,30.3,0,150],[916,614,67.7,0,21.7,0,154],[921,621,77,0,31,0,160],[926,627,78,0,32,0,167],[931,638,92.4,0,46.3,0,177],[936,654,93.8,0,47.7,0,194],[941,661,78.7,0,32.7,0,200],[946,669,85.9,0,39.8,0,209],[951,682,97.3,0,51.3,0,221],[956,696,107.2,0,61.1,0,236],[961,709,99.1,0,53,0,249],[966,723,98.2,0,109.4,0,110],[971,745,133.1,0,71.8,0,132],[976,755,93.6,0,32.3,0,143],[981,759,85.2,0,24,0,147],[986,769,103.8,0,42.6,0,156],[991,782,101.5,0,40.2,0,169],[996,786,87.3,0,26,0,174],[1001,802,116.2,0,54.9,0,190],[1006,813,101.7,0,40.4,0,201],[1011,819,99.1,0,37.9,0,207],[1016,825,90.6,0,29.4,0,213],[1021,833,101.7,0,40.5,0,221],[1022,116,52.7,2,52.7,0,116],[1027,128,26.5,0,26.5,0,128],[1032,145,32.9,0,32.9,0,145],[1037,155,34.1,0,34.1,0,155],[1042,163,28.9,0,28.9,0,163],[1047,170,32.6,0,32.6,0,170],[1052,185,42.3,0,42.3,0,185],[1057,193,34.7,0,34.7,0,193],[1062,203,36.3,0,36.3,0,203],[1067,213,40.7,0,40.7,0,213],[1072,220,32.3,0,32.3,0,220],[1077,227,36.8,0,36.8,0,227],[1082,235,39.6,0,39.6,0,235],[1087,241,38.4,0,38.4,0,241],[1092,247,37.5,0,37.5,0,247],[1097,255,40.1,0,100.4,0,104],[1102,264,47.7,0,32.7,0,113],[1107,280,49.2,0,34.2,0,130],[1112,294,50.6,0,35.6,0,144],[1117,298,36.8,0,21.8,0,148],[1122,305,40.4,0,25.3,0,155],[1127,311,43.2,0,28.2,0,160],[1132,318,43.9,0,28.9,0,167],[1137,324,44.5,0,29.5,0,173],[1142,332,50.9,0,35.8,0,182],[1147,341,49,0,34,0,191],[1152,349,50,0,35,0,198],[1157,355,46.3,0,31.2,0,205],[1162,358,40.2,0,25.1,0,208],[1167,363,43.6,0,28.6,0,212],[1172,371,54.2,0,39.1,0,220],[1177,378,48.4,0,33.4,0,227],[1182,385,52.8,0,37.8,0,234],[1187,398,69.6,0,54.5,0,247],[1192,406,52.6,0,94.8,0,104],[1197,414,54.3,0,24.1,0,112],[1202,419,54.9,0,24.7,0,117],[1207,429,62.1,0,31.9,0,127],[1212,436,58.8,0,28.5,0,134],[1217,442,51.7,0,21.5,0,140],[1222,445,50.5,0,20.2,0,143],[1227,452,64.4,0,34.2,0,150],[1232,464,63.8,0,33.5,0,162],[1237,471,59,0,28.7,0,169],[1242,479,66.8,0,36.6,0,177],[1247,486,56.6,0,26.4,0,184],[1252,494,66.2,0,35.9,0,191],[1257,506,77,0,46.8,0,204],[1260,510,39,0,20.9,0,208],[1261,118,54.1,2,54.1,0,118],[1266,127,27.1,0,27.1,0,127],[1271,142,32.9,0,32.9,0,142],[1276,155,33.2,0,33.2,0,155],[1281,164,37.4,0,37.4,0,164],[1286,183,44.8,0,44.8,0,183],[1291,215,54.8,0,54.8,0,215],[1296,228,41.7,0,41.7,0,228],[1301,262,87.3,0,156.9,0,100],[1306,270,42.8,0,26.7,0,109],[1311,276,60.3,0,44.2,0,114],[1316,298,65.6,0,49.4,0,136],[1321,304,40.8,0,24.7,0,142],[1326,312,49.4,0,33.3,0,151],[1331,327,61.6,0,45.4,0,166],[1336,344,93.5,0,77.3,0,182],[1341,371,77.4,0,61.3,0,209],[1346,379,55.6,0,39.5,0,217],[1351,386,52.6,0,36.5,0,225],[1356,392,50.3,0,34.1,0,230],[1361,401,57.5,0,41.3,0,239],[1366,411,60.6,0,44.5,0,249],[1371,428,62,0,103.2,0,116],[1376,444,63.2,0,32,0,132],[1381,466,82.9,0,51.7,0,154],[1386,487,100.6,0,69.4,0,175],[1391,492,58.4,0,27.2,0,180],[1396,502,74.1,0,42.9,0,190],[1401,518,93.8,0,62.6,0,206],[1405,524,54.2,0,29.3,0,212],[1406,120,58.5,2,58.5,0,120],[1411,137,31,0,31,0,137],[1416,148,25.9,0,25.9,0,148],[1421,156,25,0,25,0,156],[1426,170,40.2,0,40.2,0,170],[1431,176,34.8,0,34.8,0,176],[1436,202,46.5,0,46.5,0,202],[1441,210,39.7,0,39.7,0,210],[1446,219,41,0,41,0,219],[1451,228,38.7,0,38.7,0,228],[1455,235,40.6,0,40.6,0,235],[1456,238,176.1,1,210.9,294,238],[1461,256,49.2,0,112.6,0,105],[1466,266,41.8,0,26.7,0,115],[1471,273,42.7,0,27.6,0,122],[1476,278,40.3,0,25.2,0,127],[1481,296,73.6,0,58.5,0,145],[1486,302,38.1,0,23,0,151],[1491,306,38.7,0,23.6,0,155],[1496,312,37.6,0,22.5,0,161],[1501,321,48,0,33,0,170],[1506,332,58.1,0,43,0,182],[1511,343,50.9,0,35.8,0,192],[1516,360,74.9,0,59.8,0,210],[1521,369,48.7,0,33.6,0,218],[1526,374,46.6,0,31.5,0,223],[1531,380,45.1,0,30,0,229],[1536,391,56.7,0,41.6,0,240],[1541,404,69.6,0,120.9,0,101],[1546,409,49.7,0,19.4,0,106],[1551,417,55.3,0,25,0,114],[1556,425,59.9,0,29.6,0,122],[1561,431,60.4,0,30.1,0,128],[1566,450,86.8,0,56.5,0,147],[1571,453,50.2,0,19.9,0,150],[1576,459,57.5,0,27.2,0,156],[1581,466,56.1,0,25.8,0,163],[1586,471,54.3,0,24,0,168],[1591,496,95.8,0,65.5,0,193],[1596,503,64.5,0,34.2,0,200],[1601,509,65.5,0,35.2,0,206],[1606,516,72.5,0,42.2,0,213],[1611,527,76.8,0,46.5,0,224],[1616,533,61.7,0,31.4,0,230],[1621,539,64.4,0,34.1,0,236],[1626,546,70.1,0,39.8,0,243],[1631,556,79.2,0,115.3,0,103],[1636,564,75,0,29.6,0,110],[1641,567,66,0,20.7,0,113],[1646,576,75.4,0,30.1,0,123],[1651,582,75.2,0,29.8,0,128],[1656,590,70.7,0,25.4,0,137],[1661,595,70.3,0,25,0,142],[1666,610,86.5,0,41.2,0,157],[1671,625,84.6,0,39.3,0,172],[1676,636,81,0,35.7,0,183],[1681,650,86.2,0,40.9,0,197],[1686,655,72.5,0,27.2,0,202],[1691,664,84.8,0,39.5,0,210],[1696,669,79.6,0,34.3,0,216],[1701,679,88,0,42.7,0,226],[1706,683,77.5,0,32.2,0,230],[1711,688,77.8,0,32.5,0,235],[1716,692,78.1,0,32.8,0,239],[1721,704,96.9,0,121,0,100],[1722,709,530.4,1,88.7,107,105],[1727,729,114.2,0,53.8,0,126],[1732,758,127.9,0,67.5,0,154],[1737,776,125.7,0,65.4,0,173],[1742,783,93.6,0,33.2,0,179],[1747,796,117.7,0,57.3,0,193],[1752,807,96.4,0,36,0,204],[1757,826,117,0,56.7,0,222],[1762,837,110.3,0,50,0,233],[1767,843,96.8,0,36.4,0,240],[1772,848,95,0,34.6,0,244],[1777,856,107.5,0,110.5,0,103],[1782,866,102.7,0,27.4,0,112],[1787,877,100.7,0,25.3,0,123],[1792,885,103.7,0,28.4,0,132],[1797,895,105,0,29.6,0,142],[1802,906,111.2,0,35.8,0,153],[1807,911,102.8,0,27.4,0,157],[1812,919,108.4,0,33,0,165],[1817,927,112.3,0,36.9,0,173],[1818,929,21.7,0,6.7,0,176],[1819,934,708.3,1,146.5,904,180],[1821,936,42.3,0,12.2,0,183]]};
+
+function anim(el, kf, opt){ if (reduce || !el.animate) return Promise.resolve(); var a = el.animate(kf, opt); return new Promise(function(r){ a.onfinish = r; a.oncancel = r; }); }
+function relRect(el, box){ var a = el.getBoundingClientRect(), b = box.getBoundingClientRect(); return {x:a.left - b.left, y:a.top - b.top, w:a.width, h:a.height}; }
+function niceMax(v){ if (v <= 0) return 1; var p = Math.pow(10, Math.floor(Math.log10(v))), n = v/p, S = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]; for (var i = 0; i < S.length; i++) if (n <= S[i] + 1e-9) return S[i]*p; return 10*p; }
+function usd(x){ return '$' + Math.round(x).toLocaleString('en-US'); }
+function ax(v){ return v === 0 ? '$0' : v < 1 ? '$' + v.toFixed(2) : '$' + (Math.round(v*10)/10); }
+var SIM = {START:50000, G:30000, F:100000, AUTO:967000, SUM:15000, REW:43000};
+function qcost(m, ef, s){ var o = {read:0, write:0, out:0}; for (var i = 0; i < RPQ; i++){ var r = req(m, s + SIM.G*i/RPQ, ef, '1h'); o.read += r.read; o.write += r.write; o.out += r.out; } o.base = o.read + o.write + o.out; return o; }
+function session(m, ef, nq, T){
+  var s = SIM.START, cum = [0], qs = [], lim = Math.min(T || SIM.AUTO, SIM.AUTO);
+  for (var q = 1; q <= nq; q++){
+    var c = qcost(m, ef, s); c.s = s; c.end = s + SIM.G; c.comp = false; c.compC = 0; s = c.end;
+    if (s >= lim){ var r = rateOf(m, s); c.compC = (s*r.rd + SIM.SUM*r.out + SIM.REW*r.w1)/1e6; c.comp = true; s = SIM.F; }
+    c.total = c.base + c.compC; qs.push(c); cum.push(cum[q - 1] + c.total);
+  }
+  return {qs:qs, cum:cum};
+}
+
+(function(){ var s = SESS.summary; $id('hook-a').textContent = usd(s.total); $id('hook-b').textContent = '약 ' + usd(SESS.whatIf.total); $id('m11-n').textContent = s.n.toLocaleString('en-US'); $id('m11-t').textContent = '$' + s.total.toFixed(2); })();
+
+function tk(t){ return t >= 100000 ? man(t) : Math.round(t).toLocaleString('en-US'); }
+function toks(text){
+  var out = [], re = /([ \t]*)([가-힣]|[A-Za-z]+|[0-9]+|\n|[^\sA-Za-z0-9가-힣])/g, m;
+  while ((m = re.exec(text))){ var sp = m[1], w = m[2]; if (/^[A-Za-z]+$/.test(w) && w.length > 5){ for (var i = 0; i < w.length; i += 4) out.push((i ? '' : sp) + w.slice(i, i + 4)); } else out.push(sp + w); }
+  return out;
+}
+function matchRender(el, rows, o){
+  var max = Math.max.apply(null, rows.map(function(r){ return r.t; }));
+  el.innerHTML = '<div class="mhd"><span>내 PC 가 보낸 컨텍스트</span><span></span><span>' + o.shelf + '</span></div>' + rows.map(function(r, i){
+    var w = Math.max(5, r.t/max*100), has = i < o.copy;
+    return '<div class="mr"><div class="ml"><i style="width:' + w + '%"></i><span>' + r.n + ' · ' + tk(r.t) + '</span></div><div class="mm"></div><div class="mc ' + (has ? (o.gone ? 'gone' : 'has') : 'empty') + '"><i style="width:' + w + '%"></i><span>' + (has ? (o.gone ? '지워짐' : '맡긴 캐시') : '없음') + '</span></div></div>';
+  }).join('');
+}
+async function matchPlay(el, rows, o, tick){
+  var rs = el.querySelectorAll('.mr');
+  for (var i = 0; i < rs.length; i++){
+    var r = rs[i], hit = i < o.copy && !o.gone;
+    r.classList.add('on'); await sleep(reduce ? 0 : 360);
+    r.querySelector('.mm').textContent = hit ? '=' : '+';
+    var mc = r.querySelector('.mc'); mc.className = 'mc ' + (hit ? 'hit' : 'new');
+    mc.querySelector('span').textContent = hit ? '적중 · 그대로 씀' : (i < o.copy || o.copy === 0 ? '캐시 없음 · 처음부터 맡김' : '새로 맡김');
+    tick(rows[i], hit); await sleep(reduce ? 0 : 220); r.classList.remove('on');
+  }
+}
+
+(function(){
+  var cur = 'tok', timers = [], zsel = 4;
+  var panes = {tok:$id('f0-tok'), ctx:$id('f0-ctx'), cache:$id('f0-cache')};
+  function later(f, ms){ timers.push(setTimeout(f, reduce ? 0 : ms)); }
+  function stop(){ timers.forEach(clearTimeout); timers = []; }
+
+  var Z = [
+    ['지시문', 2800, '#8c96a6', 'You are Claude Code. Help the user with software tasks and use the tools below when they help.'],
+    ['도구 설명', 19600, '#6f7887', 'Read: reads a file from the computer. Give the full path. Lines come back numbered.'],
+    ['스킬 · MCP 목록', 8544, '#a58fcf', 'review: checks the current changes for bugs before you commit them.'],
+    ['메모리 파일', 5600, '#b9a27a', '# 이 저장소 규칙\n시험은 npm test 로 돌린다.\n커밋 메시지는 한국어로 쓴다.'],
+    ['질문', 22, 'var(--input)', '업로드가 큰 파일에서 멈추는 까닭을 찾아 줘'],
+    ['읽은 코드', 3200, '#c9a5f2', 'function upload(file) {\n  const data = fs.readFileSync(file)\n  return send(data)\n}'],
+    ['답', 800, 'var(--out)', '큰 파일을 한 번에 읽어서 메모리가 모자랐습니다. 조각으로 나눠 보내게 고쳤습니다.']
+  ];
+  var ZT = Z.reduce(function(s, z){ return s + z[1]; }, 0);
+  function zoom(i){
+    zsel = i; var z = Z[i], t = toks(z[3]), box = $id('f0-toks');
+    $id('f0-zbar').querySelectorAll('button').forEach(function(b, j){ b.classList.toggle('on', j === i); });
+    $id('f0-zname').textContent = z[0]; box.innerHTML = '';
+    t.forEach(function(s, k){ later(function(){ var c = document.createElement('span'); c.className = 'tok'; c.textContent = s === '\n' ? '↵' : s.replace(/^[ \t]+/, '·'); box.appendChild(c); $id('f0-zcount').textContent = '글 ' + z[3].replace(/\n/g, '').length + '자 → 토큰 ' + (k + 1) + '개'; }, 60 + k*55); });
+
+    var n = Math.max(1, Math.round(z[1]/t.length));
+    $id('f0-znote').textContent = z[0] === '질문' ? '질문 한 줄은 토큰 ' + t.length + '개쯤입니다. 하지만 요청마다 다른 칸 전체(약 ' + man(ZT) + ')와 함께 실려 갑니다.' : '위는 「' + z[0] + '」 칸에 들어가는 글의 한 토막을 토큰으로 나눈 보기입니다. 실제 이 칸은 토큰 약 ' + tk(z[1]) + '개로 위 토막 약 ' + n.toLocaleString('en-US') + '개 분량입니다.';
+  }
+  function tok(){
+    $id('f0-zbar').innerHTML = Z.map(function(z, i){ return '<button type="button" style="flex:' + Math.max(z[1], 1600) + ';background:' + z[2] + '" title="' + z[0] + ' ' + tk(z[1]) + '">' + z[0] + '</button>'; }).join('');
+    $id('f0-zbar').querySelectorAll('button').forEach(function(b, i){ b.addEventListener('click', function(){ stop(); zoom(i); }); });
+    $id('f0-ztot').textContent = man(ZT);
+    zoom(zsel);
+  }
+  var PARTS = [['지시문', 'System prompt', 2800, '#8c96a6', 'Claude Code 가 늘 붙이는 기본 지시'], ['도구 설명', 'System tools', 19600, '#6f7887', '파일 읽기 · 명령 실행 같은 도구 쓰는 법'], ['스킬 · MCP 목록', 'Skills · MCP', 8544, '#a58fcf', '쓸 수 있는 스킬과 바깥 도구(나머지는 필요할 때만 실림)'], ['메모리 파일', 'Memory files', 5600, '#b9a27a', 'CLAUDE.md · 자동 메모리'], ['대화', 'Messages', 10, 'var(--input)', '질문 · 답 · 읽은 파일 · 명령 결과']];
+  function ctxSet(q){
+    var talk = q*SIM.G, parts = PARTS.map(function(p){ return [p[0], p[1], p[0] === '대화' ? p[2] + talk : p[2], p[3], p[4]]; }), tot = parts.reduce(function(s, p){ return s + p[2]; }, 0);
+    $id('f0-cbar').innerHTML = parts.map(function(p){ var w = p[2]/tot*100; return '<div style="width:' + w + '%;background:' + p[3] + '">' + (w > 11 ? p[0] : '') + '</div>'; }).join('');
+    $id('f0-cparts').innerHTML = parts.map(function(p){ return '<div><i style="background:' + p[3] + '"></i><b>' + p[0] + '</b><code>' + p[1] + '</code><span class="tk">' + tk(p[2]) + '</span><small>' + p[4] + '</small></div>'; }).join('');
+    $id('f0-ctxn').textContent = man(tot); segSet($id('f0-when'), String(q));
+  }
+  function ctx(){ ctxSet(0); later(function(){ ctxSet(10); }, 1200); later(function(){ ctxSet(30); }, 2600); }
+  var C = 300000, NEW = 3000, o = R.opus, MAX = C + 2*NEW;
+  var DB = '<svg class="db" viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>';
+  var FR = [
+    {t:'첫 요청', s:'서버에 캐시가 없어 통째로 맡김', send:C + NEW, copy:[[C + NEW, '--write', '맡김 30.3만']], hit:0, v:(C + NEW)*o.w1/1e6},
+    {t:'다음 요청', s:'앞부분이 캐시와 같아 그대로 쓰고 새 끝만 맡김', send:C + 2*NEW, copy:[[C + NEW, '--read', '적중 30.3만'], [NEW, '--write', '']], hit:(C + NEW)/(C + 2*NEW), v:((C + NEW)*o.rd + NEW*o.w1)/1e6},
+    {t:'1시간 넘게 쉰 뒤', s:'캐시가 지워져 다시 통째로 맡김', send:C + 2*NEW, copy:[[C + 2*NEW, '--write', '다시 맡김 30.6만']], hit:0, v:(C + 2*NEW)*o.w1/1e6}
+  ];
+  function cache(){
+    var box = $id('f0-frames');
+    if (!box.children.length) box.innerHTML = FR.map(function(f){
+      return '<div class="frame off"><div class="fl"><b>' + f.t + '</b>' + f.s + '</div><div class="fr2"><div class="fmini"><span>내 PC 가 보냄</span><div class="fbar"><div style="width:' + (f.send/MAX*100) + '%;background:var(--input)">컨텍스트 ' + man(f.send) + '</div></div></div><div class="fmini"><span>' + DB + '서버 캐시</span><div class="fbar">' + f.copy.map(function(p){ return '<div style="width:' + (p[0]/MAX*100) + '%;min-width:6px;background:var(' + p[1] + ')">' + p[2] + '</div>'; }).join('') + '</div></div><div class="fv">적중 ' + Math.round(f.hit*100) + '% · 이 요청의 값 <b>' + money(f.v) + '</b></div></div></div>';
+    }).join('');
+    var fr = box.querySelectorAll('.frame'); fr.forEach(function(f){ f.classList.add('off'); }); fr.forEach(function(f, i){ later(function(){ f.classList.remove('off'); }, 250 + i*1000); });
+  }
+  var PLAY = {tok:tok, ctx:ctx, cache:cache};
+  function show(v){ stop(); cur = v; segSet($id('f0-step'), v); for (var k in panes) panes[k].hidden = k !== v; PLAY[v](); }
+  seg($id('f0-step'), show);
+  seg($id('f0-when'), function(v){ stop(); ctxSet(+v); });
+  $id('f0-again').addEventListener('click', function(){ show(cur); });
+  show('tok');
+})();
+
+(function(){
+  var list = $id('lp-rows'), go = $id('lp-go'), step = $id('lp-step'), st = $id('lp-state'), sumEl = $id('lp-sum');
+  var SYS = 37000, i = 0, busy = false;
+
+  var S = [
+    {k:'lq', t:'업로드가 큰 파일에서 멈추는 까닭을 찾아 줘', add:1500},
+    {k:'lgo', n:1, plus:'질문'},
+    {k:'lback', t:'Grep 으로 readFileSync 를 찾아 줘', why:'어디서 파일을 읽는지부터 찾기로 함'},
+    {k:'lrun', cmd:'Grep("readFileSync", src/)', out:['src/upload.ts:12:  const data = fs.readFileSync(file)', 'src/legacy/old.ts:40:  readFileSync(path)'], add:500, what:'검색 결과'},
+    {k:'lgo', n:2, plus:'검색 결과 500'},
+    {k:'lback', t:'Read 로 src/upload.ts 를 열어 줘', why:'찾은 파일을 열어 보기로 함'},
+    {k:'lrun', cmd:'Read(src/upload.ts)', out:['412줄 읽음'], add:14000, what:'파일 내용'},
+    {k:'lgo', n:3, plus:'파일 내용 1.4만'},
+    {k:'lback', t:'Bash 로 시험을 돌려 줘', why:'고치기 전에 시험으로 확인하기로 함'},
+    {k:'lrun', cmd:'Bash(npm test -- upload)', out:['FAIL  upload.test.ts', '  ✕ 큰 파일 올리기 (heap out of memory)', 'Tests: 1 failed, 11 passed'], add:12000, what:'시험 결과'},
+    {k:'lgo', n:4, plus:'시험 결과 1.2만'},
+    {k:'lback', ans:true, why:'까닭을 찾았으니 답을 씀'},
+    {k:'lans', t:'큰 파일을 한 번에 읽어서 메모리가 모자랐습니다. 조각으로 나눠 읽게 고치면 됩니다.'}
+  ];
+  (function(){ var t = SYS; S.forEach(function(s){ if (s.k === 'lgo') s.size = t; else if (s.add) t += s.add; }); })();
+  var GOS = S.filter(function(s){ return s.k === 'lgo'; });
+  function esc(s){ return s.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function row(s){
+    var li = document.createElement('li'); li.className = 'lprow ' + s.k;
+    if (s.k === 'lq') li.innerHTML = '<div class="lpbub q"><b>질문</b>' + s.t + '</div>';
+    else if (s.k === 'lans') li.innerHTML = '<div class="lpbub a"><b>화면에 답</b>' + s.t + '</div>';
+    else if (s.k === 'lgo') li.innerHTML = '<span class="lpcap">내 PC</span><span class="lpar r"><em>요청 ' + s.n + ' · 컨텍스트 전체 <b>' + man(s.size) + '</b> 토큰</em><i></i><small>+ ' + s.plus + '</small></span><span class="lpcap lsrv"><span class="lpspin" aria-hidden="true"></span>서버</span>';
+    else if (s.k === 'lback') li.innerHTML = '<span class="lpcap">내 PC</span><span class="lpar l"><em>' + (s.ans ? '답을 돌려줌' : '도구 요청 · 「' + s.t + '」') + '</em><i></i><small>서버가 정함: ' + s.why + '</small></span><span class="lpcap lsrv">서버</span>';
+    else li.innerHTML = '<div class="lpterm"><div class="th">내 PC 에서 돌림 · 토큰 값 없음</div><code class="cmd">● ' + esc(s.cmd) + '</code>' + s.out.map(function(o, j){ return '<code>' + (j ? '  ' : '⎿ ') + esc(o) + '</code>'; }).join('') + '<div class="tf">' + s.what + ' ' + (s.add >= 10000 ? man(s.add) : s.add.toLocaleString('en-US')) + ' 토큰이 컨텍스트에 붙음 → 다음 요청에 실림</div></div>';
+    return li;
+  }
+  function say(s){
+    st.textContent = s.k === 'lq' ? '질문을 보냄' : s.k === 'lgo' ? '요청 ' + s.n + ' · 컨텍스트 전체 ' + man(s.size) + '을 서버로 보냄' : s.k === 'lback' ? (s.ans ? '서버가 답을 씀' : '서버가 도구 요청을 돌려줌') : s.k === 'lrun' ? '내 PC 에서 ' + s.cmd + ' 실행' : '답이 화면에 나옴';
+  }
+  async function show(s, fx){
+    var li = row(s); list.appendChild(li);
+    if (!fx || reduce){ li.classList.add('vis', 'drawn'); return; }
+    var cs = s.k === 'lrun' ? li.querySelectorAll('code, .tf') : [];
+    cs.forEach(function(c){ c.style.opacity = 0; });
+    await new Promise(function(r){ requestAnimationFrame(function(){ requestAnimationFrame(r); }); });
+    li.classList.add('vis');
+    if (s.k === 'lgo'){ li.classList.add('drawn'); await sleep(520); li.classList.add('thinking'); await sleep(700); li.classList.remove('thinking'); }
+    else if (s.k === 'lback'){ li.classList.add('drawn'); await sleep(500); }
+    else if (s.k === 'lrun'){ for (var j = 0; j < cs.length; j++){ await sleep(j ? 240 : 160); cs[j].style.opacity = 1; } await sleep(200); }
+    else await sleep(320);
+  }
+  function reset(){ list.innerHTML = ''; i = 0; sumEl.textContent = ''; }
+  function end(){ sumEl.textContent = '질문 하나에 요청 ' + GOS.length + '번이 갔습니다. 서버는 매번 컨텍스트 전체를 다시 받았고(' + man(GOS[0].size) + ' → ' + man(GOS[GOS.length - 1].size) + ') 도구 셋은 내 PC 에서 돌았습니다. 요청마다 든 값은 그림 2 에서 봅니다.'; }
+  async function next(fx){ if (i >= S.length) return false; var s = S[i++]; say(s); await show(s, fx); if (i >= S.length) end(); return true; }
+  function stepLabel(){ step.textContent = i >= S.length || i === 0 ? '한 단계씩 ▷' : '다음 ▷ (' + i + '/' + S.length + ')'; }
+  go.addEventListener('click', async function(){
+    if (busy) return; busy = true; go.disabled = true; step.disabled = true; reset();
+    while (await next(true)) await sleep(reduce ? 0 : 150);
+    busy = false; go.disabled = false; step.disabled = false; go.textContent = '처음부터 다시 ▶'; stepLabel();
+  });
+  step.addEventListener('click', async function(){
+    if (busy) return; if (i >= S.length) reset();
+    busy = true; go.disabled = true; await next(true); busy = false; go.disabled = false; stepLabel();
+  });
+
+  S.forEach(function(s){ var li = row(s); li.classList.add('vis', 'drawn'); list.appendChild(li); }); i = S.length; end();
+  st.textContent = '';
+})();
+
+(function(){
+  var wrap = $id('f1-wrap'), stack = $id('f1-stack'), srv = $id('f1-srv'), msg = $id('f1-srvmsg'), parcel = $id('f1-parcel'), bars = $id('f1-bars'), send = $id('f1-send'), more = $id('f1-more'), reset = $id('f1-reset'), state = $id('f1-state'), lines = $id('f1-rlines'), past = $id('f1-rpast');
+  var PX = 1/1250, MAXQ = 14, START = 37000, SCALE = 0.25, o = R.opus, total, sent, sum, nReq, nQ, first, qSum, qn, tot, hist, openK = -1, busy = false;
+  var NAMES = {sys:'지시문 · 도구 설명', q:'질문', tool:'도구 결과', ans:'답'};
+
+  var R4 = [
+    {out:300, wrote:'Grep 요청', say:'「Grep 으로 찾아 줘」', tool:'Grep 으로 찾음', name:'검색 결과', add:500},
+    {out:300, wrote:'Read 요청', say:'「Read 로 열어 줘」', tool:'Read 로 파일을 읽음', name:'파일 내용', add:14000},
+    {out:300, wrote:'Bash 요청', say:'「Bash 로 시험 돌려 줘」', tool:'Bash 로 시험을 돌림', name:'시험 결과', add:12000},
+    {out:2000, wrote:'답', ans:true}
+  ];
+  function m3(x){ return '$' + x.toFixed(3); }
+  function sz(t){ return t >= 10000 ? man(t) : tk(t); }
+  function add(type, tok, fx){ var d = document.createElement('div'); d.className = 'blk ' + type; var h = Math.max(5, tok*PX); d.style.height = h + 'px'; if (h < 15) d.classList.add('thin'); d.innerHTML = '<span>' + NAMES[type] + ' · ' + man(tok) + '</span>'; stack.appendChild(d); total += tok; if (fx) anim(d, [{opacity:0, transform:'translateY(-6px)'}, {opacity:1, transform:'none'}], {duration:300, easing:'ease-out'}); }
+  function bar(){ var b = document.createElement('i'), h = Math.min(84, Math.max(2, total/500000*84)); b.style.height = '2px'; b.style.background = nQ % 2 ? 'var(--read)' : 'var(--input)'; b.title = '질문 ' + nQ + ' · ' + man(total); bars.appendChild(b); requestAnimationFrame(function(){ requestAnimationFrame(function(){ b.style.height = h + 'px'; }); }); if (!first){ first = total; var g = document.createElement('div'); g.className = 'ghost'; g.style.bottom = h + 'px'; g.innerHTML = '<span>첫 요청</span>'; bars.appendChild(g); } }
+  function show(){ $id('f1-now').textContent = man(total); $id('f1-sum').textContent = man(sum); $id('f1-tot').textContent = m3(tot); $id('f1-totn').textContent = nQ; }
+
+  function rline(i, cached, fresh){
+    var r = R4[i], p = {rd:cached*o.rd/1e6, wr:fresh*o.w1/1e6, ot:r.out*o.out/1e6}; p.all = p.rd + p.wr + p.ot;
+    var what = i === 0 ? (nQ === 1 ? '지시문 일부 + 질문' : '앞 답 + 질문') : R4[i - 1].name + ' ' + sz(fresh);
+    var T = [['① 받기', '컨텍스트 ' + man(cached + fresh) + ' 토큰을 받음'], ['② 캐시와 맞춰 보기', '앞 ' + man(cached) + '이 캐시와 같음 → 꺼내 읽기 ' + m3(p.rd)], ['③ 새 부분 맡기기', '새로 붙은 ' + tk(fresh) + ' 토큰 → 맡기기 ' + m3(p.wr)], ['④ 생각', '답하기 전에 속으로 생각(답 쓰기 값에 들어감)'], ['⑤ 쓰기', r.wrote + ' ' + tk(r.out) + ' 토큰 → 답 쓰기 ' + m3(p.ot)]];
+    var li = document.createElement('li'); li.className = 'rl';
+    li.innerHTML = '<button type="button" class="rbtn" aria-expanded="false"><span class="rk">요청 ' + (i + 1) + '</span><span class="rw">' + what + ' 붙여 ' + man(cached + fresh) + ' 보냄 → ' + r.wrote + '</span><span class="rv">…</span><span class="rx" aria-hidden="true"></span><span class="rbar" aria-hidden="true"><i class="r"></i><i class="w"></i><i class="o"></i></span></button><div class="rdet" hidden><ol class="rqsteps">' + T.map(function(t){ return '<li><b>' + t[0] + '</b><span>' + t[1] + '</span></li>'; }).join('') + '</ol><p class="note">요청 ' + (i + 1) + ' 값 ' + m3(p.all) + ' = 꺼내 읽기 ' + m3(p.rd) + ' + 맡기기 ' + m3(p.wr) + ' + 답 쓰기 ' + m3(p.ot) + '</p></div>';
+    var btn = li.querySelector('.rbtn'), det = li.querySelector('.rdet');
+    function open(on){ btn.setAttribute('aria-expanded', on ? 'true' : 'false'); det.hidden = !on; }
+    btn.addEventListener('click', function(){ var on = det.hidden; open(on); openK = on ? i : (openK === i ? -1 : openK); });
+    open(openK === i); lines.appendChild(li);
+    return {li:li, p:p};
+  }
+
+  async function fill(L, mode){
+    var seg = L.li.querySelectorAll('.rbar i'), st = L.li.querySelectorAll('.rqsteps li'), v = L.li.querySelector('.rv'), run = 0, PART = [null, ['rd', 0], ['wr', 1], null, ['ot', 2]];
+    L.li.classList.add('now');
+    for (var j = 0; j < 5; j++){
+      if (mode){ st.forEach(function(x){ x.classList.remove('on'); }); st[j].classList.add('on'); }
+      var pt = PART[j];
+      if (pt){ var x = L.p[pt[0]]; seg[pt[1]].style.width = Math.min(100, x/SCALE*100) + '%'; run += x; qSum += x; tot += x; v.textContent = m3(run); $id('f1-rsv').textContent = m3(qSum); show(); }
+      if (mode && !reduce) await sleep(mode === 'fast' ? 40 : 300);
+    }
+    st.forEach(function(x){ x.classList.remove('on'); }); L.li.classList.remove('now'); v.textContent = m3(L.p.all);
+  }
+  function loc(who, text, v){ var li = document.createElement('li'); li.className = 'rloc'; li.innerHTML = '<span class="rk">' + who + '</span><span class="rw">' + text + '</span><span class="rv">' + v + '</span>'; lines.appendChild(li); }
+  function rstart(){ lines.innerHTML = ''; qSum = 0; qn = 0; $id('f1-rtitle').textContent = '질문 ' + nQ + ' · 요청마다 든 값'; $id('f1-rst').textContent = '도는 중 · 지금까지'; $id('f1-rsv').textContent = m3(0); }
+  function rend(){ $id('f1-rst').textContent = '요청 ' + qn + '회 · 합계'; $id('f1-rsv').textContent = m3(qSum); hist.push(qSum); past.innerHTML = hist.map(function(v, i){ return '<span class="rchip' + (i === hist.length - 1 ? ' on' : '') + '">질문 ' + (i + 1) + ' <b>' + m3(v) + '</b></span>'; }).join(''); }
+  async function request(i, fx, fast){
+    var fresh = total - sent, cached = sent;
+    nReq++; qn++; sum += total; bar(); sent = total;
+    $id('f1-rst').textContent = '요청 ' + qn + '회째 · 지금까지';
+    var L = rline(i, cached, fresh); show();
+    if (!fx || reduce || !parcel.animate){ await fill(L, false); return; }
+    var a = relRect(stack, wrap), b = relRect(srv, wrap), w = Math.min(a.w, b.w), tx = b.x + (b.w - w)/2, ty = b.y + Math.max(0, (b.h - a.h)/2);
+    parcel.style.width = w + 'px'; parcel.style.height = a.h + 'px';
+    parcel.innerHTML = '<i class="pold" style="height:' + (cached/total*100) + '%"></i><i class="pnew" style="height:' + (fresh/total*100) + '%"></i><span>컨텍스트 전체 ' + man(total) + ' · 새로 붙은 것 ' + sz(fresh) + '</span>';
+    state.textContent = '요청 ' + (i + 1) + ' · 컨텍스트 전체 ' + man(total) + '을 다시 싣고 감(첫 요청의 ' + (total/first).toFixed(1) + '배)';
+    await anim(parcel, [{opacity:0, transform:'translate(' + a.x + 'px,' + a.y + 'px)'}, {opacity:1, transform:'translate(' + a.x + 'px,' + a.y + 'px)', offset:.18}, {opacity:1, transform:'translate(' + tx + 'px,' + ty + 'px)', offset:.78}, {opacity:0, transform:'translate(' + tx + 'px,' + ty + 'px) scale(.97)'}], {duration:fast ? 420 : 1000, easing:'ease-in-out'});
+    msg.textContent = '처리 중 · ' + man(total);
+    await fill(L, fast ? 'fast' : true);
+  }
+  async function question(fx, fast){
+    nQ++; rstart(); var p = fast ? 110 : 420;
+    add('q', 1500, fx); if (fx) await sleep(p);
+    for (var i = 0; i < R4.length; i++){
+      await request(i, fx, fast);
+      var r = R4[i];
+      if (r.ans){ if (fx) msg.textContent = '답을 돌려보냄'; loc('답', '화면에 나옴. 답 2천도 컨텍스트에 붙어 다음 질문에 실림', ''); add('ans', 2000, fx); break; }
+      if (fx){ msg.textContent = r.say; await sleep(p); }
+      loc('내 PC', r.tool + '. ' + r.name + ' ' + sz(r.add) + '이 컨텍스트에 붙음', '$0');
+      add('tool', r.add, fx);
+    }
+    rend(); show();
+  }
+  function init(){ stack.innerHTML = ''; bars.innerHTML = ''; past.innerHTML = ''; total = 0; sent = 0; sum = 0; nReq = 0; nQ = 0; first = 0; qSum = 0; qn = 0; tot = 0; hist = []; msg.textContent = '기다리는 중'; add('sys', START, false); sent = START*0.72; question(false).then(function(){ show(); send.disabled = false; more.disabled = false; send.textContent = '질문하기 ▶'; state.textContent = '누르면 왼쪽 컨텍스트가 통째로 오른쪽으로 갑니다'; }); }
+  function done(){ busy = false; reset.disabled = false; if (nQ >= MAXQ){ send.textContent = '충분히 길어졌습니다'; more.disabled = true; state.textContent = '이제 요청 한 번에 ' + man(total) + ', 첫 요청의 ' + (total/first).toFixed(1) + '배를 싣습니다'; } else { send.disabled = false; more.disabled = false; state.textContent = '질문 하나에 요청 4번, 매번 컨텍스트 전체를 실었습니다. 질문 ' + nQ + '개째'; } }
+  send.addEventListener('click', async function(){ if (busy || nQ >= MAXQ) return; busy = true; send.disabled = true; more.disabled = true; reset.disabled = true; await question(true, false); done(); });
+  more.addEventListener('click', async function(){ if (busy || nQ >= MAXQ) return; busy = true; send.disabled = true; more.disabled = true; reset.disabled = true; for (var i = 0; i < 5 && nQ < MAXQ; i++) await question(true, true); done(); });
+  reset.addEventListener('click', function(){ if (!busy) init(); });
+  init();
+})();
+
+(function(){
+  var o = R.opus, el = $id('f3-match'), busy = false;
+  var rows = [{n:'지시문 · 도구 설명', t:37000}, {n:'대화 앞부분', t:100000}, {n:'대화 가운데', t:100000}, {n:'대화 끝', t:66000}, {n:'새 질문', t:3000}];
+  var NONE = rows.reduce(function(s, r){ return s + r.t; }, 0)*o.in/1e6;
+  function meter(none, real){ $id('f3-mnone').style.width = (none/NONE*100) + '%'; $id('f3-mreal').style.width = (real/NONE*100) + '%'; $id('f3-vnone').textContent = money(none); $id('f3-vreal').textContent = money(real); }
+  function reset(){ matchRender(el, rows, {shelf:'서버에 맡긴 캐시(바로 앞 요청 때)', copy:4}); meter(0, 0); $id('f3-save').textContent = '—'; $id('f3-hit').textContent = '—'; }
+  $id('f3-go').addEventListener('click', async function(){
+    if (busy) return; busy = true; this.disabled = true; reset();
+    var none = 0, real = 0, hitT = 0, allT = 0;
+    $id('f3-state').textContent = '서버가 받은 컨텍스트를 앞에서부터 캐시와 맞춰 봅니다';
+    await matchPlay(el, rows, {copy:4}, function(r, hit){ none += r.t*o.in/1e6; real += r.t*(hit ? o.rd : o.w1)/1e6; allT += r.t; if (hit) hitT += r.t; meter(none, real); });
+    $id('f3-hit').textContent = (Math.round(hitT/allT*1000)/10) + '%';
+    $id('f3-save').textContent = money(none - real) + ' (' + Math.round((1 - real/none)*100) + '%)';
+    $id('f3-state').textContent = '앞서 보낸 부분은 캐시를 그대로 써서 값이 거의 들지 않았습니다. 새 질문만 새로 맡겼습니다';
+    busy = false; this.disabled = false;
+  });
+  reset();
+})();
+
+var F4 = (function(){
+  var ev = 'cold', ctx = 400000, busy = false, o = R.opus, so = R.sonnet, el = $id('f4-match'), go = $id('f4-go'), timer = $id('f4-timer'), timel = $id('f4-timel');
+  var MSG = {
+    warm:'보관 시간 안에 돌아와 서버에 캐시가 그대로 있습니다. 다음 질문이 그 캐시를 그대로 씁니다.',
+    cold:'1시간 넘게 요청이 없어 캐시가 지워졌습니다. 다음 질문이 컨텍스트 전체를 처음부터 다시 맡깁니다.',
+    model:'캐시는 모델마다 따로입니다. Opus 5.5 에서 Sonnet 5.5 로 바꾸면 Opus 의 캐시는 남아 있어도 못 씁니다. 컨텍스트 전체를 Sonnet 요율로 처음부터 맡깁니다. 싼 모델로 바꿔도 이 한 번은 비쌉니다.',
+    effort:'Opus 5.5 · Sonnet 5.5 · Haiku 5.5 · Fable 5.1 은 API 키나 구독으로 쓰면 생각 깊이를 바꿔도 같은 캐시를 씁니다. 다음 요청 값은 그대로입니다. 답 쓰기 값만 깊이에 따라 달라집니다.'
+  };
+
+  var SC = 970000, BASE = 37000, NEWQ = 3000;
+  function pc(t){ return (t/SC*100).toFixed(2) + '%'; }
+  function bar(w, bg, op, anim){ return '<i ' + (anim ? 'data-w="' + w + '" style="width:0;' : 'style="width:' + w + ';') + 'background:' + bg + (op ? ';opacity:' + op : '') + '"></i>'; }
+
+  function cbars(stage, anim, pre){
+    var talk = Math.max(0, ctx - BASE), broke = !pre && (ev === 'cold' || ev === 'model'), w1 = ev === 'model' && !pre ? so.w1 : o.w1;
+    var r1 = bar(pc(BASE), '#6f7887') + bar(pc(talk), 'var(--input)') + bar(pc(NEWQ), 'var(--out)') + '<b>' + man(ctx + NEWQ) + '</b>';
+    var r2 = (broke ? '' : bar(pc(ctx), 'var(--read)', .5)) + '<b' + (broke ? ' class="dim"' : '') + '>' + (!broke ? '캐시에 있음 ' + man(ctx) : ev === 'cold' ? '1시간이 지나 지워짐 · 남은 것 없음' : 'Sonnet 5.5 캐시 없음(Opus 5.5 캐시는 못 씀)') + '</b>';
+    var r3 = stage !== 'after' ? '<b class="dim">「다음 질문 보내기 ▶」를 누르면 채워집니다</b>' : broke
+      ? bar(pc(ctx + NEWQ), 'var(--write)', 0, anim) + '<b>' + (ev === 'model' ? 'Sonnet 5.5 로 ' : '') + '전부 다시 맡기기 ' + man(ctx + NEWQ) + ' → ' + money((ctx + NEWQ)*w1/1e6) + '</b>'
+      : bar(pc(ctx), 'var(--read)', 0, anim) + bar(pc(NEWQ), 'var(--write)', 0, anim) + '<b>꺼내 읽기 ' + man(ctx) + ' ' + money(ctx*o.rd/1e6) + ' + 새 질문 맡기기 3천 ' + money(NEWQ*o.w1/1e6) + ' = ' + money((ctx*o.rd + NEWQ*o.w1)/1e6) + '</b>';
+    el.innerHTML = '<div class="f4row"><span>내 PC 가 보낼 컨텍스트</span><div class="f4trk">' + r1 + '</div></div><div class="f4row"><span>서버의 ' + (ev === 'model' && !pre ? 'Sonnet 5.5' : 'Opus 5.5') + ' 캐시</span><div class="f4trk">' + r2 + '</div></div><div class="f4row"><span>이번 요청이 낸 값</span><div class="f4trk" id="f4-paid">' + r3 + '</div></div>';
+  }
+
+  function lineChart(){
+    var ch = $id('f4-line'); ch.innerHTML = '';
+    var X0 = 56, X1 = 600, Y0 = 168, Y1 = 30, LO = 100000, HI = 967000, w1 = ev === 'model' ? so.w1 : o.w1;
+    var cold = function(c){ return (c + NEWQ)*w1/1e6; }, warm = function(c){ return (c*o.rd + NEWQ*o.w1)/1e6; }, broke = ev === 'cold' || ev === 'model';
+    var top = niceMax(cold(HI)), X = function(c){ return X0 + (c - LO)/(HI - LO)*(X1 - X0); }, Y = function(v){ return Y0 - v/top*(Y0 - Y1); };
+    var hd = svg('text', {x:X0, y:12, 'font-size':12}, ch); svg('tspan', {'font-weight':700, fill:css('--text')}, hd).textContent = '다음 질문 첫 요청 값'; svg('tspan', {fill:css('--muted')}, hd).textContent = ' · 컨텍스트가 클수록 캐시가 없을 때 값이 커집니다';
+    [0, top/2, top].forEach(function(v){ svg('line', {x1:X0, x2:X1, y1:Y(v), y2:Y(v), stroke:css('--line'), opacity:v ? .5 : 1}, ch); svg('text', {x:X0 - 6, y:Y(v) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = ax(v); });
+    [200000, 400000, 600000, 800000].forEach(function(c){ svg('text', {x:X(c), y:Y0 + 15, 'text-anchor':'middle', 'font-size':11, fill:css('--muted')}, ch).textContent = man(c); });
+    svg('text', {x:X1, y:Y0 + 29, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '컨텍스트 양 →';
+
+    [[cold, '--write', ev === 'model' ? '모델을 바꿨을 때(Sonnet 5.5 로 전부 맡기기)' : '캐시가 없을 때(전부 다시 맡기기)', broke, X1, Y(cold(HI)) - 8, 'end'], [warm, '--read', '캐시가 있을 때(꺼내 읽기)', !broke, X0 + 6, Y(warm(LO)) - 9, 'start']].forEach(function(L){
+      var d = ''; for (var c = LO; c <= HI + 1; c += (HI - LO)/80) d += (d ? ' L' : 'M') + X(c).toFixed(1) + ' ' + Y(L[0](c)).toFixed(1);
+      svg('path', {d:d, fill:'none', stroke:css(L[1]), 'stroke-width':L[3] ? 3 : 1.6, opacity:L[3] ? 1 : .55}, ch);
+      svg('text', {x:L[4], y:L[5], 'text-anchor':L[6], 'font-size':11.5, 'font-weight':L[3] ? 700 : 400, fill:css(L[1]), stroke:css('--card'), 'stroke-width':4, 'paint-order':'stroke'}, ch).textContent = L[2];
+    });
+    var xc = X(ctx), right = xc < (X0 + X1)/2; svg('line', {x1:xc, x2:xc, y1:Y1, y2:Y0, stroke:css('--muted'), 'stroke-dasharray':'3 3'}, ch);
+    [[cold(ctx), '--write', 4], [warm(ctx), '--read', -7]].forEach(function(p){ svg('circle', {cx:xc, cy:Y(p[0]), r:5, fill:css(p[1])}, ch); svg('text', {x:right ? xc + 9 : xc - 9, y:Y(p[0]) + p[2], 'text-anchor':right ? 'start' : 'end', 'font-size':12, 'font-weight':700, fill:css(p[1]), stroke:css('--card'), 'stroke-width':4, 'paint-order':'stroke'}, ch).textContent = money(p[0]); });
+  }
+  function calc(){ var warm = (ctx*o.rd + 3000*o.w1)/1e6, broke = ev === 'cold' || ev === 'model'; return {warm:warm, broke:broke, first:ev === 'cold' ? (ctx + 3000)*o.w1/1e6 : ev === 'model' ? (ctx + 3000)*so.w1/1e6 : warm}; }
+  function result(c){ var f = $id('f4-first'); f.textContent = money(c.first); f.style.color = c.broke ? 'var(--write)' : ''; $id('f4-warmv').textContent = money(c.warm); $id('f4-ratio').textContent = c.broke ? Math.round(c.first/c.warm) + '배' : '같음'; }
+  function real(c){
+    var el2 = $id('f4-real'); if (!c.broke){ el2.textContent = '캐시를 그대로 쓰니 다음 요청 값이 오르지 않습니다.'; return; }
+    var q = qcost('opus', 'xhigh', ctx).base, k = (c.first - c.warm)/q;
+    el2.innerHTML = '이 한 번에 더 드는 값 ' + money(c.first - c.warm) + '은 이 크기에서 질문 약 ' + (k < 1 ? k.toFixed(1) : Math.round(k)) + '개 값입니다. 한 번은 크게 튀지만 세션 전체에선 작은 몫입니다. 실제 세션 하나에서 식은 캐시 4번이 더 낸 값은 합계의 6% 였고<a class="cite" href="#ref-m11">[M11]</a>, 세션 44개를 모은 실측에선 약 12% 였습니다<a class="cite" href="#ref-m3">[M3]</a>. 늦은 컴팩트로 더 낸 값이 더 큽니다(3.4).';
+  }
+  function choice(){
+    var box = $id('f4-choicebox'); box.hidden = ev !== 'cold'; if (ev !== 'cold') return;
+    var F = 100000, NEWS = 37000;
+    var rs = [['cont', '그냥 이어 가기', '컨텍스트 전체를 다시 맡김', ctx*o.w1/1e6, '대화가 그대로 남음', qcost('opus', 'xhigh', ctx).base], ['comp', '컴팩트하고 이어 가기', '캐시 없이 읽어 요약 + 줄어든 컨텍스트 10만 맡김', (ctx*o.in + SIM.SUM*o.out + F*o.w1)/1e6, '요약 + 파일이 남음', qcost('opus', 'xhigh', F).base], ['fresh', '새 세션', '지시문 · 도구 3.7만만 다시 맡김', NEWS*o.w1/1e6, '파일에 적은 것만 남음', qcost('opus', 'xhigh', NEWS).base]];
+    var max = Math.max.apply(null, rs.map(function(r){ return r[3]; })), best = rs.reduce(function(a, b){ return b[3] < a[3] ? b : a; }), mid = rs[0][3] <= rs[1][3] ? rs[0] : rs[1];
+    $id('f4-choice').innerHTML = rs.map(function(r){ return '<div class="ch' + (r === best ? ' best' : '') + '"><div class="chh"><b>' + r[1] + '</b><span>' + money(r[3]) + (r === best ? ' ★' : '') + '</span></div><div class="chbar"><i style="width:' + (r[3]/max*100) + '%"></i></div><small>' + r[2] + ' · ' + r[4] + ' · 그 뒤 질문 하나 ' + money(r[5]) + '</small></div>'; }).join('');
+    var be = (SIM.SUM*o.out + F*o.w1)/(o.w1 - o.in);
+    $id('f4-choicemsg').textContent = '대화를 이어 가야 한다면 약 ' + man(be) + ' 토큰보다 클 때 컴팩트가 그냥 이어 가기보다 쌉니다(지금 ' + man(ctx) + '에선 ' + (mid === rs[1] ? '컴팩트' : '이어 가기') + '가 쌈). 새 세션이 가장 싸지만 대화에만 있던 것을 잃으니 쉬기 전에 진행 메모를 써 두면 좋습니다(5.2). 식은 뒤에 쓰면 그 메모 요청이 컨텍스트 전체를 다시 맡깁니다.';
+  }
+  function still(){
+    var c = calc(); $id('f4-ctxv').textContent = man(ctx); $id('f4-evmsg').textContent = MSG[ev]; cbars('after', false, false); lineChart();
+    timer.style.transition = 'none'; timer.style.width = ev === 'cold' ? '0%' : ev === 'warm' ? '40%' : '100%'; timer.style.background = ev === 'cold' ? 'var(--write)' : 'var(--read)';
+    timel.textContent = ev === 'cold' ? '1시간을 넘겨 캐시가 지워졌습니다' : ev === 'warm' ? '캐시가 지워지기까지 24분 남음' : ev === 'model' ? '캐시는 모델마다 따로입니다' : '생각 깊이를 바꿔도 캐시는 그대로입니다';
+    result(c); real(c); choice();
+  }
+  async function play(){
+    if (busy) return; busy = true; go.disabled = true; var c = calc();
+    cbars('empty', false, true); timer.style.transition = 'none'; timer.style.width = '100%'; timer.style.background = 'var(--read)'; timel.textContent = '마지막 요청 직후 · 캐시가 지워지기까지 60분'; $id('f4-first').textContent = '…'; $id('f4-ratio').textContent = '—';
+    await sleep(reduce ? 0 : 400);
+    if (ev === 'warm' || ev === 'cold'){ void timer.offsetWidth; timer.style.transition = reduce ? 'none' : 'width 1.2s linear, background .3s'; timer.style.width = ev === 'warm' ? '40%' : '0%'; if (ev === 'cold') timer.style.background = 'var(--write)'; timel.textContent = ev === 'warm' ? '36분 쉬는 중…' : '1시간 넘게 쉬는 중…'; await sleep(reduce ? 0 : 1250); if (ev === 'cold'){ cbars('empty', false, false); timel.textContent = '1시간을 넘겨 캐시가 지워졌습니다'; await sleep(reduce ? 0 : 600); } else timel.textContent = '캐시가 지워지기까지 24분 남음'; }
+    else { timel.textContent = ev === 'model' ? 'Sonnet 5.5 로 바꿨습니다' : '생각 깊이를 엑스트라에서 최대로 바꿨습니다'; cbars('empty', false, false); await sleep(reduce ? 0 : 600); }
+
+    cbars('after', true, false); await sleep(30);
+    el.querySelectorAll('#f4-paid i[data-w]').forEach(function(i){ i.style.transition = reduce ? 'none' : 'width 1.2s linear'; i.style.width = i.dataset.w; });
+    $id('f4-first').dataset.v = '0'; tween($id('f4-first'), c.first, money, 1200); await sleep(reduce ? 0 : 1300);
+    timer.style.transition = 'none'; timer.style.width = '100%'; timer.style.background = 'var(--read)'; timel.textContent = '요청이 왔으니 보관 시간이 다시 60분부터';
+    result(c); busy = false; go.disabled = false;
+  }
+  seg($id('f4-ev'), function(v){ ev = v; if (!busy) still(); });
+  $id('f4-ctx').addEventListener('input', function(){ ctx = +this.value; if (!busy) still(); });
+  go.addEventListener('click', play);
+  window.addEventListener('themechange', lineChart);
+  still();
+  return {pick:function(v){ ev = v; segSet($id('f4-ev'), v); if (!busy) still(); }, play:play};
+})();
+
+(function(){
+  var m = 'opus', NQ = 30, shown = NQ, timer = null, ch = $id('f2-chart'), tb = $id('f2-table');
+  var MODELS = ['opus', 'sonnet', 'haiku', 'fable'];
+  var KINDS = [['in', '새로 읽기', '캐시에 없는 글', '--input'], ['w1', '맡기기', '캐시에 1시간 저장', '--write'], ['rd', '꺼내 읽기', '캐시에서', '--read'], ['out', '답 쓰기', '생각 포함', '--out']];
+  var S = {}; MODELS.forEach(function(k){ S[k] = session(k, 'xhigh', NQ, SIM.AUTO); });
+  var YMAX = Math.ceil(S.fable.cum[NQ]/20)*20, T0 = 22, T1 = 186, B0 = 332, B1 = 238, BW = 440/NQ;
+  function X(q){ return 52 + q*BW; } function Y(v){ return T1 - v/YMAX*(T1 - T0); }
+  function table(){
+    var h = '<thead><tr><th>하는 일 · 백만 토큰당</th>' + MODELS.map(function(k){ return '<th class="' + (k === m ? 'on' : '') + '">' + R[k].name + '</th>'; }).join('') + '</tr></thead><tbody>';
+    KINDS.forEach(function(kd){ h += '<tr><td><i style="background:var(' + kd[3] + ')"></i>' + kd[1] + '<small>' + kd[2] + '</small></td>' + MODELS.map(function(k){ return '<td class="' + (k === m ? 'on' : '') + '">$' + fr(R[k][kd[0]]) + '</td>'; }).join('') + '</tr>'; });
+    tb.innerHTML = h + '</tbody>';
+  }
+  function draw(){
+    ch.innerHTML = '';
+
+    svg('text', {x:52, y:12, 'font-size':11.5, fill:css('--muted')}, ch).textContent = '쌓인 합계';
+    for (var i = 0; i <= 4; i++){ var v = YMAX*i/4; svg('line', {x1:52, x2:492, y1:Y(v), y2:Y(v), stroke:css('--line'), opacity:i ? .6 : 1}, ch); svg('text', {x:46, y:Y(v) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '$' + Math.round(v); }
+    MODELS.filter(function(k){ return k !== m; }).concat([m]).forEach(function(k){
+      var on = k === m, d = 'M' + X(0) + ' ' + Y(0);
+      for (var q = 1; q <= shown; q++) d += ' L' + X(q).toFixed(1) + ' ' + Y(S[k].cum[q]).toFixed(1);
+      svg('path', {d:d, fill:'none', stroke:css(on ? '--accent' : '--muted'), 'stroke-width':on ? 3.2 : 1.6, opacity:on ? 1 : .6, 'stroke-linejoin':'round'}, ch);
+      if (on || shown === NQ){ var v = S[k].cum[shown]; svg('text', {x:X(shown) + 8, y:Y(v) + 4, 'font-size':12, 'font-weight':on ? 700 : 400, fill:css(on ? '--text' : '--muted')}, ch).textContent = R[k].name + ' ' + money(v); }
+    });
+
+    var d = S[m], qmax = niceMax(Math.max.apply(null, d.qs.map(function(c){ return c.total/RPQ; })));
+    function Yq(v){ return B0 - v/qmax*(B0 - B1); }
+    var hd = svg('text', {x:52, y:B1 - 24, 'font-size':11.5}, ch); svg('tspan', {'font-weight':700, fill:css('--text')}, hd).textContent = '요청 한 번 값 · ' + R[m].name; svg('tspan', {fill:css('--muted')}, hd).textContent = ' · 질문 하나 = 요청 ' + RPQ + '번';
+    [0, qmax/2, qmax].forEach(function(v, i){ svg('line', {x1:52, x2:492, y1:Yq(v), y2:Yq(v), stroke:css('--line'), opacity:i ? .5 : 1}, ch); svg('text', {x:46, y:Yq(v) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = ax(v); });
+    for (var q = 0; q < shown; q++){ var c = d.qs[q], x = X(q) + 1, w = Math.max(1, BW - 2), y = B0; [['read', '--read'], ['write', '--write'], ['out', '--out']].forEach(function(p){ var h = c[p[0]]/RPQ/qmax*(B0 - B1); if (h > 0){ svg('rect', {x:x, y:y - h, width:w, height:h, fill:css(p[1])}, ch); y -= h; } });
+
+      svg('rect', {x:X(q), y:B1, width:BW, height:B0 - B1, fill:'transparent', 'data-tip':(q + 1) + '번째 질문 · 컨텍스트 ' + man(c.s) + ' → ' + man(c.end) + '\n요청 한 번 ' + money(c.total/RPQ) + ' = 꺼내 읽기 ' + money(c.read/RPQ) + ' + 맡기기 ' + money(c.write/RPQ) + ' + 답 쓰기 ' + money(c.out/RPQ) + '\n질문 하나(요청 ' + RPQ + '번) ' + money(c.total)}, ch); }
+    if (shown > 0){
+      var f = d.qs[0].total/RPQ, l = d.qs[shown - 1].total/RPQ;
+      svg('text', {x:X(0) + 2, y:Yq(f) - 6, 'font-size':12, 'font-weight':700, fill:css('--text'), stroke:css('--card'), 'stroke-width':4, 'paint-order':'stroke'}, ch).textContent = '첫 질문 · 요청 한 번 ' + money(f);
+      if (shown > 6) svg('text', {x:X(shown) - 2, y:Yq(l) - 6, 'text-anchor':'end', 'font-size':12, 'font-weight':700, fill:css('--out'), stroke:css('--card'), 'stroke-width':4, 'paint-order':'stroke'}, ch).textContent = shown + '번째 · 요청 한 번 ' + money(l) + ' · ' + (l/f).toFixed(1) + '배';
+    }
+    [1, 10, 20, 30].forEach(function(q){ svg('text', {x:X(q - .5), y:B0 + 16, 'text-anchor':'middle', 'font-size':11, fill:css('--muted')}, ch).textContent = q + '번째'; });
+    svg('text', {x:492, y:B0 + 32, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '질문 →';
+  }
+  function kpi(){
+    var d = S[m], n = Math.max(1, shown), f = d.qs[0].total, l = d.qs[n - 1].total;
+    tween($id('f2-tot'), d.cum[shown], money); $id('f2-tott').textContent = R[m].name + ' · 질문 ' + shown + '개 합계';
+    $id('f2-r1').textContent = money(f/RPQ); $id('f2-r30').textContent = money(l/RPQ); $id('f2-rt').textContent = '요청 한 번 값 · 첫 질문 → ' + n + '번째';
+    $id('f2-q1').textContent = money(f); $id('f2-q30').textContent = money(l); $id('f2-qt').textContent = '질문 하나(요청 ' + RPQ + '번) 값 · 첫 질문 → ' + n + '번째';
+    $id('f2-ratio').textContent = '답 쓰기는 꺼내 읽기의 ' + Math.round(R[m].out/R[m].rd) + '배 값'; $id('f2-haiku').hidden = m !== 'haiku';
+  }
+  function render(){ table(); draw(); kpi(); }
+  seg($id('f2-model'), function(v){ m = v; render(); });
+  $id('f2-play').addEventListener('click', function(){ if (timer) clearInterval(timer); shown = 0; draw(); timer = setInterval(function(){ shown++; draw(); kpi(); if (shown >= NQ){ clearInterval(timer); timer = null; } }, reduce ? 1 : 80); });
+  window.addEventListener('themechange', draw);
+  render();
+})();
+
+var F6 = (function(){
+  var NQ = 60, AUTO = SIM.AUTO;
+  function run(T){ var d = session('opus', 'xhigh', NQ, T), pts = [[0, SIM.START]], comp = 0; d.qs.forEach(function(c, i){ pts.push([i + 1, c.end]); if (c.comp){ pts.push([i + 1, SIM.F]); comp++; } }); return {cost:d.cum[NQ], comp:comp, pts:pts, qs:d.qs}; }
+  var Ts = []; for (var T = 120000; T <= 960000; T += 10000) Ts.push(T); Ts.push(AUTO);
+  var curve = Ts.map(function(t){ return [t, run(t).cost]; });
+  var best = curve.reduce(function(a, b){ return b[1] < a[1] ? b : a; });
+  var autoC = run(AUTO).cost;
+  var tIn = $id('f6-t'), cur = 500000;
+  $id('f6-bestv').textContent = man(best[0]);
+  var saw = $id('f6-saw'), uu = $id('f6-u');
+  function axis(g, x0, y0, x1, y1){ svg('line', {x1:x0, y1:y1, x2:x1, y2:y1, stroke:css('--line')}, g); svg('line', {x1:x0, y1:y0, x2:x0, y2:y1, stroke:css('--line')}, g); }
+
+  function drawSaw(){
+    saw.innerHTML = ''; var r = run(cur), X0 = 54, X1 = 626, bw = (X1 - X0)/NQ, A0 = 30, A1 = 140, B0 = 190, B1 = 300, PUR = '#c9a5f2';
+    var X = function(q){ return X0 + q*bw; }, Y = function(t){ return A1 - t/1000000*(A1 - A0); };
+    function head(y, mark, b, rest){ mark(); var t = svg('text', {x:X0 + 24, y:y, 'font-size':12}, saw); svg('tspan', {'font-weight':700, fill:css('--text')}, t).textContent = b; svg('tspan', {fill:css('--muted')}, t).textContent = rest; }
+    function halo(o){ o.stroke = css('--card'); o['stroke-width'] = 4; o['paint-order'] = 'stroke'; return o; }
+    head(14, function(){ svg('line', {x1:X0, x2:X0 + 18, y1:10, y2:10, stroke:css('--read'), 'stroke-width':3}, saw); }, '적재된 컨텍스트 양', ' · 질문마다 3만씩 쌓이고 컴팩트하면 약 10만으로 줄어듭니다');
+    axis(saw, X0, A0, X1, A1);
+    [250000, 500000, 750000, 1000000].forEach(function(t){ svg('text', {x:X0 - 6, y:Y(t) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, saw).textContent = man(t); });
+    svg('line', {x1:X0, x2:X1, y1:Y(AUTO), y2:Y(AUTO), stroke:css('--bad'), 'stroke-dasharray':'4 4', 'stroke-width':1}, saw);
+    svg('text', halo({x:X0 + 6, y:Y(AUTO) - 4, 'font-size':11, fill:css('--bad')}), saw).textContent = '자동 컴팩트 96.7만';
+    var lim = Math.min(cur, AUTO);
+    if (lim < AUTO){ svg('line', {x1:X0, x2:X1, y1:Y(lim), y2:Y(lim), stroke:css('--write'), 'stroke-dasharray':'4 4', 'stroke-width':1}, saw); svg('text', halo({x:X0 + 6, y:Y(lim) - 4, 'font-size':11, fill:css('--write')}), saw).textContent = '컴팩트 시점 ' + man(lim); }
+
+    if (r.comp <= 12) r.qs.forEach(function(c, i){ if (!c.comp) return; var xc = X(i + 1); svg('line', {x1:xc, x2:xc, y1:A0, y2:A1, stroke:PUR, 'stroke-dasharray':'3 3', 'stroke-width':1.2}, saw); });
+    var d = r.pts.map(function(p, i){ return (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1); }).join(' ');
+    svg('path', {d:d, fill:'none', stroke:css('--read'), 'stroke-width':2.2, 'stroke-linejoin':'round'}, saw);
+
+    var RT = 0.3, Yb = function(v){ return B1 - Math.min(v, RT)/RT*(B1 - B0); }, m3 = function(x){ return '$' + x.toFixed(3); };
+    head(B0 - 16, function(){ svg('rect', {x:X0 + 2, y:B0 - 26, width:12, height:12, fill:css('--accent')}, saw); }, '요청 한 번 값', ' · 질문 하나 = 요청 ' + RPQ + '번 · 보라 = 컴팩트 요청(요약 · 다시 맡기기)');
+    axis(saw, X0, B0, X1, B1);
+    [0, .1, .2, .3].forEach(function(v){ svg('text', {x:X0 - 6, y:Yb(v) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, saw).textContent = v ? '$' + v.toFixed(1) : '$0'; });
+
+    r.qs.forEach(function(c, i){ var hb = B1 - Yb(c.base/RPQ); svg('rect', {x:X(i) + 1.5, y:B1 - hb, width:Math.max(1, bw - 3), height:hb, fill:css('--accent'), opacity:.85, 'data-tip':(i + 1) + '번째 질문 · 컨텍스트 ' + man(c.s) + ' → ' + man(c.end) + '\n요청 한 번 ' + m3(c.base/RPQ) + ' · 질문 하나(요청 ' + RPQ + '번) ' + money(c.base)}, saw); });
+    r.qs.forEach(function(c, i){ if (!c.comp) return; var y = Yb(c.compC), tp = (i + 1) + '번째 질문 뒤 컴팩트 · 요청 한 번 ' + money(c.compC) + '\n컨텍스트 ' + man(c.end) + ' 읽기 + 요약 쓰기 1.5만 + 다시 맡기기 4.3만\n그 뒤 컨텍스트 약 10만에서 다시 시작'; svg('rect', {x:X(i + 1) - 1.5, y:y, width:3, height:B1 - y, fill:PUR}, saw); svg('rect', {x:X(i + 1) - 4.5, y:B0, width:9, height:B1 - B0, fill:'transparent', 'data-tip':tp}, saw); });
+    var cf = -1, cn = -1; r.qs.forEach(function(c, i){ if (!c.comp) return; if (cf < 0) cf = i; else if (cn < 0) cn = i; });
+    if (cf >= 0 && cf + 1 < NQ){
+      var often = cn >= 0 && cn - cf < 3, xa = X(cf + 1), right = often || xa + 340 < X1;
+      var tt = svg('text', {x:often ? X0 + 10 : right ? xa + 10 : xa - 10, y:B0 + 16, 'text-anchor':right ? 'start' : 'end', 'font-size':11.5, 'font-weight':700, fill:PUR}, saw);
+      tt.textContent = often ? '질문마다 컴팩트 → 컴팩트 요청 값(한 번 ' + money(r.qs[cf].compC) + ')이 매번 붙습니다' : '여기서 컴팩트(요청 한 번 ' + money(r.qs[cf].compC) + ') → 그다음 요청 한 번 ' + m3(r.qs[cf].base/RPQ) + ' → ' + m3(r.qs[cf + 1].base/RPQ);
+      try { var bb = tt.getBBox(); saw.insertBefore(svg('rect', {x:bb.x - 6, y:bb.y - 3, width:bb.width + 12, height:bb.height + 6, rx:4, fill:css('--card'), stroke:PUR, 'stroke-width':1}, saw), tt); } catch (e) {}
+    }
+    [1, 10, 20, 30, 40, 50, 60].forEach(function(n){ svg('text', {x:X(n - .5), y:B1 + 15, 'text-anchor':'middle', 'font-size':11, fill:css('--muted')}, saw).textContent = n; });
+    svg('text', {x:X1, y:B1 + 30, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, saw).textContent = '몇 번째 질문 →';
+  }
+  var cmin = Math.min.apply(null, curve.map(function(c){ return c[1]; })), cmax = Math.max.apply(null, curve.map(function(c){ return c[1]; }));
+  function drawU(){
+    uu.innerHTML = ''; var X = function(t){ return 46 + (t - 120000)/(AUTO - 120000)*580; }, Y = function(c){ return 186 - (c - cmin*0.9)/(cmax - cmin*0.9)*160; };
+    axis(uu, 46, 14, 626, 186);
+    [cmin, (cmin + cmax)/2, cmax].forEach(function(c){ svg('text', {x:40, y:Y(c) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, uu).textContent = money(c); });
+    [200000, 400000, 600000, 800000].forEach(function(t){ svg('text', {x:X(t), y:202, 'text-anchor':'middle', 'font-size':11, fill:css('--muted')}, uu).textContent = man(t); });
+
+    var hd = svg('text', {x:46, y:10, 'font-size':12}, uu); svg('tspan', {'font-weight':700, fill:css('--text')}, hd).textContent = '질문 60개 총액'; svg('tspan', {fill:css('--muted')}, hd).textContent = ' · 컴팩트 시점마다(아래 눈금)';
+    svg('text', {x:626, y:217, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, uu).textContent = '컴팩트 시점(컨텍스트 양) →';
+    svg('text', {x:60, y:30, 'font-size':11.5, fill:css('--muted')}, uu).textContent = '← 너무 이르면 요약하는 값이 쌓임';
+    svg('text', {x:620, y:30, 'text-anchor':'end', 'font-size':11.5, fill:css('--muted')}, uu).textContent = '너무 늦으면 큰 컨텍스트 읽기가 쌓임 →';
+    var d = curve.map(function(c, i){ return (i ? 'L' : 'M') + X(c[0]).toFixed(1) + ' ' + Y(c[1]).toFixed(1); }).join(' ');
+    svg('path', {d:d, fill:'none', stroke:css('--accent'), 'stroke-width':2.2}, uu);
+    svg('circle', {cx:X(best[0]), cy:Y(best[1]), r:6, fill:css('--good')}, uu);
+    svg('text', {x:X(best[0]), y:Y(best[1]) + 20, 'text-anchor':'middle', 'font-size':11.5, fill:css('--good')}, uu).textContent = '★ 가장 쌈 ' + man(best[0]);
+    var cc = run(cur).cost; svg('circle', {cx:X(Math.min(cur, AUTO)), cy:Y(cc), r:7, fill:'none', stroke:css('--write'), 'stroke-width':2.5}, uu);
+  }
+  function render(){
+    var r = run(cur), avg = r.cost/NQ, k = avg/(best[1]/NQ); $id('f6-tv').textContent = '컨텍스트 ' + man(cur) + '에서';
+    tween($id('f6-avg'), avg, money); tween($id('f6-cost'), r.cost, money); $id('f6-auto').textContent = money(autoC) + ' (' + (autoC/r.cost).toFixed(2) + '배)'; $id('f6-comp').textContent = r.comp + '번';
+
+    var csum = r.qs.reduce(function(s, c){ return s + c.compC; }, 0); $id('f6-costt').textContent = '질문 60개 총액 = 질문 ' + money(r.cost - csum) + ' + 컴팩트 ' + r.comp + '번 ' + money(csum);
+
+    var sig = $id('f6-sig'), early = cur < best[0], lvl = k >= 1.25 ? 'bad' : 'warn', tail = '(평균 질문당 값이 가장 싼 자리의 ' + k.toFixed(2) + '배)';
+    if (k < 1.08){ sig.className = 'chip good'; sig.textContent = '좋습니다. 가장 싼 자리 근처(' + k.toFixed(2) + '배)'; }
+    else if (early){ sig.className = 'chip ' + lvl; sig.textContent = (k >= 1.25 ? '너무 이릅니다.' : '조금 이릅니다.') + ' 컴팩트를 자주 해 컴팩트 값이 쌓입니다' + tail; }
+    else { sig.className = 'chip ' + lvl; sig.textContent = (k >= 1.25 ? '늦습니다.' : '조금 늦습니다.') + ' 큰 컨텍스트를 읽는 값이 쌓입니다' + tail; }
+    drawSaw(); drawU();
+  }
+  tIn.addEventListener('input', function(){ cur = +tIn.value; render(); });
+  $id('f6-best').addEventListener('click', function(){ cur = best[0]; tIn.value = cur; render(); });
+  window.addEventListener('themechange', function(){ drawSaw(); drawU(); });
+  render();
+  return {best:function(){ cur = best[0]; tIn.value = cur; render(); }};
+})();
+
+var ROWS = (function(){ var rows = [], prev = 0, cum = 0, cumW = 0; SESS.pts.forEach(function(p){ var n = Math.max(1, p[0] - prev); prev = p[0]; cum += p[2]/100; cumW += p[4]/100; rows.push({i:p[0], n:n, ctx:p[1]*1000, per:p[2]/100/n, f:p[3], gap:p[5], v:p[6]*1000, cum:cum, cumW:cumW}); }); return rows; })();
+var NREQ = ROWS[ROWS.length - 1].i, MARK = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+function fmtGap(m){ var h = Math.floor(m/60), r = m%60; return (h ? h + '시간' : '') + (r ? (h ? ' ' : '') + r + '분' : ''); }
+function rowAt(k){ for (var j = 0; j < ROWS.length; j++) if (ROWS[j].i >= k) return ROWS[j]; return ROWS[ROWS.length - 1]; }
+
+var F5 = (function(){
+  var m = 'opus', ef = 'xhigh', T = 250000, NQ = 60, q = 60, timer = null, A, B;
+  var ch = $id('f5-chart'), qIn = $id('f5-q'), tIn = $id('f5-t'), X0 = 54, X1 = 584, Y0 = 232, Y1 = 22;
+  function build(){ A = session(m, ef, NQ, SIM.AUTO); B = session(m, ef, NQ, T); }
+  function draw(){
+    ch.innerHTML = '';
+    var top = niceMax(Math.max.apply(null, A.qs.concat(B.qs).map(function(d){ return d.total; }))), cmax = niceMax(Math.max(A.cum[NQ], B.cum[NQ])), bw = (X1 - X0)/NQ;
+    function Y(v){ return Y0 - v/top*(Y0 - Y1); } function Yc(v){ return Y0 - v/cmax*(Y0 - Y1); }
+    for (var i = 0; i <= 4; i++){ var v = top*i/4; svg('line', {x1:X0, x2:X1, y1:Y(v), y2:Y(v), stroke:css('--line'), opacity:i ? .6 : 1}, ch); svg('text', {x:X0 - 6, y:Y(v) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = ax(v); svg('text', {x:X1 + 6, y:Yc(cmax*i/4) + 4, 'font-size':11, fill:css('--accent')}, ch).textContent = ax(cmax*i/4); }
+    svg('text', {x:X0 - 6, y:12, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '질문 하나';
+    svg('text', {x:X1 + 6, y:12, 'font-size':11, fill:css('--accent')}, ch).textContent = '합계';
+    [1, 10, 20, 30, 40, 50, 60].forEach(function(n){ svg('text', {x:X0 + (n - .5)*bw, y:Y0 + 16, 'text-anchor':'middle', 'font-size':11, fill:css('--muted')}, ch).textContent = n; });
+    svg('text', {x:X1, y:Y0 + 32, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '몇 번째 질문 →';
+    A.qs.forEach(function(d, i){ if (i >= q) return; var h = d.total/top*(Y0 - Y1); svg('rect', {x:X0 + i*bw + 1, y:Y0 - h, width:Math.max(1, bw - 2), height:h, fill:'none', stroke:css('--muted'), 'stroke-width':1, opacity:.75}, ch); });
+    B.qs.forEach(function(d, i){
+      var x = X0 + i*bw + 2, w = Math.max(1, bw - 4), on = i < q, y = Y0;
+      [['read', '--read'], ['write', '--write'], ['out', '--out'], ['compC', '']].forEach(function(p){ var h = d[p[0]]/top*(Y0 - Y1); if (!(h > 0)) return; svg('rect', {x:x, y:y - h, width:w, height:h, fill:p[1] ? css(p[1]) : '#c9a5f2', opacity:on ? 1 : .12}, ch); y -= h; });
+    });
+
+    var cfirst = -1;
+    B.qs.forEach(function(d, i){ if (!d.comp || i >= q) return; var xc = X0 + (i + 1)*bw; svg('line', {x1:xc, x2:xc, y1:Y1 + 16, y2:Y0, stroke:'#c9a5f2', 'stroke-dasharray':'3 3', 'stroke-width':1.3}, ch); if (cfirst < 0) cfirst = i; });
+
+    if (cfirst >= 0 && cfirst + 1 < q){ var cx = X0 + (cfirst + 1)*bw, m3 = function(x){ return '$' + x.toFixed(3); };
+      [['여기서 컴팩트 → 요청 한 번 ' + m3(B.qs[cfirst].base/RPQ) + ' → ' + m3(B.qs[cfirst + 1].base/RPQ), 12, 700], ['질문 하나(요청 ' + RPQ + '번) ' + money(B.qs[cfirst].base) + ' → ' + money(B.qs[cfirst + 1].base), 27, 400]].forEach(function(l){ svg('text', {x:cx + 4, y:Y1 + l[1], 'font-size':11.5, 'font-weight':l[2], fill:'#c9a5f2', stroke:css('--card'), 'stroke-width':4, 'paint-order':'stroke'}, ch).textContent = l[0]; }); }
+    [[A, css('--muted'), '4 4', '컴팩트 없이'], [B, css('--accent'), '', '컴팩트']].forEach(function(s){ var d = 'M' + X0 + ' ' + Yc(0); for (var j = 1; j <= q; j++) d += ' L' + (X0 + j*bw).toFixed(1) + ' ' + Yc(s[0].cum[j]).toFixed(1); svg('path', {d:d, fill:'none', stroke:s[1], 'stroke-width':2.4, 'stroke-dasharray':s[2], 'stroke-linejoin':'round'}, ch); svg('circle', {cx:X0 + q*bw, cy:Yc(s[0].cum[q]), r:4, fill:s[1]}, ch); });
+
+    var ex = X0 + q*bw, left = q > NQ/2, ya = Yc(A.cum[q]) - 9, yb = Yc(B.cum[q]) - 9; if (Math.abs(ya - yb) < 15) yb = ya + 15;
+    [[ya, css('--muted'), '컴팩트 없이 합계 ' + money(A.cum[q])], [yb, css('--accent'), man(T) + '에서 컴팩트 합계 ' + money(B.cum[q])]].forEach(function(t){ svg('text', {x:left ? ex - 8 : ex + 8, y:t[0], 'text-anchor':left ? 'end' : 'start', 'font-size':12, 'font-weight':700, fill:t[1], stroke:css('--card'), 'stroke-width':4, 'paint-order':'stroke'}, ch).textContent = t[2]; });
+  }
+  function kpi(){
+    var nc = 0; for (var i = 0; i < q; i++) if (B.qs[i].comp) nc++;
+    $id('f5-qv').textContent = q + '번째'; $id('f5-tv').textContent = '컨텍스트 ' + man(T) + '에서';
+    tween($id('f5-a'), A.cum[q], money, 220); tween($id('f5-b'), B.cum[q], money, 220);
+    var s = A.cum[q] - B.cum[q]; $id('f5-s').textContent = (s >= 0 ? '' : '−') + money(Math.abs(s)) + (A.cum[q] > 0 ? ' (' + Math.round(s/A.cum[q]*100) + '%)' : '');
+    $id('f5-c').textContent = nc + '번';
+    var cc = B.qs.filter(function(d){ return d.comp; })[0];
+    $id('f5-msg').textContent = q <= 3 ? '질문마다 컨텍스트가 약 3만 토큰씩 자랍니다. 「세션 진행」을 눌러 보세요.' : '막대 하나는 질문 하나(요청 ' + RPQ + '번)입니다. 테두리 막대는 컴팩트 없이(96.7만에서 자동 컴팩트), 채운 막대는 ' + man(T) + '에서 컴팩트했을 때입니다. 컴팩트 ' + nc + '번' + (cc ? '(한 번 약 ' + money(cc.compC) + ')' : '') + '을 내고도 질문 ' + q + '개 동안 ' + (s >= 0 ? money(s) + ' 덜 듭니다.' : money(-s) + ' 더 듭니다.');
+  }
+  function render(){ draw(); kpi(); }
+  seg($id('f5-model'), function(v){ m = v; build(); render(); });
+  seg($id('f5-effort'), function(v){ ef = v; build(); render(); });
+  qIn.addEventListener('input', function(){ q = +qIn.value; render(); });
+  tIn.addEventListener('input', function(){ T = +tIn.value; build(); render(); });
+  $id('f5-play').addEventListener('click', function(){ if (timer){ clearInterval(timer); timer = null; return; } q = 1; qIn.value = 1; render(); timer = setInterval(function(){ q++; qIn.value = q; render(); if (q >= NQ){ clearInterval(timer); timer = null; } }, reduce ? 1 : 70); });
+  window.addEventListener('themechange', draw);
+  build(); render();
+  return {set:function(o){ if (o.m){ m = o.m; segSet($id('f5-model'), m); } if (o.ef){ ef = o.ef; segSet($id('f5-effort'), ef); } build(); render(); }};
+})();
+
+(function(){
+  var ctx = 500000, o = R.opus, NQ = 10, F = 100000, NEWS = 37000, SIZES = [200000, 500000, 800000];
+  var ITEMS = ['정한 것', '까닭', '진행 상황', '다음 할 일', '해 보고 안 된 것', '읽은 파일 내용'];
+  var KEEP = {cont:['ok', 'ok', 'ok', 'ok', 'ok', 'ok'], comp:['half', 'lost', 'ok', 'half', 'lost', 'half'], fresh:['ok', 'ok', 'ok', 'ok', 'ok', 'lost']};
+  var NOTE = {cont:'다 남지만 질문마다 값이 커집니다', comp:'<code>/compact</code> 한 번이면 됩니다. 무엇이 남을지는 요약이 정하고 최근에 고친 파일 다섯까지는 다시 읽힙니다', fresh:'남길 것을 내가 정합니다. 가장 싸지만 메모를 쓰는 단계가 하나 더 있습니다. 파일 내용은 필요할 때 다시 읽습니다'};
+
+  var W = [['cont', '그대로 이어 가기'], ['comp', '컴팩트'], ['fresh', '세션 인계(진행 메모 + 새 세션)']];
+  function run(start){ var s = start, tot = 0, first = 0; for (var q = 0; q < NQ; q++){ var c = qcost('opus', 'xhigh', s); if (!q) first = c.base; tot += c.base; s += SIM.G; } return {first:first, tot:tot}; }
+  function costs(c){ var once = {cont:0, comp:(c*o.rd + SIM.SUM*o.out + SIM.REW*o.w1)/1e6, fresh:(c*o.rd + 4000*o.out)/1e6 + (NEWS*0.28*o.w1 + NEWS*0.72*o.rd)/1e6}, r = {cont:run(c), comp:run(F), fresh:run(NEWS + 2000)}; return {once:once, r:r, tot:{cont:r.cont.tot, comp:once.comp + r.comp.tot, fresh:once.fresh + r.fresh.tot}}; }
+  function chip(t, k){ return '<span class="kchip ' + k + '">' + (k === 'ok' ? '✓ ' : k === 'half' ? '◐ ' : '') + t + '</span>'; }
+
+  function bars(){
+    var all = SIZES.map(costs), max = Math.max.apply(null, all.map(function(c){ return c.tot.cont; })), box = $id('f7-bars');
+    box.innerHTML = SIZES.map(function(s, j){ var c = all[j], min = Math.min(c.tot.cont, c.tot.comp, c.tot.fresh); return '<button type="button" class="gb' + (s === ctx ? ' on' : '') + '" data-c="' + s + '" aria-pressed="' + (s === ctx) + '"><span class="gcols">' + W.map(function(w){ var v = c.tot[w[0]]; return '<span class="gc ' + w[0] + (v === min ? ' best' : '') + '"><b>$' + v.toFixed(1) + '</b><i style="height:' + (v/max*100).toFixed(1) + '%"></i></span>'; }).join('') + '</span><span class="glab">' + man(s) + '에서 줄이면</span></button>'; }).join('');
+    box.querySelectorAll('.gb').forEach(function(b){ b.addEventListener('click', function(){ ctx = +b.dataset.c; segSet($id('f7-size'), String(ctx)); render(); }); });
+  }
+  function render(){
+    var c = costs(ctx), WS = {cont:man(ctx) + ' 그대로', comp:'약 10만(요약 포함)', fresh:'약 3.7만 + 메모'}, min = Math.min(c.tot.cont, c.tot.comp, c.tot.fresh);
+    $id('f7-ways').innerHTML = W.map(function(w){ var k = w[0], best = c.tot[k] === min; return '<div class="way' + (best ? ' best' : '') + '"><b>' + w[1] + (best ? ' ★' : '') + '</b><div class="wkeep">' + ITEMS.map(function(t, i){ return chip(t, KEEP[k][i]); }).join('') + '</div><div class="wv"><span>줄이는 값(한 번)</span><b>' + (c.once[k] ? money(c.once[k]) : '없음') + '</b></div><div class="wv"><span>다음 질문 하나</span><b>' + money(c.r[k].first) + '</b></div><div class="wv"><span>질문 10개 합계</span><b>' + money(c.tot[k]) + '</b></div><small>다음 질문의 컨텍스트 ' + WS[k] + '. ' + NOTE[k] + '.</small></div>'; }).join('');
+    var dc = c.tot.cont - c.tot.comp, df = c.tot.cont - c.tot.fresh;
+    $id('f7-msg').textContent = man(ctx) + '에서 줄이면 질문 10개 동안 그대로 이어 갈 때보다 컴팩트로 ' + money(dc) + ', 세션 인계로 ' + money(df) + ' 덜 듭니다. 줄이는 값은 컨텍스트 양과 거의 상관없고 그대로 이어 갈 때의 값만 커집니다.';
+    bars();
+  }
+  seg($id('f7-size'), function(v){ ctx = +v; render(); });
+  render();
+})();
+
+(function(){
+  var k = NREQ, timer = null, ch = $id('f8-chart'), kIn = $id('f8-k');
+  kIn.max = NREQ; kIn.value = NREQ;
+  var X0 = 52, X1 = 520, T0 = 20, T1 = 140, B0 = 300, B1 = 176, L = ROWS[ROWS.length - 1], YM = Math.ceil(L.cum/50)*50;
+  function X(i){ return X0 + i/NREQ*(X1 - X0); } function Yt(c){ return T1 - Math.min(c, 1e6)/1e6*(T1 - T0); } function Yb(v){ return B0 - v/YM*(B0 - B1); }
+  var colds = ROWS.filter(function(r){ return r.f === 1; });
+  function draw(){
+    ch.innerHTML = ''; var vis = ROWS.filter(function(r){ return r.i <= k; }); if (!vis.length) vis = [ROWS[0]];
+    function path(f, Yf){ return vis.map(function(r, j){ return (j ? 'L' : 'M') + X(r.i).toFixed(1) + ' ' + Yf(f(r)).toFixed(1); }).join(' '); }
+    svg('text', {x:X0, y:12, 'font-size':11.5, fill:css('--muted')}, ch).textContent = '컨텍스트 양';
+    svg('rect', {x:X0, y:Yt(250000), width:X1 - X0, height:Yt(200000) - Yt(250000), fill:css('--good'), opacity:.16}, ch);
+    svg('line', {x1:X0, x2:X1, y1:Yt(967000), y2:Yt(967000), stroke:css('--bad'), 'stroke-dasharray':'4 4'}, ch);
+    svg('text', {x:X1, y:Yt(967000) - 4, 'text-anchor':'end', 'font-size':10.5, fill:css('--bad')}, ch).textContent = '자동 컴팩트 96.7만';
+    [0, 500000, 1000000].forEach(function(t){ svg('text', {x:X0 - 6, y:Yt(t) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = t ? man(t) : '0'; });
+    svg('line', {x1:X0, x2:X1, y1:T1, y2:T1, stroke:css('--line')}, ch);
+    var d = path(function(r){ return r.ctx; }, Yt);
+    svg('path', {d:d + ' L' + X(vis[vis.length - 1].i).toFixed(1) + ' ' + T1 + ' L' + X(vis[0].i).toFixed(1) + ' ' + T1 + ' Z', fill:css('--read'), opacity:.18}, ch);
+    svg('path', {d:d, fill:'none', stroke:css('--read'), 'stroke-width':1.4}, ch);
+    svg('path', {d:path(function(r){ return r.v; }, Yt), fill:'none', stroke:css('--good'), 'stroke-width':1.6}, ch);
+    ROWS.forEach(function(r, j){ if (r.f === 2 && r.i <= k && j > 0){ var pk = ROWS[j - 1].ctx, x = X(r.i); svg('text', {x:x, y:Yt(pk) - 6, 'text-anchor':'middle', 'font-size':10.5, fill:css('--write')}, ch).textContent = Math.round(pk/10000) + '만'; } });
+    svg('text', {x:X0, y:B1 - 12, 'font-size':11.5, fill:css('--muted')}, ch).textContent = '쌓인 값';
+    for (var i = 0; i <= YM; i += YM/5){ svg('line', {x1:X0, x2:X1, y1:Yb(i), y2:Yb(i), stroke:css('--line'), opacity:i ? .6 : 1}, ch); svg('text', {x:X0 - 6, y:Yb(i) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '$' + Math.round(i); }
+    svg('path', {d:path(function(r){ return r.cum; }, Yb), fill:'none', stroke:css('--out'), 'stroke-width':2.6, 'stroke-linejoin':'round'}, ch);
+    svg('path', {d:path(function(r){ return r.cumW; }, Yb), fill:'none', stroke:css('--good'), 'stroke-width':2.6, 'stroke-linejoin':'round'}, ch);
+
+    colds.forEach(function(r, j){ if (r.i > k) return; var c = SESS.colds[j] || {}, tipT = MARK[j] + ' ' + r.i.toLocaleString('en-US') + '번째 요청 · ' + fmtGap(c.gapMin || 0) + ' 쉬고 돌아온 첫 요청\n캐시가 지워져 컨텍스트 ' + man(r.ctx) + '을 다시 맡김 → ' + money(c.cost || 0) + '\n캐시가 있었다면 ' + money(c.warm || 0);
+      svg('circle', {cx:X(r.i), cy:Yb(r.cum), r:6, fill:'none', stroke:css('--write'), 'stroke-width':2}, ch); svg('text', {x:X(r.i), y:Yb(r.cum) - 10, 'text-anchor':'middle', 'font-size':12, 'font-weight':700, fill:css('--write')}, ch).textContent = MARK[j];
+      svg('circle', {cx:X(r.i), cy:Yb(r.cum) - 6, r:13, fill:'transparent', 'data-tip':tipT}, ch); });
+    var l = vis[vis.length - 1];
+    svg('text', {x:X(l.i) + 8, y:Yb(l.cum) + 4, 'font-size':12, 'font-weight':700, fill:css('--out')}, ch).textContent = '예시 세션 ' + usd(l.cum);
+    svg('text', {x:X(l.i) + 8, y:Yb(l.cumW) + 4, 'font-size':12, 'font-weight':700, fill:css('--good')}, ch).textContent = '25만 컴팩트 ' + usd(l.cumW);
+
+    var tg = [{y:Yt(l.ctx), t:['예시 세션의', '컨텍스트 양'], c:'--read'}, {y:Yt(l.v), t:['25만마다', '컴팩트했을 때'], c:'--good'}].sort(function(a, b){ return a.y - b.y; });
+    if (tg[1].y - tg[0].y < tg[0].t.length*13) tg[1].y = tg[0].y + tg[0].t.length*13;
+    tg.forEach(function(g){ g.t.forEach(function(s, j){ svg('text', {x:X(l.i) + 8, y:g.y + 4 + j*13, 'font-size':11, 'font-weight':700, fill:css(g.c)}, ch).textContent = s; }); });
+    [500, 1000, 1500].forEach(function(n){ svg('text', {x:X(n), y:B0 + 16, 'text-anchor':'middle', 'font-size':11, fill:css('--muted')}, ch).textContent = n.toLocaleString('en-US') + '번째'; });
+    svg('text', {x:X1, y:B0 + 28, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '요청 →';
+    if (k < NREQ){ var xc = X(k); svg('line', {x1:xc, x2:xc, y1:T0, y2:B0, stroke:css('--accent'), 'stroke-dasharray':'3 3'}, ch); }
+  }
+  function kpi(){ var r = rowAt(k); $id('f8-kv').textContent = k.toLocaleString('en-US') + '번째'; $id('f8-a').textContent = money(r.cum); $id('f8-b').textContent = money(r.cumW); $id('f8-s').textContent = money(r.cum - r.cumW) + ' (' + Math.round((1 - r.cumW/r.cum)*100) + '%)'; $id('f8-ctx').textContent = man(r.ctx) + ' 대 ' + man(r.v); }
+  function render(){ draw(); kpi(); }
+  var s = SESS.summary, comps = s.comps.slice().sort(function(a, b){ return a - b; });
+  $id('f8-c1').textContent = comps.length + '번 대 ' + SESS.whatIf.comp + '번'; $id('f8-c1b').textContent = man(comps[Math.floor(comps.length/2)]*1000);
+  $id('f8-c2').textContent = money(s.coldExtra) + ' 대 ' + money(SESS.whatIf.coldX); $id('f8-c3').textContent = s.bigShareCost + '%'; $id('f8-c3t').textContent = '컨텍스트가 40만을 넘을 때 보낸 요청(' + s.bigShareReq + '%)이 낸 비용의 몫';
+  $id('f8-colds').innerHTML = SESS.colds.map(function(c, j){ return '<div><i>' + MARK[j] + '</i>' + fmtGap(c.gapMin) + ' 쉼 → <b>' + money(c.cost) + '</b><br>캐시가 있었다면 ' + money(c.warm) + '</div>'; }).join('');
+  kIn.addEventListener('input', function(){ k = +kIn.value; render(); });
+  $id('f8-play').addEventListener('click', function(){ if (timer){ clearInterval(timer); timer = null; return; } k = 1; timer = setInterval(function(){ k = Math.min(NREQ, k + Math.ceil(NREQ/150)); kIn.value = k; render(); if (k >= NREQ){ clearInterval(timer); timer = null; } }, reduce ? 1 : 40); });
+  window.addEventListener('themechange', draw);
+  render();
+})();
+
+(function(){
+  var ch = $id('f9-chart'), k = NREQ, timer = null, X0 = 52, X1 = 560, T0 = 20, T1 = 210, LO = 250000, HI = 300000;
+  var alerts = [], st = 0;
+  ROWS.forEach(function(r){ if (r.f === 2) st = 0; if (st === 0 && r.ctx >= LO){ alerts.push({i:r.i, kind:'due', c:r.ctx}); st = 1; } if (st === 1 && r.ctx >= HI){ alerts.push({i:r.i, kind:'late', c:r.ctx}); st = 2; } if (r.f === 1) alerts.push({i:r.i, kind:'cold', c:r.ctx}); });
+  var nDue = alerts.filter(function(a){ return a.kind === 'due'; }).length, nLate = alerts.filter(function(a){ return a.kind === 'late'; }).length, nCold = alerts.filter(function(a){ return a.kind === 'cold'; }).length;
+  var COL = {due:'--yel', late:'--bad', cold:'--input'};
+  function X(i){ return X0 + i/NREQ*(X1 - X0); } function Y(c){ return T1 - Math.min(c, 1e6)/1e6*(T1 - T0); }
+  function draw(){
+    ch.innerHTML = ''; var vis = ROWS.filter(function(r){ return r.i <= k; }); if (!vis.length) vis = [ROWS[0]];
+    function path(f){ return vis.map(function(r, j){ return (j ? 'L' : 'M') + X(r.i).toFixed(1) + ' ' + Y(f(r)).toFixed(1); }).join(' '); }
+    svg('rect', {x:X0, y:Y(HI), width:X1 - X0, height:Y(LO) - Y(HI), fill:css('--yel'), opacity:.16}, ch);
+    [0, 250000, 500000, 750000, 1000000].forEach(function(t){ svg('line', {x1:X0, x2:X1, y1:Y(t), y2:Y(t), stroke:css('--line'), opacity:t ? .5 : 1}, ch); svg('text', {x:X0 - 6, y:Y(t) + 4, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = t ? man(t) : '0'; });
+    svg('path', {d:path(function(r){ return r.ctx; }), fill:'none', stroke:css('--muted'), 'stroke-width':1.4, opacity:.9}, ch);
+    svg('path', {d:path(function(r){ return r.v; }), fill:'none', stroke:css('--good'), 'stroke-width':1.8}, ch);
+
+    var TIP = {due:['주황', '컴팩트 구간에 들어섬 → 바가 「컴팩트할 때」'], late:['빨강', '구간을 넘음 → 바가 「컴팩트 늦어짐」'], cold:['파랑', '캐시가 식은 뒤 첫 질문 → 이어 가기와 컴팩트 중 싼 쪽을 값으로 알려 줌']};
+    alerts.forEach(function(a){ if (a.i > k) return; var x = X(a.i), y = Y(a.c); if (a.kind === 'cold') svg('path', {d:'M' + x + ' ' + (y - 7) + ' l6 7 l-6 7 l-6 -7 z', fill:css(COL[a.kind])}, ch); else svg('circle', {cx:x, cy:y, r:5, fill:css(COL[a.kind])}, ch);
+      svg('circle', {cx:x, cy:y, r:9, fill:'transparent', 'data-tip':TIP[a.kind][0] + ' · ' + a.i.toLocaleString('en-US') + '번째 요청 · 컨텍스트 ' + man(a.c) + '\n' + TIP[a.kind][1]}, ch); });
+    [500, 1000, 1500].forEach(function(n){ svg('text', {x:X(n), y:T1 + 16, 'text-anchor':'middle', 'font-size':11, fill:css('--muted')}, ch).textContent = n.toLocaleString('en-US') + '번째'; });
+    svg('text', {x:X1, y:T1 + 28, 'text-anchor':'end', 'font-size':11, fill:css('--muted')}, ch).textContent = '요청 →';
+
+    var l = vis[vis.length - 1], tags = [{y:Y(l.ctx), t:'예시 세션의', c:'--muted', t2:'컨텍스트 양'}, {y:Y(l.v), t:'알림 자리에서', c:'--good', t2:'컴팩트했다면'}, {y:Y((LO + HI)/2), t:'설정한', c:'--yel', t2:'컴팩트 구간'}].sort(function(a, b){ return a.y - b.y; });
+    for (var j = 1; j < tags.length; j++) if (tags[j].y - tags[j - 1].y < (tags[j - 1].t2 ? 26 : 13)) tags[j].y = tags[j - 1].y + (tags[j - 1].t2 ? 26 : 13);
+    tags.forEach(function(g){ svg('text', {x:X1 + 6, y:g.y + 4, 'font-size':11, 'font-weight':700, fill:css(g.c)}, ch).textContent = g.t; if (g.t2) svg('text', {x:X1 + 6, y:g.y + 17, 'font-size':11, 'font-weight':700, fill:css(g.c)}, ch).textContent = g.t2; });
+    $id('f9-k').textContent = k < NREQ ? '요청 ' + k.toLocaleString('en-US') + ' / ' + NREQ.toLocaleString('en-US') : '';
+  }
+  function L9(){ var L = ROWS[ROWS.length - 1]; return {tot:L.cum, w:L.cumW}; }
+  var a = L9();
+  $id('f9-n').textContent = (nDue + nLate + nCold) + '번'; $id('f9-nt').textContent = '주황 ' + nDue + ' · 빨강 ' + nLate + ' · 캐시가 식은 뒤 ' + nCold;
+  $id('f9-a').style.width = '100%'; $id('f9-b').style.width = (a.w/a.tot*100) + '%'; $id('f9-av').textContent = usd(a.tot); $id('f9-bv').textContent = '약 ' + usd(a.w); $id('f9-s').textContent = usd(a.tot - a.w) + ' (' + Math.round((1 - a.w/a.tot)*100) + '%)';
+  $id('f9-play').addEventListener('click', function(){ if (timer){ clearInterval(timer); timer = null; return; } k = 1; timer = setInterval(function(){ k = Math.min(NREQ, k + Math.ceil(NREQ/150)); draw(); if (k >= NREQ){ clearInterval(timer); timer = null; } }, reduce ? 1 : 40); });
+  window.addEventListener('themechange', draw);
+  draw();
+})();
+
+(function(){
+  var o = R.opus;
+
+  function q(t0, cold){ var t = t0 + 1500, s = t0 - 2000, v = 0; [[0, 300], [500, 300], [14000, 300], [12000, 2000]].forEach(function(p, i){ t += p[0]; var cached = i === 0 && cold ? 0 : s; v += (cached*o.rd + (t - cached)*o.w1 + p[1]*o.out)/1e6; s = t; }); return v; }
+  var a = q(67000, false), b = q(500000, false), c = q(500000, true);
+  $id('i-a').textContent = money(a); $id('i-b').textContent = money(b); $id('i-c').textContent = money(c);
+  $id('i-bt').textContent = '새 세션의 ' + (b/a).toFixed(1) + '배'; $id('i-ct').textContent = '새 세션의 ' + Math.round(c/a) + '배'; $id('i-x').textContent = Math.round(c/a) + '배';
+  $id('i-ab').style.width = (a/c*100) + '%'; $id('i-bb').style.width = (b/c*100) + '%'; $id('i-cb').style.width = '100%';
+})();
+
+(function(){
+  var box = $id('ecfig');
+  seg($id('ec-pick'), function(v){ box.querySelectorAll('.ecp').forEach(function(p){ p.hidden = p.dataset.h !== v; }); });
+})();
+
+document.querySelectorAll('figure').forEach(function(f){
+  function off(){ f.querySelectorAll('.nudge').forEach(function(n){ n.classList.remove('nudge'); }); f.removeEventListener('pointerdown', off); f.removeEventListener('keydown', off); }
+  f.addEventListener('pointerdown', off); f.addEventListener('keydown', off);
+});
+
+(function(){
+  var g = $id('theme-seg'), b = $id('theme');
+  function cur(){ return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
+  function sync(){ g.querySelectorAll('button').forEach(function(x){ x.setAttribute('aria-pressed', x.dataset.v === cur() ? 'true' : 'false'); }); }
+  g.querySelectorAll('button').forEach(function(x){ x.addEventListener('click', function(){ if (x.dataset.v !== cur()) b.click(); }); });
+  window.addEventListener('themechange', sync); sync();
+})();
+
+(function(){
+  var box = document.createElement('div'), cur = null; box.className = 'tipbox'; box.setAttribute('role', 'tooltip'); box.hidden = true; document.body.appendChild(box);
+  function at(e){ var w = box.offsetWidth, h = box.offsetHeight, x = e.clientX + 14, y = e.clientY + 16; if (x + w > innerWidth - 8) x = e.clientX - w - 14; if (y + h > innerHeight - 8) y = e.clientY - h - 12; box.style.left = Math.max(8, x) + 'px'; box.style.top = Math.max(8, y) + 'px'; }
+  function show(t, e){ if (t !== cur){ cur = t; box.textContent = t.getAttribute('data-tip'); box.hidden = false; } at(e); }
+  function hide(){ cur = null; box.hidden = true; }
+  function find(e){ return e.target && e.target.closest ? e.target.closest('[data-tip]') : null; }
+  document.addEventListener('mouseover', function(e){ var t = find(e); if (t) show(t, e); else if (cur) hide(); });
+  document.addEventListener('mousemove', function(e){ if (cur) at(e); });
+  document.addEventListener('click', function(e){ var t = find(e); if (t) show(t, e); else if (cur) hide(); });
+  document.documentElement.addEventListener('mouseleave', hide);
+  window.addEventListener('scroll', function(){ if (cur) hide(); }, true);
+})();
+
+document.querySelectorAll('[data-go]').forEach(function(b){
+  b.addEventListener('click', function(){
+    var g = b.dataset.go, t = g;
+    if (g === 'fig4cold'){ F4.pick('cold'); t = 'fig4'; setTimeout(F4.play, reduce ? 0 : 700); }
+    else if (g === 'fig5max'){ F5.set({ef:'max'}); t = 'fig5'; }
+    else if (g === 'fig6'){ F6.best(); }
+    $id(t).scrollIntoView({behavior:reduce ? 'auto' : 'smooth', block:'center'});
+  });
+});
+
+$id('inst-copy').addEventListener('click', function(){
+  var msg = $id('inst-msg'), t = $id('inst-cmd').textContent;
+  function ok(){ msg.textContent = '복사했습니다. Claude 에 붙여 넣어 보내세요.'; }
+  function fail(){ var r = document.createRange(); r.selectNodeContents($id('inst-cmd')); var s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.textContent = '골라 두었습니다. Ctrl+C 로 복사하세요.'; }
+  try { navigator.clipboard.writeText(t).then(ok, fail); } catch (e) { fail(); }
+});
+
+})();
+</script>
+</body>
+</html>
