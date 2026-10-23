@@ -668,6 +668,13 @@ ol.lplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
 .lng .seg a{display:inline-flex;align-items:center;min-height:28px;padding:2px 10px;font-size:13px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--text);text-decoration:none}
 .lng .seg a:hover{border-color:var(--accent)}
 .lng .seg a[aria-current="page"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+
+.chhint{display:none}
+@media (max-width:640px){
+  .chscroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;margin:0 -4px;padding:0 4px 4px}
+  .chscroll > svg.chart{min-width:580px}
+  .chhint{display:block;font-size:12px;color:var(--muted);margin:6px 0 2px}
+}
 </style>
 </head>
 <body>
@@ -1886,6 +1893,16 @@ document.querySelectorAll('figure').forEach(function(f){
   document.addEventListener('click', function(e){ var t = find(e); if (t) show(t, e); else if (cur) hide(); });
   document.documentElement.addEventListener('mouseleave', hide);
   window.addEventListener('scroll', function(){ if (cur) hide(); }, true);
+})();
+
+(function(){
+  var en = document.documentElement.lang === 'en';
+  document.querySelectorAll('svg.chart').forEach(function(s){
+    var w = document.createElement('div'), h = document.createElement('div');
+    w.className = 'chscroll'; h.className = 'chhint'; h.setAttribute('aria-hidden', 'true');
+    h.textContent = en ? 'Swipe sideways to see the whole chart ↔' : '그림을 옆으로 밀어 끝까지 보세요 ↔';
+    s.parentNode.insertBefore(h, s); s.parentNode.insertBefore(w, s); w.appendChild(s);
+  });
 })();
 
 document.querySelectorAll('[data-go]').forEach(function(b){
