@@ -4,6 +4,15 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.1.0] — 2026-10-23
+
+### Added
+- **Amounts in won** — Settings **General** tab → **Currency**: Dollar ($) (the default, whatever the language) or Won (₩). Won reads like *1.4만원* · *132만원* on a Korean screen (under ₩10,000 to the nearest ₩10, e.g. *3,370원*) and *₩13,990* on an English one. The bar, the pane, the answer chip, the line below the input and the amount thresholds in Settings all switch (the math stays in dollars).
+- **Exchange rate fetched only when today's is missing** — with won on, easy-compact fetches the European Central Bank's USD→KRW reference rate (71 bytes) from frankfurter.app. The ECB publishes around 16:00 CET, so it's often the previous day's rate, shown with its date in the **Rate (per $1)** row. If it can't fetch, it keeps the last rate (or the built-in ₩1,320) and tries again an hour later. With dollars it never goes online.
+
+### Changed
+- **Easy Auto range is per session** — a new session starts at **400k–500k** (on a model with a smaller context window, the highest range below Claude Code's auto-compact line), and a range you pick stays in that session — marked *This session*. It used to start from your compact range and be shared by all sessions.
+
 ## [1.0.5] — 2026-10-22
 
 ### Changed

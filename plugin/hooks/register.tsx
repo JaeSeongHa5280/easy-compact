@@ -54,6 +54,13 @@ import {
   rewriteOf,
   tailOf,
   setThresholds,
+  setCurrency,
+  setKrwRate,
+  fxFrom,
+  parseFx,
+  needsFx,
+  localDayOf,
+  FX_URL,
   SAVE_GUESS,
   WARM_COMPACT,
   ZERO_COST,
@@ -63,7 +70,7 @@ import {
 } from './cost'
 import type { CompactCalib, CompactMix, RetroCompacts, SpendDays } from './cost'
 import { ARRIVE_SETTLE_MS, clearArrival, drawingBar, endFlash, FLASH_STEP_MS, markArrival, noteRank, stepFlash, takeArrival } from './flash'
-import { BAND_PARTS, isSlim, parseSlim, slimCustom, spendOf, PARTS, setPart, parsePartKey, parsePartLevel, partName, levelName, slimViewOf, bandModeName, bandPartName, bandShowMode, bandShowOf, bandStateText, chooseScreen, editView, hiddenNote, isViewPart, HIDDEN_NOTE_MS, parseScreen, screenName, setFolded, viewOf, paneAutoUse, paneSyncUse, revealLabel, revealName, setBandShow, chooseTidy, isAutoWord, parseOnOff, DEFAULT_SETTINGS, normalizeSettings, NEW_INSTALL_SCREEN, UPDATE_SCREEN, paneModeName, paneModeOf, parseBandMode, parseBandPart, parseMinutes, parseTokens, setBandPart, setCompactAt, setFollow, setRange, setTidyCustom, thresholdsOf, tidyStyles, tidyBody, usesCustom, setCompactCustom, setContextWindow, setEngineAuto } from './settings'
+import { autoRangeOf, BAND_PARTS, isSlim, parseSlim, slimCustom, spendOf, PARTS, setPart, parsePartKey, parsePartLevel, partName, levelName, slimViewOf, bandModeName, bandPartName, bandShowMode, bandShowOf, bandStateText, chooseScreen, editView, hiddenNote, isViewPart, HIDDEN_NOTE_MS, parseScreen, screenName, setFolded, viewOf, paneAutoUse, paneSyncUse, revealLabel, revealName, setBandShow, chooseTidy, isAutoWord, parseOnOff, DEFAULT_SETTINGS, normalizeSettings, NEW_INSTALL_SCREEN, UPDATE_SCREEN, paneModeName, paneModeOf, parseBandMode, parseBandPart, parseMinutes, parseTokens, setBandPart, setCompactAt, setFollow, setRange, setTidyCustom, thresholdsOf, tidyStyles, tidyBody, usesCustom, setCompactCustom, setContextWindow, setEngineAuto } from './settings'
 import {
   baseOfCategories,
   GROWTH_GUESS,
@@ -75,14 +82,15 @@ import {
   OUTPUT_GUESS,
   SUMMARY_GUESS,
 } from './optimal'
-import { afterGuess, afterInNowTokens, compactSince, compactSummary, costScanFromLines, costScanOf, flowFromRecords, isNotShrunk, lacksModels, lastBoundaryAfter, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, ultraStateOf, withPoint, withQuestion, recordsFromTranscript } from './flow'
-import type { Boundary } from './flow'
+import { afterGuess, afterInNowTokens, compactSince, compactSummary, costScanFromLines, costScanOf, flowFromRecords, judgeMeasure, judgeOwn, judgeRequest, lacksModels, lastBoundaryAfter, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, ultraStateOf, withPoint, withQuestion, recordsFromTranscript } from './flow'
+import type { Boundary, CompactResultLike } from './flow'
 import type { CostScan, Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, agentPart, agentSum, attachHead, continuedName, ctxNumText, effortSplit, PLUGIN_SENT, promptHead, stepLabel, paneTitle } from './text'
 import type { AttachCounts } from './text'
 import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, directKeep, tidyVerdict, autoTurnOf, autoSavePrompt, autoContinuePrompt, autoCompactKeep, kindAuto, kindAutoSave, isAutoSaveKind } from './tidy'
-import { AUTO_AGAIN_REQUESTS, AUTO_WAIT_MS, autoChipText, autoDraftNote, autoFromStore, autoKey, autoLossOf, autoNoteText, autoRangeText, autoToggleNote, freshAuto, isAutoActive, isChainStuck, isTooSoon } from './auto'
+import { autoChipText, autoDraftNote, autoFromStore, autoKey, autoLossOf, autoNoteText, autoRangeText, autoStep, autoToggleNote, freshAuto, isAutoActive } from './auto'
+import type { AutoAction, AutoEvent, AutoFacts, AutoMachine } from './auto'
 import { drawAutoNote } from './ui-auto'
 import { CH_PX, oldEngineNote, questionScope, setGaugeShape, setMotion, row, gridOf, CARD_INSET, SVG_MAX_PX } from './ui-common'
 import type { Ui } from './ui-common'
@@ -1294,6 +1302,7 @@ async function loadSettings($: EngineInterface): Promise<void> {
   appliedSettings = text
   setMotion(norm.motion !== 'reduce')
   setGaugeShape(norm.gaugeShape)
+  setCurrency(norm.currency)
   await update($, settings, () => norm)
   await applyThresholds($)
   $.ui.invalidate('ui.render')
@@ -1396,12 +1405,39 @@ async function paneModeNow($: EngineInterface): Promise<PaneMode> {
   return (await read($, paneModeLocal)) ?? (kept === 'simple' || kept === 'detail' ? kept : paneModeOf(await currentSettings($)))
 }
 
+const FX_KEY = 'fxRate'
+
+let fxTriedAt: number | null = null
+
+async function ensureFx($: EngineInterface): Promise<void> {
+  if ((await currentSettings($)).currency !== 'krw') return
+  const nowMs = await $.clock.now()
+  const saved = fxFrom(await $.store.get(FX_KEY).catch(() => undefined))
+  if (setKrwRate(saved)) $.ui.invalidate('ui.render')
+  const today = localDayOf(nowMs)
+  if (!needsFx(saved, today, nowMs, fxTriedAt)) return
+  fxTriedAt = nowMs
+  try {
+    const r = await $.http.fetch(FX_URL, { headers: { accept: 'application/json' } })
+    const got = r.ok ? parseFx(r.text, today) : null
+    if (!got) return
+    await $.store.set(FX_KEY, got)
+    if (setKrwRate(got)) $.ui.invalidate('ui.render')
+    await syncStatusLine($)
+  } catch {
+  }
+}
+
 async function saveSettings($: EngineInterface, next: Settings): Promise<void> {
   const prev = await currentSettings($)
   if (prev.screen !== next.screen) await $.store.set(PANE_MODE_KEY, null).catch(() => {})
+  if (next.autoStart !== prev.autoStart || next.autoEnd !== prev.autoEnd) await setAuto($, a => ({ ...a, range: { start: next.autoStart, end: next.autoEnd } }))
+  const kept = normalizeSettings(await $.store.get(SETTINGS_KEY).catch(() => undefined))
+  next = { ...next, autoStart: kept.autoStart, autoEnd: kept.autoEnd }
   await $.store.set(SETTINGS_KEY, next)
   await loadSettings($)
   await syncStatusLine($)
+  if (next.currency === 'krw') void ensureFx($).catch(() => {})
   const [spNext, spPrev] = [spendOf(next), spendOf(prev)]
   const turnedOn = (spNext.today && !spPrev.today) || (spNext.month && !spPrev.month)
   if (spNext.today || spNext.month) void refreshSpend($, 5_000, false, turnedOn).catch(() => {})
@@ -1429,7 +1465,9 @@ async function spendShownOf($: EngineInterface, s: Settings): Promise<SpendShown
 }
 
 async function currentSettings($: EngineInterface): Promise<Settings> {
-  return (await read($, settings)) ?? DEFAULT_SETTINGS
+  const s = (await read($, settings)) ?? DEFAULT_SETTINGS
+  const r = autoRangeOf(await read($, auto))
+  return r.start === s.autoStart && r.end === s.autoEnd ? s : { ...s, autoStart: r.start, autoEnd: r.end }
 }
 
 let statusShown: string | undefined
@@ -1482,7 +1520,6 @@ let suspectCompact: { before: number; atMs: number; since: number; checks: numbe
 const BOUNDARY_CHECKS = 3
 let startedAtSeen: number | null = null
 
-type CompactResultLike = { tokensBefore?: number; tokensAfter?: number; usage?: Tokens }
 let gaugeShrink: { from: number; to: number; at: number } | null = null
 let timingErr: string | null = null
 
@@ -1820,38 +1857,32 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
   await addCompactStep($, parts, before)
 }
 
-async function catchMissedCompact($: EngineInterface, engineTokens: number | undefined, startedAt: number): Promise<boolean> {
-  const isClear = startedAtSeen !== null && startedAt !== startedAtSeen
-  startedAtSeen = startedAt
-  if (isClear) suspectCompact = null
-  if (missedCompact !== null) {
-    const m = missedCompact
-    missedCompact = null
-    await recordCompaction($, m.trigger, m.result, 'catch')
-    await noteCompact($, `compact the hook did not see (${m.trigger}) — recorded from .catch`)
-    return true
-  }
-  if (typeof engineTokens === 'number' && engineTokens > 0) {
-    engineHadTokens = true
-    return false
-  }
-  if (!engineHadTokens) return false
+async function catchMissedCompact($: EngineInterface, engineTokens: number | undefined, startedAt: number): Promise<void> {
   const phase = await read($, compactPhase)
-  if (phase === 'compacting' || phase === 'tidying') return false
-  if (!engineHadTokens) return false
-  engineHadTokens = false
-  if (isClear) return false
   const flow = await readFlow($)
   const last = flow.points[flow.points.length - 1]
-  if (!last || last.ctx <= 0 || compactSince(flow) !== null) return false
-  const b = await findBoundary($, last.atMs)
-  if (b !== null) {
-    if (await recordBoundary($, b, last.ctx, 'boundary')) await noteCompact($, `compact the hook did not see — engine context went empty after ${last.ctx}, the transcript has its boundary`)
-    return true
+  const r = judgeMeasure(
+    { suspect: suspectCompact, engineHadTokens, startedAtSeen, missed: missedCompact },
+    { engineTokens, startedAt, isBusy: phase === 'compacting' || phase === 'tidying', last: last ? { atMs: last.atMs, ctx: last.ctx } : null, hasCompactSince: compactSince(flow) !== null },
+  )
+  suspectCompact = r.st.suspect
+  engineHadTokens = r.st.engineHadTokens
+  startedAtSeen = r.st.startedAtSeen
+  missedCompact = r.st.missed
+  const next = r.next
+  if (next.do === 'missed') {
+    await recordCompaction($, next.missed.trigger, next.missed.result, 'catch')
+    await noteCompact($, `compact the hook did not see (${next.missed.trigger}) — recorded from .catch`)
+    return
   }
-  suspectCompact = { before: last.ctx, atMs: await $.clock.now(), since: last.atMs, checks: 0 }
-  await noteCompact($, `engine context went empty after ${last.ctx} — a compact if the transcript shows one or the next request is smaller`)
-  return false
+  if (next.do !== 'look') return
+  const b = await findBoundary($, next.since)
+  if (b !== null) {
+    if (await recordBoundary($, b, next.before, 'boundary')) await noteCompact($, `compact the hook did not see — engine context went empty after ${next.before}, the transcript has its boundary`)
+    return
+  }
+  suspectCompact = { before: next.before, atMs: await $.clock.now(), since: next.since, checks: 0 }
+  await noteCompact($, `engine context went empty after ${next.before} — a compact if the transcript shows one or the next request is smaller`)
 }
 
 async function findBoundary($: EngineInterface, sinceMs: number): Promise<Boundary | null> {
@@ -1893,11 +1924,9 @@ async function settleSuspect($: EngineInterface, ctx: number): Promise<void> {
   const s = suspectCompact
   if (s === null) return
   suspectCompact = null
-  if (isRecordingMissed) return
-  if (isNotShrunk(s.before, ctx)) {
-    await noteCompact($, `not a compact — engine context went empty but the next request is ${ctx} (before ${s.before})`)
-    return
-  }
+  const verdict = judgeRequest(s, isRecordingMissed, ctx)
+  if (verdict === 'not-shrunk') await noteCompact($, `not a compact — engine context went empty but the next request is ${ctx} (before ${s.before})`)
+  if (verdict !== 'shrink') return
   await recordCompaction($, 'manual', { tokensBefore: s.before }, 'shrink', undefined, s.atMs)
   await noteCompact($, `compact the hook did not see — engine context went empty after ${s.before}, next request ${ctx}`)
 }
@@ -2050,11 +2079,12 @@ async function confirmOwnCompact($: EngineInterface, startMs: number, countBefor
   if ((await read($, compactions)).length > countBefore) return
   const s = suspectCompact
   const b = await findBoundary($, startMs)
+  const verdict = judgeOwn(b !== null, s !== null && suspectCompact === s ? s : null)
   let how: string
-  if (b !== null) {
+  if (verdict === 'boundary' && b !== null) {
     if (!(await recordBoundary($, b, (await read($, flowPoints)).at(-1)?.ctx ?? 0, 'own-boundary'))) return
     how = 'the transcript has its boundary'
-  } else if (s !== null && suspectCompact === s) {
+  } else if (verdict === 'empty' && s !== null) {
     if (!(await recordMissedOnce($, 'manual', { tokensBefore: s.before }, s.atMs, 'own-empty'))) return
     how = `engine context went empty after ${s.before}`
   } else {
@@ -2120,67 +2150,112 @@ async function loadAuto($: EngineInterface): Promise<void> {
 }
 
 
-async function toggleAuto($: EngineInterface): Promise<void> {
-  const isOn = !isAutoActive(await read($, auto))
-  await setAuto($, a => ({ ...a, on: isOn, stop: null, note: null, since: null, chain: isOn || a.chain?.stage === 'saving' || a.chain?.stage === 'compacting' ? a.chain : null }))
+async function autoEvent($: EngineInterface, ev: AutoEvent, turnNow: LiveTurn | null = null): Promise<void> {
+  const a = await autoNow($)
+  const m: AutoMachine = { auto: a, otherAt, compacting: autoCompacting, saveTurn: autoSaveTurn }
+  await runAuto($, autoStep(m, ev, await autoFacts($, a)), turnNow)
+}
+
+async function autoFacts($: EngineInterface, a: AutoState): Promise<AutoFacts> {
+  const nowMs = await $.clock.now()
   const s = await currentSettings($)
   const u = await read($, usage)
-  $.ui.toast(autoToggleNote(isOn, s, u?.window))
-  if (!isOn || (await read($, live)) || (await autoNow($)).chain || !u || u.contextTokens < s.autoStart || !(await autoMayStart($, u))) return
-  const at = await $.clock.now()
-  await setAuto($, x => ({ ...x, chain: { path: 'end', stage: 'wait', atMs: at, turnId: null, before: u.contextTokens } }))
-  $.clock.after(AUTO_WAIT_MS, () => void autoBegin($, at))
+  const est = u ? estimateFor(u, nowMs) : null
+  const chainAt = a.chain?.atMs
+  return {
+    nowMs,
+    ctx: u ? u.contextTokens : null,
+    autoStart: s.autoStart,
+    autoEnd: s.autoEnd,
+    phase: await read($, compactPhase),
+    loss: u ? autoLossOf(u, (await read($, optimal))?.inputs ?? null, await read($, turnSummaries), nowMs) : null,
+    cold: est?.kind === 'cold' ? (est.reason === 'model' ? 'model' : 'cold') : null,
+    isLive: (await read($, live)) !== null,
+    flowLoaded: await read($, flowLoaded),
+    compactedSince: chainAt === undefined ? false : (await read($, compactions)).some(x => x.atMs >= chainAt),
+  }
 }
 
-async function autoOff($: EngineInterface, why: 'cold' | 'model'): Promise<void> {
-  await setAuto($, a => ({ ...a, on: false, stop: null, note: why, chain: null, since: null }))
-}
-
-async function autoHalt($: EngineInterface, why: 'stuck' | 'again'): Promise<void> {
-  await setAuto($, a => ({ ...a, stop: why, note: why, chain: null, since: null }))
+async function runAuto($: EngineInterface, actions: readonly AutoAction[], turnNow: LiveTurn | null): Promise<void> {
+  for (const x of actions) {
+    switch (x.do) {
+      case 'set':
+        if ((await setAuto($, x.fn)) && x.then) await runAuto($, x.then, turnNow)
+        break
+      case 'end':
+        await autoEnd($)
+        break
+      case 'otherAt':
+        otherAt = x.at
+        break
+      case 'compacting':
+        autoCompacting = x.at
+        break
+      case 'compactingDone':
+        if (autoCompacting === x.at) autoCompacting = null
+        break
+      case 'saveTurn':
+        autoSaveTurn = x.turnId
+        break
+      case 'toast':
+        $.ui.toast(x.note === 'toggle' ? autoToggleNote(x.isOn === true, await currentSettings($), (await read($, usage))?.window) : autoDraftNote(x.note))
+        break
+      case 'after': {
+        const ev = x.ev
+        $.clock.after(x.ms, () => void autoEvent($, ev))
+        break
+      }
+      case 'event':
+        await autoEvent($, x.ev, turnNow)
+        break
+      case 'save':
+        await autoSave($, x.path)
+        break
+      case 'abortSave': {
+        const turnId = x.turnId
+        $.clock.after(0, () =>
+          void (async () => {
+            await $.turn.abort({ turnId }).catch(err => log($, `auto abort failed — ${String(err)}`))
+            await autoSave($, 'mid')
+          })(),
+        )
+        break
+      }
+      case 'recordSaveTurn':
+        if (turnNow) await recordSaveTurn($, turnNow)
+        break
+      case 'startCompacting':
+        await startCompacting($, kindAuto())
+        break
+      case 'phaseIdle':
+        await update($, compactPhase, () => 'idle')
+        break
+      case 'compactNow':
+        try {
+          if (await compactNow($, autoCompactKeep(), kindAuto())) await autoEvent($, { type: 'compactDone' })
+          else await autoEnd($)
+        } finally {
+          if (autoCompacting === x.at) autoCompacting = null
+        }
+        break
+      case 'continue':
+        try {
+          await $.prompt.submit({ text: autoContinuePrompt() })
+        } catch (err) {
+          log($, `auto continue failed — ${String(err)}`)
+          await autoEnd($)
+        }
+        break
+      case 'ifDraft':
+        await runAuto($, (await hasDraft($)) ? x.yes : x.no, turnNow)
+        break
+    }
+  }
 }
 
 async function autoEnd($: EngineInterface): Promise<void> {
   await setAuto($, a => (a.chain ? { ...a, chain: null } : a))
   if ((await read($, compactPhase)) === 'tidying' && isAutoSaveKind(await read($, compactKind))) await update($, compactPhase, () => 'idle')
-}
-
-async function autoMayStart($: EngineInterface, u: Usage): Promise<boolean> {
-  const phase = await read($, compactPhase)
-  if (phase === 'tidying' || phase === 'compacting') return false
-  const why = autoLossOf(u, (await read($, optimal))?.inputs ?? null, await read($, turnSummaries), await $.clock.now())
-  if (why === 'cold' || why === 'model') {
-    await autoOff($, why)
-    return false
-  }
-  if (isTooSoon(await autoNow($))) {
-    await autoHalt($, 'again')
-    return false
-  }
-  return why !== 'loss'
-}
-
-async function autoAtTurnEnd($: EngineInterface, e: { turnId: string; reason: string; answer: string }, turnNow: LiveTurn | null): Promise<void> {
-  const a = await autoNow($)
-  const c = a.chain
-  if (c?.stage === 'saving' && c.turnId === e.turnId) {
-    if (!a.on || tidyVerdict(e.reason, e.answer) !== 'go') return autoEnd($)
-    if (turnNow) await recordSaveTurn($, turnNow)
-    const at = await $.clock.now()
-    autoCompacting = at
-    await setAuto($, x => ({ ...x, chain: { ...c, stage: 'compacting', atMs: at, turnId: null } }))
-    await startCompacting($, kindAuto())
-    $.clock.after(300, () => void autoCompact($, at))
-    return
-  }
-  if (c?.stage === 'continuing' && c.turnId === e.turnId) await setAuto($, x => ({ ...x, chain: null }))
-  else if (c || e.turnId === autoSaveTurn) return
-  if (!isAutoActive(a) || e.reason !== 'answer') return
-  const u = await read($, usage)
-  if (!u || u.contextTokens < (await currentSettings($)).autoStart || !(await autoMayStart($, u))) return
-  const at = await $.clock.now()
-  await setAuto($, x => ({ ...x, chain: { path: 'end', stage: 'wait', atMs: at, turnId: null, before: u.contextTokens } }))
-  $.clock.after(AUTO_WAIT_MS, () => void autoBegin($, at))
 }
 
 async function hasDraft($: EngineInterface): Promise<boolean> {
@@ -2189,22 +2264,6 @@ async function hasDraft($: EngineInterface): Promise<boolean> {
   } catch {
     return false
   }
-}
-
-const DRAFT_POLL_MS = 2_000
-
-async function autoBegin($: EngineInterface, at: number, isHeld = false): Promise<void> {
-  const a = await autoNow($)
-  if (a.chain?.stage !== 'wait' || a.chain.atMs !== at) return
-  if (!isAutoActive(a) || otherAt >= at) return autoEnd($)
-  if (await hasDraft($)) {
-    const next = await $.clock.now()
-    await setAuto($, x => (x.chain?.stage === 'wait' && x.chain.atMs === at ? { ...x, chain: { ...x.chain, atMs: next, isDraftHeld: true } } : x))
-    if (!isHeld) $.ui.toast(autoDraftNote('save'))
-    $.clock.after(DRAFT_POLL_MS, () => void autoBegin($, next, true))
-    return
-  }
-  await autoSave($, 'end')
 }
 
 async function autoSave($: EngineInterface, path: 'end' | 'mid'): Promise<void> {
@@ -2222,113 +2281,6 @@ async function autoSave($: EngineInterface, path: 'end' | 'mid'): Promise<void> 
     log($, `auto save failed — ${String(err)}`)
     await autoEnd($)
   }
-}
-
-async function autoAtStep($: EngineInterface, turnId: string): Promise<void> {
-  const a = await read($, auto)
-  if (!a || !isAutoActive(a) || (a.chain && a.chain.stage !== 'continuing') || a.since?.requests === 0) return
-  const u = await read($, usage)
-  if (!u || u.contextTokens < (await currentSettings($)).autoEnd || !(await autoMayStart($, u))) return
-  if (await hasDraft($)) return
-  const at = await $.clock.now()
-  await setAuto($, x => ({ ...x, chain: { path: 'mid', stage: 'saving', atMs: at, turnId: null, before: u.contextTokens } }))
-  $.clock.after(0, () =>
-    void (async () => {
-      await $.turn.abort({ turnId }).catch(err => log($, `auto abort failed — ${String(err)}`))
-      await autoSave($, 'mid')
-    })(),
-  )
-}
-
-async function autoAfterStep($: EngineInterface, ctx: number): Promise<void> {
-  const a = await read($, auto)
-  if (!a?.since) return
-  const n = a.since.requests + 1
-  if (n === 1 && isAutoActive(a) && ctx >= (await currentSettings($)).autoStart) return autoHalt($, 'stuck')
-  await setAuto($, x => (x.since ? { ...x, since: n > AUTO_AGAIN_REQUESTS ? null : { ...x.since, requests: n } } : x))
-}
-
-async function autoCompact($: EngineInterface, at: number, isHeld = false): Promise<void> {
-  let isHolding = false
-  try {
-    if ((await autoNow($)).chain?.stage !== 'compacting') return
-    if (await hasDraft($)) {
-      isHolding = true
-      if (!isHeld) {
-        await update($, compactPhase, () => 'idle')
-        await setAuto($, x => (x.chain?.stage === 'compacting' ? { ...x, chain: { ...x.chain, isDraftHeld: true } } : x))
-        $.ui.toast(autoDraftNote('compact'))
-      }
-      $.clock.after(DRAFT_POLL_MS, () => void autoCompact($, at, true))
-      return
-    }
-    if (isHeld) await setAuto($, x => (x.chain?.isDraftHeld ? { ...x, chain: { ...x.chain, isDraftHeld: false } } : x))
-    if (!(await compactNow($, autoCompactKeep(), kindAuto()))) return autoEnd($)
-    await autoAfterCompact($)
-  } finally {
-    if (!isHolding && autoCompacting === at) autoCompacting = null
-  }
-}
-
-async function autoAfterCompact($: EngineInterface): Promise<void> {
-  const nowMs = await $.clock.now()
-  const go = { next: false }
-  const did = await setAuto($, a => {
-    const c = a.chain
-    if (c?.stage !== 'compacting') return a
-    go.next = c.path === 'mid' && a.on && c.isInterrupted !== true && otherAt < c.atMs
-    return { ...a, since: { atMs: nowMs, requests: 0 }, chain: go.next ? { ...c, stage: 'continuing', atMs: nowMs, turnId: null } : null }
-  })
-  if (!did || !go.next) return
-  if (await hasDraft($)) {
-    await setAuto($, a => (a.chain?.stage === 'continuing' ? { ...a, chain: null } : a))
-    $.ui.toast(autoDraftNote('continue'))
-    return
-  }
-  try {
-    await $.prompt.submit({ text: autoContinuePrompt() })
-  } catch (err) {
-    log($, `auto continue failed — ${String(err)}`)
-    await autoEnd($)
-  }
-}
-
-async function autoOnOther($: EngineInterface): Promise<void> {
-  otherAt = await $.clock.now()
-  const c = (await read($, auto))?.chain
-  if (c && (c.stage === 'compacting' || (c.stage === 'continuing' && c.turnId === null))) await setAuto($, a => (a.chain ? { ...a, chain: { ...a.chain, isInterrupted: true } } : a))
-}
-
-async function autoOnTurnStart($: EngineInterface, turnId: string, text: string): Promise<void> {
-  const kind = autoTurnOf(text.replace(PLUGIN_SENT, ''))
-  if (kind === 'save') autoSaveTurn = turnId
-  const c = (await read($, auto))?.chain
-  if (!c) return
-  if (((kind === 'save' && c.stage === 'saving') || (kind === 'continue' && c.stage === 'continuing')) && c.turnId === null) {
-    await setAuto($, a => (a.chain ? { ...a, chain: { ...a.chain, turnId } } : a))
-    return
-  }
-  if (kind !== null) return
-  if (c.stage === 'wait') return autoEnd($)
-  if (c.stage === 'compacting' || (c.stage === 'continuing' && c.turnId === null)) await setAuto($, a => (a.chain ? { ...a, chain: { ...a.chain, isInterrupted: true } } : a))
-}
-
-async function autoWatch($: EngineInterface): Promise<void> {
-  const a = await read($, auto)
-  if (!a) return
-  const nowMs = await $.clock.now()
-  const c = a.chain
-  if (c?.stage === 'compacting' && autoCompacting !== c.atMs && (await read($, compactPhase)) !== 'compacting' && (await read($, flowLoaded))) {
-    if ((await read($, compactions)).some(x => x.atMs >= c.atMs)) return autoAfterCompact($)
-    return autoEnd($)
-  }
-  if (c) {
-    if (isChainStuck(c, nowMs)) await autoEnd($)
-    return
-  }
-  const u = isAutoActive(a) ? await read($, usage) : null
-  const est = u ? estimateFor(u, nowMs) : null
-  if (est?.kind === 'cold') await autoOff($, est.reason === 'model' ? 'model' : 'cold')
 }
 
 async function toggleExpanded($: EngineInterface, id: number): Promise<void> {
@@ -2712,7 +2664,7 @@ async function autoNoteOf($: EngineInterface, ui: Ui, s: Settings) {
   if (note === null) return null
   const isStop = note === 'stuck' || note === 'again'
   return drawAutoNote(ui, autoNoteText(note, s, (await read($, usage))?.window), {
-    resume: isStop ? () => void toggleAuto($) : null,
+    resume: isStop ? () => void autoEvent($, { type: 'toggle' }) : null,
     dismiss: () => void setAuto($, a => ({ ...a, note: null })),
   })
 }
@@ -2799,7 +2751,7 @@ function barActs($: EngineInterface): BarActions {
     },
     toggleAuto: async () => {
       await update($, isConfirmingCompact, () => false)
-      return toggleAuto($)
+      return autoEvent($, { type: 'toggle' })
     },
     tidyThenCompact: async () => {
       await update($, summaryCard, () => false)
@@ -2870,13 +2822,15 @@ export const register: Register = on => {
       void reconcileAgents($).catch(() => {})
       void syncStatusLine($).catch(() => {})
       void watchCompact($).catch(() => {})
-      void autoWatch($).catch(() => {})
+      void autoEvent($, { type: 'watch' }).catch(() => {})
     })
     $.clock.every(60000, () => {
       $.ui.invalidate('ui.render')
       void refreshSpend($, 300_000).catch(() => {})
+      void ensureFx($).catch(() => {})
     })
     void refreshSpend($).catch(() => {})
+    void ensureFx($).catch(() => {})
     return next(e)
   })
 
@@ -2948,7 +2902,7 @@ export const register: Register = on => {
       lastStepAnswer = ''
       await markIdle($)
       void refreshSpend($).catch(() => {})
-      await autoAtTurnEnd($, e, turnNow).catch(err => log($, `auto turn end failed — ${String(err)}`))
+      await autoEvent($, { type: 'turnEnd', turnId: e.turnId, reason: e.reason, isGo: tidyVerdict(e.reason, e.answer) === 'go' }, turnNow).catch(err => log($, `auto turn end failed — ${String(err)}`))
     }
     if (isMain && (await read($, compactPhase)) === 'tidying' && !isAutoSaveKind(await read($, compactKind))) {
       const verdict = tidyVerdict(e.reason, e.answer)
@@ -2978,7 +2932,7 @@ export const register: Register = on => {
     const appCarry = await appCarryAtStart($)
     if ((e as { agentId?: string }).agentId === undefined) await writeFlow($, withQuestion(await readFlow($), await $.clock.now()))
     const submitAt = await $.clock.now()
-    if (e.agentId === undefined) await autoOnTurnStart($, e.turnId, e.text).catch(() => {})
+    if (e.agentId === undefined) await autoEvent($, { type: 'turnStart', turnId: e.turnId, kind: autoTurnOf(e.text.replace(PLUGIN_SENT, '')) }).catch(() => {})
     if (e.agentId === undefined) lastStepAnswer = ''
     if (e.agentId === undefined) liveCells = { turnId: e.turnId, tools: [], tails: [] }
     const sent = e.agentId === undefined && pendingSubmit && submitAt - pendingSubmit.atMs < 60_000 ? pendingSubmit : null
@@ -3009,7 +2963,7 @@ export const register: Register = on => {
   }).catch(($, e, next) => next(e))
 
   on('prompt.submit', async ($, e, next) => {
-    if (e.origin?.kind !== 'plugin') await autoOnOther($).catch(() => {})
+    if (e.origin?.kind !== 'plugin') await autoEvent($, { type: 'other' }).catch(() => {})
     const r = await next(e)
     try {
       if (r.drop === undefined) {
@@ -3034,7 +2988,7 @@ export const register: Register = on => {
 
   on('turn.step', async function* ($, e, next) {
     await ensureLang($)
-    if (e.agentId === undefined) await autoAtStep($, e.turnId).catch(() => {})
+    if (e.agentId === undefined) await autoEvent($, { type: 'step', turnId: e.turnId }).catch(() => {})
     if (e.agentId === undefined && e.index === 0) void watchUltra($, e.turnId).catch(() => {})
     const result = yield* next(e)
     if (e.agentId === undefined && typeof result.answer === 'string' && result.answer.trim() !== '') {
@@ -3079,7 +3033,7 @@ export const register: Register = on => {
             : prev,
         )
         await applyThresholds($)
-        await autoAfterStep($, ctxNow)
+        await autoEvent($, { type: 'afterStep', ctx: ctxNow })
       } catch {
       }
     }

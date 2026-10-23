@@ -1,6 +1,6 @@
 import type { ChangeGroup, CostShow, Optimal, ScreenView, Settings, Source, TidyStyleId, TtlConfig, UpdateState } from '../types'
-import { approxUsd, cacheWarnFor, isSubCent, fmtTokens, fmtUsd, modelName, ratesFor, rewriteAllUsd, SESSION_TEXT, thresholds, ttlName, writeRate } from './cost'
-import { isSlim, LAYOUTS, layoutName, layoutUse, PARTS, levelName, partName, partUse, setPart, BAND_MODES, BAND_PARTS, bandModeName, bandAutoUse, bandStateText, bandModeUse, bandPartName, bandShowOf, chooseScreen, editView, foldName, fmtUsd0, MONEY_COLOR_STEPS, nudgeSessionColor, paneAutoUse, paneSyncUse, infoName, infoUse, resetCustom, SCREEN_PRESETS, screenName, screenUse, screenStateText, setBandPart, setFolded, setLimits, viewOf, chooseTidy, customName, customUse, DEFAULT_SETTINGS, nudgeCache, CACHE_STEPS, CACHE_STEPS_5M, parseTokens, RANGE_BANDS, RANGE_ROWS, setCompactAt, thresholdsOf, TIDY_IDS, tidyStyles, tidySteps, usesCustom, BAND_ORDER_DEFAULT, moveEarlier, normalizeOrder, MONEY_ORDERS, moneyOf, withMoney, compactText, tidyBody, rangeBands, rangeRows, compactMax, contextWindowNow, autoCompactAt, revealWhere, autoBands, setAutoRange } from './settings'
+import { approxUsd, cacheWarnFor, fmtTokens, fmtUsd, fmtUsdRange, krwRateDate, krwRateText, modelName, ratesFor, rewriteAllUsd, SESSION_TEXT, thresholds, ttlName, writeRate } from './cost'
+import { isSlim, LAYOUTS, layoutName, layoutUse, PARTS, levelName, partName, partUse, setPart, BAND_MODES, BAND_PARTS, bandModeName, bandAutoUse, bandStateText, bandModeUse, bandPartName, bandShowOf, chooseScreen, editView, foldName, fmtUsd0, MONEY_COLOR_STEPS, nudgeSessionColor, paneAutoUse, paneSyncUse, infoName, infoUse, resetCustom, SCREEN_PRESETS, screenName, screenUse, screenStateText, setBandPart, setFolded, setLimits, viewOf, chooseTidy, customName, customUse, DEFAULT_SETTINGS, nudgeCache, CACHE_STEPS, CACHE_STEPS_5M, parseTokens, RANGE_BANDS, RANGE_ROWS, setCompactAt, thresholdsOf, TIDY_IDS, tidyStyles, tidySteps, usesCustom, BAND_ORDER_DEFAULT, moveEarlier, normalizeOrder, MONEY_ORDERS, moneyOf, withMoney, compactText, tidyBody, rangeBands, rangeRows, compactMax, contextWindowNow, autoCompactAt, revealWhere, autoBands, autoRangeDefault, setAutoRange } from './settings'
 import type { MoneyColorKey } from './settings'
 import { COMPACT_MIN, penaltyAt, rangeThresholdsFor, thresholdsFor, WARN_RATIO } from './optimal'
 import { tidyScript } from './tidy'
@@ -804,11 +804,7 @@ export function drawCompactTiming(
       const read = usdAt(size, 'read')
       return read !== null ? Q_STEPS * (read + qExtra) : null
     }
-    const usd2 = (x: number | null, y: number | null) => {
-      if (x === null || y === null) return '—'
-      if (y < 0.005) return fmtUsd(y)
-      return `${isSubCent(x) ? '$0.00' : fmtUsd(x)}~${fmtUsd(y).slice(1)}`
-    }
+    const usd2 = (x: number | null, y: number | null) => (x === null || y === null ? '—' : fmtUsdRange(x, y))
     const curVerdict = penVerdict(penOf(d.rangeStart))
     const curStar = starAt >= 0 && rangeBands().findIndex(([a, b]) => a === d.rangeStart && b === d.rangeEnd) === starAt
     const dot = (isFirst: boolean) => (isFirst ? null : <Text dimColor>{' · '}</Text>)
@@ -1157,19 +1153,25 @@ export function drawCompactTiming(
   const autoName = (a: number, b: number) => bandNumText(a, b, contextWindowNow(), s.ctxUnit)
   const autoOpts = autoBands().map(([a, b]) => ({ value: `${a}-${b}`, label: autoName(a, b) }))
   const autoChoices = autoOpts.some(o => o.value === autoNowValue) ? autoOpts : [...autoOpts, { value: autoNowValue, label: autoName(s.autoStart, s.autoEnd) }]
+  const autoFresh = autoRangeDefault()
   const autoRow = withAuto
     ? row(
         'auto-range-pick',
         L('이지 오토 구간', 'Easy Auto range'),
         L(
-          '답이 끝났을 때 앞쪽을 넘었으면 저장하고 컴팩트합니다. 일하는 도중 뒤쪽을 넘으면 멈추고 저장, 컴팩트한 뒤 이어서 합니다. 켜기는 [컴팩트] 팝업에서 합니다.',
-          'When an answer ends past the start, it saves and compacts. If work goes past the end, it pauses, saves, compacts and then continues. Turn it on from the [Compact] popup.',
+          `이 세션에만 적용되고, 새 세션은 ${autoName(autoFresh.start, autoFresh.end)}에서 시작합니다. 답이 끝났을 때 앞쪽을 넘었으면 저장하고 컴팩트합니다. 일하는 도중 뒤쪽을 넘으면 멈추고 저장, 컴팩트한 뒤 이어서 합니다. 켜기는 [컴팩트] 팝업에서 합니다.`,
+          `Applies to this session only; a new session starts at ${autoName(autoFresh.start, autoFresh.end)}. When an answer ends past the start, it saves and compacts. If work goes past the end, it pauses, saves, compacts and then continues. Turn it on from the [Compact] popup.`,
         ),
-        choiceControl(ui, 'auto-range-select', autoChoices, autoNowValue, v => {
-          const [a, b] = v.split('-').map(Number)
-          if (a && b) act.save(setAutoRange(s, a, b))
-        }),
-        choiceW(autoChoices.map(o => o.label)),
+        [
+          <Text key="auto-this" dimColor>
+            {L('이 세션', 'This session')}
+          </Text>,
+          choiceControl(ui, 'auto-range-select', autoChoices, autoNowValue, v => {
+            const [a, b] = v.split('-').map(Number)
+            if (a && b) act.save(setAutoRange(s, a, b))
+          }),
+        ],
+        choiceW(autoChoices.map(o => o.label)) + widthOf(L('이 세션', 'This session'), isTerminal) + 2,
         [],
         <Box key="auto-range-name" columnGap={1} alignItems="center">
           {autoIcon(ui, surface, 'auto-range-icon', 12)}
@@ -1230,6 +1232,39 @@ export function drawSettingsView(
       v => act.setLang(v as Settings['lang']),
     ),
   )
+  const isWon = s.currency === 'krw'
+  const currencyRow = settingRow(
+    ui,
+    'currency-row',
+    L('금액 단위', 'Currency'),
+    isWon
+      ? L('달러 금액을 아래 환율로 바꾼 어림입니다. 앱 사용량 화면은 달러입니다.', "Dollar amounts converted at the rate below, so they are estimates. The app's usage screen stays in dollars.")
+      : L('바 · 패널 · 답변 칩의 금액을 이 단위로 보입니다.', 'Shows bar, pane and answer chip amounts in this unit.'),
+    choiceControl(
+      ui,
+      'currency-pick',
+      [
+        { value: 'usd', label: L('달러($)', 'Dollar ($)') },
+        { value: 'krw', label: L('원(₩)', 'Won (₩)') },
+      ],
+      s.currency,
+      v => act.save({ ...s, currency: v === 'krw' ? 'krw' : 'usd' }),
+    ),
+  )
+  const fxDate = krwRateDate()
+  const rateRow = isWon
+    ? settingRow(
+        ui,
+        'krw-rate-row',
+        L('환율(1달러)', 'Rate (per $1)'),
+        fxDate
+          ? L(`${fxDate.slice(5)} 유럽중앙은행 기준(frankfurter.app)입니다. 그날 값이 한국 시간 자정 무렵 나와서 보통 전날 값이고, 오늘 받은 적이 없을 때만 받습니다. 카드 청구는 카드사 환율과 수수료로 조금 다릅니다.`, `ECB reference rate of ${fxDate} (frankfurter.app). The ECB publishes around 16:00 CET, so this is often the previous day's rate; it is fetched only when it hasn't been fetched today. Card charges differ slightly.`)
+          : L('아직 환율을 받지 못해 들어 있는 값으로 셉니다. 1시간마다 다시 받습니다.', 'Not fetched yet, so the built-in rate is used. Retries every hour.'),
+        <Text key="krw-rate-value" bold>
+          {krwRateText()}
+        </Text>,
+      )
+    : null
   const dot = look ? pulseDot(ui, surface, look.hex, look.text) : null
   return (
     <Box key="s-settings" flexDirection="column">
@@ -1253,7 +1288,7 @@ export function drawSettingsView(
           {L('바꾸면 모든 세션에 바로 적용됩니다.', 'Changes apply to all sessions right away.')}
         </Text>
       )}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow], sizeErr)}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow, currencyRow, ...(rateRow ? [rateRow] : [])], sizeErr)}
     </Box>
   )
 }
@@ -1510,8 +1545,8 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
           {canCheck ? (
             <Text key="upd-net" dimColor wrap="wrap">
               {L(
-                '[업데이트 확인]을 누를 때만 Claude Code 가 GitHub 에서 마켓을 받아 옵니다. easy-compact 는 스스로 통신하지 않습니다.',
-                'Claude Code fetches the marketplace from GitHub only when you press [Check for updates]. easy-compact itself never goes online.',
+                '[업데이트 확인]을 누를 때만 Claude Code 가 GitHub 에서 마켓을 받아 옵니다. easy-compact 는 스스로 통신하지 않습니다(금액 단위가 원이면 오늘 받은 환율이 없을 때 환율만 받습니다).',
+                'Claude Code fetches the marketplace from GitHub only when you press [Check for updates]. easy-compact itself never goes online (except the exchange rate, when amounts are in won and today’s rate hasn’t been fetched yet).',
               )}
             </Text>
           ) : null}

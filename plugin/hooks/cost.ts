@@ -1,5 +1,5 @@
 import type { CompactInputs, CompactMix, CostParts, SaveTurn, StepDetail, Thresholds, TtlConfig, Usage } from '../types'
-import { L } from './i18n'
+import { L, lang } from './i18n'
 
 export type Rates = { label: string; input: number; output: number; read: number; write5m: number; write1h: number }
 
@@ -594,17 +594,130 @@ export function fmtTokens(n: number): string {
   return String(n)
 }
 
+export type Currency = 'usd' | 'krw'
+
+export const KRW_PER_USD_DEFAULT = 1320
+
+export type FxRate = { rate: number; date: string; gotOn: string }
+
+export const FX_URL = 'https://api.frankfurter.app/latest?from=USD&to=KRW'
+
+export const FX_RETRY_MS = 3_600_000
+
+let currency: Currency = 'usd'
+let krwPerUsd = KRW_PER_USD_DEFAULT
+let krwDate: string | null = null
+
+export function setCurrency(next: Currency): void {
+  currency = next
+}
+
+export function currencyNow(): Currency {
+  return currency
+}
+
+export function setKrwRate(fx: FxRate | null): boolean {
+  const rate = fx ? fx.rate : KRW_PER_USD_DEFAULT
+  const date = fx ? fx.date : null
+  if (rate === krwPerUsd && date === krwDate) return false
+  krwPerUsd = rate
+  krwDate = date
+  return true
+}
+
+export function krwRateText(): string {
+  const n = withComma(Math.round(krwPerUsd))
+  return L(`${n}원`, `₩${n}`)
+}
+
+export function krwRateDate(): string | null {
+  return krwDate
+}
+
+export function wonRateText(): string | null {
+  if (currency !== 'krw') return null
+  return krwDate ? L(`${krwRateText()}(${krwDate.slice(5)} 유럽중앙은행 기준)`, `${krwRateText()} (ECB, ${krwDate})`) : L(`${krwRateText()}(들어 있는 값)`, `${krwRateText()} (built-in rate)`)
+}
+
+export function parseFx(text: string, gotOn: string): FxRate | null {
+  try {
+    const j = JSON.parse(text) as { date?: unknown; rates?: { KRW?: unknown } }
+    const rate = j.rates?.KRW
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 100 || rate > 10_000) return null
+    if (typeof j.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(j.date)) return null
+    return { rate, date: j.date, gotOn }
+  } catch {
+    return null
+  }
+}
+
+export function fxFrom(raw: unknown): FxRate | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const r = raw as Partial<FxRate>
+  if (typeof r.rate !== 'number' || !Number.isFinite(r.rate) || r.rate < 100 || r.rate > 10_000) return null
+  if (typeof r.date !== 'string' || typeof r.gotOn !== 'string') return null
+  return { rate: r.rate, date: r.date, gotOn: r.gotOn }
+}
+
+export function needsFx(saved: FxRate | null, today: string, nowMs: number, triedAt: number | null): boolean {
+  if (saved?.gotOn === today) return false
+  return triedAt === null || nowMs - triedAt >= FX_RETRY_MS
+}
+
+export function localDayOf(ms: number): string {
+  const d = new Date(ms)
+  const two = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`
+}
+
 export function fmtUsd(usd: number): string {
+  if (currency === 'krw') return fmtKrw(usd * krwPerUsd)
   if (isSubCent(usd)) return L('$0.01 이하', 'under $0.01')
   return `$${usd.toFixed(2).replace(/^(-?)(\d+)/, (_m, sign: string, int: string) => sign + int.replace(/\B(?=(\d{3})+(?!\d))/g, ','))}`
 }
 
 export function isSubCent(usd: number): boolean {
-  return usd > 0 && usd < 0.005
+  return currency === 'krw' ? usd > 0 && usd * krwPerUsd < 0.5 : usd > 0 && usd < 0.005
 }
 
 export function approxUsd(usd: number): string {
   return isSubCent(usd) ? fmtUsd(usd) : `~${fmtUsd(usd)}`
+}
+
+export function fmtUsdRange(lo: number, hi: number): string {
+  if (currency === 'krw') {
+    const [a, b] = [lo * krwPerUsd, hi * krwPerUsd]
+    if (b < 0.5) return fmtKrw(b)
+    const pb = krwParts(b)
+    const pa = a < 0.5 ? { num: '0', unit: pb.unit } : krwParts(a)
+    if (lang() !== 'ko') return `₩${pa.num}~${pb.num}`
+    return pa.unit === pb.unit ? `${pa.num}~${pb.num}${pb.unit}` : `${pa.num}${pa.unit}~${pb.num}${pb.unit}`
+  }
+  if (hi < 0.005) return fmtUsd(hi)
+  return `${isSubCent(lo) ? '$0.00' : fmtUsd(lo)}~${fmtUsd(hi).slice(1)}`
+}
+
+export function fmtKrw(won: number): string {
+  const a = Math.abs(won)
+  if (a > 0 && a < 0.5) return L('1원 이하', 'under ₩1')
+  const p = krwParts(a)
+  const sign = won < 0 && p.num !== '0' ? '-' : ''
+  return lang() === 'ko' ? `${sign}${p.num}${p.unit}` : `${sign}₩${p.num}`
+}
+
+const withComma = (n: number): string => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+const oneDecimal = (n: number): string => n.toFixed(1).replace(/\.0$/, '')
+
+function krwParts(a: number): { num: string; unit: string } {
+  if (lang() !== 'ko') return { num: withComma(a < 1000 ? Math.round(a) : Math.round(a / 10) * 10), unit: '' }
+  if (a < 100) return { num: String(Math.round(a)), unit: '원' }
+  const won = Math.round(a / 10) * 10
+  if (won < 1e4) return { num: withComma(won), unit: '원' }
+  const man = Math.round(a / 1e3) / 10
+  if (man < 100) return { num: oneDecimal(man), unit: '만원' }
+  const man0 = Math.round(a / 1e4)
+  if (man0 < 1e4) return { num: withComma(man0), unit: '만원' }
+  return { num: oneDecimal(Math.round(a / 1e7) / 10), unit: '억원' }
 }
 
 export function fmtUntil(iso: string, nowMs: number): string {

@@ -1,9 +1,9 @@
-import type { BandMode, BandShow, BarLayout, CostShow, InfoLevel, LimitShow, PaneMode, PartKey, PartLevel, PartShow, ScreenPreset, ScreenView, Settings, Thresholds, TidyStyleId } from '../types'
+import type { AutoState, BandMode, BandShow, BarLayout, CostShow, InfoLevel, LimitShow, PaneMode, PartKey, PartLevel, PartShow, ScreenPreset, ScreenView, Settings, Thresholds, TidyStyleId } from '../types'
 import { L, lang } from './i18n'
 import { onTerminal } from './glyph'
 import type { Lang } from './i18n'
 import { COMPACT_MAX, COMPACT_MIN, rangeThresholdsFor, thresholdsFor } from './optimal'
-import { CACHE_WARN_5M_DEFAULT, fmtUsd } from './cost'
+import { CACHE_WARN_5M_DEFAULT, currencyNow, fmtUsd } from './cost'
 import type { Level } from './cost'
 
 type TidyStyle = { name: string; use: string; keep: string; reply: string; save: string; compact: string; body: string[] }
@@ -138,6 +138,18 @@ export function autoBands(): readonly (readonly [number, number])[] {
   return rangeBands().filter(([, b]) => b < limit)
 }
 
+export const AUTO_RANGE_NEW: readonly [number, number] = [400_000, 500_000]
+
+export function autoRangeDefault(): { start: number; end: number } {
+  const bands = autoBands()
+  const fit = bands.find(([a, b]) => a === AUTO_RANGE_NEW[0] && b === AUTO_RANGE_NEW[1]) ?? bands.filter(([, b]) => b <= AUTO_RANGE_NEW[1]).at(-1) ?? bands[0]
+  return fit ? { start: fit[0], end: fit[1] } : { start: AUTO_RANGE_NEW[0], end: AUTO_RANGE_NEW[1] }
+}
+
+export function autoRangeOf(a: AutoState | null | undefined): { start: number; end: number } {
+  return a?.range ?? autoRangeDefault()
+}
+
 export function setAutoRange(s: Settings, start: number, end: number): Settings {
   return start < end ? { ...s, autoStart: Math.round(start), autoEnd: Math.round(end) } : s
 }
@@ -216,6 +228,7 @@ export const DEFAULT_SETTINGS: Settings = {
   statusLine: false,
   autoStart: 200_000,
   autoEnd: 250_000,
+  currency: 'usd',
 }
 
 export const PARTS: readonly { key: PartKey; group: 'bar' | 'chat'; states: readonly PartLevel[]; layouts: readonly BarLayout[] }[] = [
@@ -469,7 +482,7 @@ export function screenStateText(s: Settings): string {
 }
 
 export function fmtUsd0(v: number): string {
-  return Number.isInteger(v) ? `$${v}` : fmtUsd(v)
+  return Number.isInteger(v) && currencyNow() === 'usd' ? `$${v}` : fmtUsd(v)
 }
 
 export const SESSION_COLOR_STEPS: readonly number[] = [1, 2, 3, 5, 10, 15, 20, 30, 50, 75, 100, 150, 200, 300, 500, 1000]
@@ -793,7 +806,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const monthColors = isColors(rawMonth) ? rawMonth : MONTH_COLORS_DEFAULT
   const hasAuto = isCount(r.autoStart) && isCount(r.autoEnd) && r.autoStart < r.autoEnd
   const auto = hasAuto ? { autoStart: r.autoStart!, autoEnd: r.autoEnd! } : autoFromCompact({ follow, rangeStart, rangeEnd, compactAt })
-  const rest = { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, sessionColors, todayColors, monthColors, questionHover, paneAutoOpen, paneShared, bandOrder, motion, ctxUnit, gaugeShape, statusLine, ...auto }
+  const currency = r.currency === 'krw' || r.currency === 'usd' ? r.currency : DEFAULT_SETTINGS.currency
+  const rest = { compactAt, follow, rangeStart, rangeEnd, cacheWarnMin, cacheWarnMin5m, tidy, tidyCustom, compactCustom, lang, band, bandFolded, bandAutoOpen, sessionColors, todayColors, monthColors, questionHover, paneAutoOpen, paneShared, bandOrder, motion, ctxUnit, gaugeShape, statusLine, ...auto, currency }
   return { ...rest, ...screenFrom(r as Record<string, unknown>) }
 }
 

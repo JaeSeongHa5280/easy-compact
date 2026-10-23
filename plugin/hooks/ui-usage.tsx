@@ -1,5 +1,5 @@
 import type { CompactInputs, LiveTurn, Optimal, QuestionDetail, StepSwitch, TurnsOlder, TurnSummary, Usage } from '../types'
-import { approxUsd, average, PERM_HEX, compactPayoff, coldFor, estimateFor, fmtTokens, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, LITTLE_SHRINK, modelKey, modelName, ratesFor, rateHistory, thresholds, cacheWarnFor, sessionColorOf, ttlName, priceWarnings } from './cost'
+import { approxUsd, wonRateText, average, PERM_HEX, compactPayoff, coldFor, estimateFor, fmtTokens, fmtUntil, fmtUsd, LEVEL_HEX, LEVEL_TEXT, levelOf, LITTLE_SHRINK, modelKey, modelName, ratesFor, rateHistory, thresholds, cacheWarnFor, sessionColorOf, ttlName, priceWarnings } from './cost'
 import type { Rates } from './cost'
 import { OUTPUT_GUESS, SUMMARY_GUESS } from './optimal'
 import { contextWindowNow, SESSION_COLORS_DEFAULT } from './settings'
@@ -1582,6 +1582,7 @@ export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null,
   if (est.kind === 'unpriced') return null
   const r = est.rates
   const n = (v: number) => (v < 1 ? v.toFixed(2) : String(v))
+  const won = wonRateText()
   return (
     <Box key="s-ref" flexDirection="column" marginTop={1} paddingX={1}>
       {priceWarnings(u.model, u.window).map((w, i) => (
@@ -1591,8 +1592,8 @@ export function drawReference(ui: Ui, u: Usage | null, last: TurnSummary | null,
       ))}
       <Text dimColor wrap="wrap">
         {L(
-          `금액은 모두 API 정가로 셈한 값입니다. ${r.label} 요율($/MTok): 입력 ${n(r.input)} · 출력 ${n(r.output)} · 캐시 읽기 ${n(r.read)} · 쓰기 ${n(r.write1h)}(1시간)`,
-          `All amounts are at API list prices. ${r.label} rates ($/MTok): input ${n(r.input)} · output ${n(r.output)} · cache read ${n(r.read)} · write ${n(r.write1h)} (1h)`,
+          `금액은 모두 API 정가로 셈한 값입니다.${won ? ` 원은 1달러 = ${won}으로 바꾼 어림입니다.` : ''} ${r.label} 요율($/MTok): 입력 ${n(r.input)} · 출력 ${n(r.output)} · 캐시 읽기 ${n(r.read)} · 쓰기 ${n(r.write1h)}(1시간)`,
+          `All amounts are at API list prices.${won ? ` Won is an estimate at $1 = ${won}.` : ''} ${r.label} rates ($/MTok): input ${n(r.input)} · output ${n(r.output)} · cache read ${n(r.read)} · write ${n(r.write1h)} (1h)`,
         )}
       </Text>
       {(() => {

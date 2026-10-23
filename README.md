@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.5-4c9be8" alt="Version 1.0.5">
+  <img src="https://img.shields.io/badge/version-1.1.0-4c9be8" alt="Version 1.1.0">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -112,6 +112,12 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.1.0
+
+- **Amounts in won** — Settings → General → **Currency**: Dollar ($) by default (whatever the language) or Won (₩), shown like *1.4만원* · *132만원* (*₩13,990* on an English screen). The math stays in dollars.
+- **Exchange rate only when today's is missing** — with won on, it fetches the ECB's USD→KRW reference rate (71 bytes, frankfurter.app) when today's hasn't been fetched yet; usually the previous day's, shown with its date. With dollars it never goes online.
+- **Easy Auto range per session** — a new session starts at **400k–500k**; a range you pick stays in that session (*This session*).
 
 ## What's new in 1.0.5
 
@@ -356,7 +362,7 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 
 <img src="docs/img/settings.png" width="640" alt="Overview → Compact: the compact range dropdown and the Cost by size table, colored by verdict, with Chosen and Now tags at the row ends">
 
-**Pick a compact range in the Overview tab.** The Simple view has the range dropdown in the *This session* card, with one line under it: the verdict (★ Best · good · fair · not advised) and the cost of one read, one question and a cold cache. The Detailed view adds the suggested range (★, with **[Use this range]**) and the **Cost by size** table in the Compact card — one read and one question per size (10 requests assumed × the current model's rates); a wider pane adds the cold-cache cost and how far each size is from the cheapest (★) — a narrow one drops the least important columns first. Cell colors are the verdicts (the table's **?** says which ranges are not advised), and the last column tags rows with *Now 73%* (the row your size is in, on blue) · *Chosen* · *Auto* (the Easy Auto range) — all of them when they land on one row. Picking applies to all sessions at once, and **Enter a size…** at the end of the dropdown sets a single size by number. Right below it is the **Easy Auto range** dropdown (from 1.0.1 — the same value as in Settings).
+**Pick a compact range in the Overview tab.** The Simple view has the range dropdown in the *This session* card, with one line under it: the verdict (★ Best · good · fair · not advised) and the cost of one read, one question and a cold cache. The Detailed view adds the suggested range (★, with **[Use this range]**) and the **Cost by size** table in the Compact card — one read and one question per size (10 requests assumed × the current model's rates); a wider pane adds the cold-cache cost and how far each size is from the cheapest (★) — a narrow one drops the least important columns first. Cell colors are the verdicts (the table's **?** says which ranges are not advised), and the last column tags rows with *Now 73%* (the row your size is in, on blue) · *Chosen* · *Auto* (the Easy Auto range) — all of them when they land on one row. Picking applies to all sessions at once, and **Enter a size…** at the end of the dropdown sets a single size by number. Right below it is the **Easy Auto range** dropdown (from 1.0.1 — the same value as in Settings; from 1.1.0 it's this session's).
 
 | Gauge and button | Means |
 |---|---|
@@ -393,7 +399,7 @@ flowchart LR
 
 <img src="docs/img/auto.png" width="900" alt="Easy Auto on: the bar's compact button becomes a blue Auto 200k chip, and the Easy Auto switch at the top right of the Compact now? popup is on">
 
-**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch at the top right of the card the bar's **[Compact]** opens (per session — new sessions start with it off; in a terminal it's **4** on the card). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k* (press it for that card). While Claude is answering, pressing the bar's blue chip turns Easy Auto off in that session right away instead of opening the card. The range is **Easy Auto range**, right below the compact range — in the Settings **Compact** tab and in the Overview tab's Compact timing card (it starts at your compact range and is shared by all sessions).
+**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch at the top right of the card the bar's **[Compact]** opens (per session — new sessions start with it off; in a terminal it's **4** on the card). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k* (press it for that card). While Claude is answering, pressing the bar's blue chip turns Easy Auto off in that session right away instead of opening the card. The range is **Easy Auto range**, right below the compact range — in the Settings **Compact** tab and in the Overview tab's Compact timing card (per session — a new session starts at 400k–500k and a range you pick stays in that session; on a model with a smaller context window it starts at the highest range below Claude Code's auto-compact line).
 
 | When | What it does |
 |---|---|
@@ -431,7 +437,7 @@ Whether a folded bar opens by itself is **Open the bar when compacting** in the 
 
 <img src="docs/img/fold.png" width="900" alt="After folding the bar: a note that it opens by itself when it is time to compact, and the 🟦 82k button below the input">
 
-**There are no slash commands** (from 0.9.0) — everything is on the bar's buttons and the **⚙ Settings** tab of the pane. Settings has the **Screen preset** (Slim · Simple · Detailed · Custom) at the top, then the detailed settings tabs: **Bar** (Bar — preview · bar layout · bar size · gauge shape · keep the bar folded · open the bar when compacting · line below the input / Shown at the input — Off · When needed · Always for each part · All sessions / Numbers · colors — session, today and this-month colors · cost order · context numbers as size, % or both), **Answer chip** (answer chip · running question strip · answer chip details · highlight), **Pane** (open the pane in new sessions · open and close together), **Compact** (when to compact · Easy Auto range · cache), **General** (animations · report a problem · language). The parts the preset decides are changed on Custom and dimmed on the presets. Each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). In a terminal, value lists are buttons in a row instead of dropdowns. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version (*dev* for a folder-loaded copy): press it for what changed in each version, **Check for updates**, **Update** and **Report a problem**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
+**There are no slash commands** (from 0.9.0) — everything is on the bar's buttons and the **⚙ Settings** tab of the pane. Settings has the **Screen preset** (Slim · Simple · Detailed · Custom) at the top, then the detailed settings tabs: **Bar** (Bar — preview · bar layout · bar size · gauge shape · keep the bar folded · open the bar when compacting · line below the input / Shown at the input — Off · When needed · Always for each part · All sessions / Numbers · colors — session, today and this-month colors · cost order · context numbers as size, % or both), **Answer chip** (answer chip · running question strip · answer chip details · highlight), **Pane** (open the pane in new sessions · open and close together), **Compact** (when to compact · Easy Auto range · cache), **General** (animations · report a problem · language · currency — dollars or won, with the exchange rate). The parts the preset decides are changed on Custom and dimmed on the presets. Each row's explanation shows when you hover the **?** next to its name — press it to keep it open (in the terminal, press [ ? ]). In a terminal, value lists are buttons in a row instead of dropdowns. Compact timing is picked in the Overview tab. The button at the pane's top right shows the version (*dev* for a folder-loaded copy): press it for what changed in each version, **Check for updates**, **Update** and **Report a problem**. The cache lifetime is only shown — Claude Code sets it (`promptCacheTtl` in your settings, or an environment variable), and easy-compact never edits your settings.
 
 **Buttons cost nothing** — they leave nothing in the conversation. Only Easy Compact's save question · /compact and what [Easy Auto](#5-easy-auto--compacts-for-you) sends in a session where it's on cost tokens.
 
@@ -458,7 +464,7 @@ Still stuck? See [Something wrong?](#something-wrong--report-it) below.
 ## Good to know
 
 - **Amounts are API list-price estimates.** On a subscription they show how heavy a session is, not what you are billed.
-- **Everything stays on your machine.** easy-compact reads your local session records and never goes online by itself. Only when you press **[Check for updates]** · **[Update]** under the pane's version button does Claude Code (the `claude plugin` commands) fetch the marketplace from GitHub.
+- **Everything stays on your machine.** easy-compact reads your local session records and never goes online by itself. Only when you press **[Check for updates]** · **[Update]** under the pane's version button does Claude Code (the `claude plugin` commands) fetch the marketplace from GitHub. The one exception: if you show amounts in won (Settings › General › Currency), it fetches the ECB USD→KRW reference rate (71 bytes) from frankfurter.app whenever today's rate hasn't been fetched yet (so about once a day).
 - **Platforms:** built and tested on Windows 11. Nothing in the code is OS-specific, but macOS and Linux haven't been tried on real machines yet — reports welcome.
 - **Desktop app:** right after the pane opens, the first click inside it only moves focus — click once more.
 - Records over 4 MB are read with Node.js (14.8+). Without `node`, a very long session is drawn from when you installed, and the pane says so. Today · this month are counted with Node.js too — without it those bar cells don't appear and the pane's **All sessions** line says *Not measured* and why. Other sessions' transcripts (token counts only) are read only while that option is on or the pane's Overview tab is open in the Detailed view. Today · this month are cut at UTC midnight. They include what easy-compact measured for requests that aren't in the session records — compact summaries and Claude Code's own background requests (earlier days come from the cost-per-question history). Use on other computers and on the web isn't counted.

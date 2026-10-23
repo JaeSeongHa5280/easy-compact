@@ -1,4 +1,4 @@
-import type { AutoChain, AutoState, CompactInputs, Settings, TurnSummary, Usage } from '../types'
+import type { AutoChain, AutoState, CompactInputs, CompactPhase, Settings, TurnSummary, Usage } from '../types'
 import { average, compactPayoff, estimateFor, isLittleToSave } from './cost'
 import { L } from './i18n'
 import { bandNumText, ctxNumText } from './text'
@@ -26,7 +26,9 @@ export function autoFromStore(raw: unknown, nowMs: number): AutoState | null {
   const c = r.chain
   const chain = c && typeof c === 'object' && c.stage === 'compacting' && typeof c.atMs === 'number' && nowMs - c.atMs < AUTO_STALE_MS ? c : null
   const since = r.since && typeof r.since.requests === 'number' && typeof r.since.atMs === 'number' ? r.since : null
-  return { on: r.on, stop, note, chain, since, atMs: nowMs }
+  const g = r.range
+  const range = g && typeof g.start === 'number' && typeof g.end === 'number' && g.start < g.end ? { start: g.start, end: g.end } : null
+  return { on: r.on, stop, note, chain, since, atMs: nowMs, ...(range ? { range } : {}) }
 }
 
 export function isChainStuck(c: AutoChain, nowMs: number): boolean {
@@ -47,6 +49,187 @@ export function autoLossOf(u: Usage, inputs: CompactInputs | null, sums: readonl
 
 export function isTooSoon(a: AutoState): boolean {
   return a.since !== null && a.since.requests <= AUTO_AGAIN_REQUESTS
+}
+
+export const DRAFT_POLL_MS = 2_000
+
+export type AutoMachine = { auto: AutoState; otherAt: number; compacting: number | null; saveTurn: string | null }
+
+export type AutoEvent =
+  | { type: 'toggle' }
+  | { type: 'turnEnd'; turnId: string; reason: string; isGo: boolean }
+  | { type: 'waitDone'; at: number; isHeld: boolean }
+  | { type: 'step'; turnId: string }
+  | { type: 'afterStep'; ctx: number }
+  | { type: 'compactTime'; at: number; isHeld: boolean }
+  | { type: 'compactDone' }
+  | { type: 'other' }
+  | { type: 'turnStart'; turnId: string; kind: 'save' | 'continue' | null }
+  | { type: 'watch' }
+
+export type AutoFacts = {
+  nowMs: number
+  ctx: number | null
+  autoStart: number
+  autoEnd: number
+  phase: CompactPhase
+  loss: 'cold' | 'model' | 'loss' | null
+  cold: 'cold' | 'model' | null
+  isLive: boolean
+  flowLoaded: boolean
+  compactedSince: boolean
+}
+
+export type AutoAction =
+  | { do: 'set'; fn: (a: AutoState) => AutoState; then?: AutoAction[] }
+  | { do: 'end' }
+  | { do: 'otherAt'; at: number }
+  | { do: 'compacting'; at: number }
+  | { do: 'compactingDone'; at: number }
+  | { do: 'saveTurn'; turnId: string }
+  | { do: 'toast'; note: 'toggle' | 'save' | 'compact' | 'continue'; isOn?: boolean }
+  | { do: 'after'; ms: number; ev: AutoEvent }
+  | { do: 'event'; ev: AutoEvent }
+  | { do: 'save'; path: 'end' | 'mid' }
+  | { do: 'abortSave'; turnId: string }
+  | { do: 'recordSaveTurn' }
+  | { do: 'startCompacting' }
+  | { do: 'phaseIdle' }
+  | { do: 'compactNow'; at: number }
+  | { do: 'continue' }
+  | { do: 'ifDraft'; yes: AutoAction[]; no: AutoAction[] }
+
+const offPatch = (why: 'cold' | 'model') => (a: AutoState): AutoState => ({ ...a, on: false, stop: null, note: why, chain: null, since: null })
+const haltPatch = (why: 'stuck' | 'again') => (a: AutoState): AutoState => ({ ...a, stop: why, note: why, chain: null, since: null })
+const interruptPatch = (a: AutoState): AutoState => (a.chain ? { ...a, chain: { ...a.chain, isInterrupted: true } } : a)
+
+export function autoGate(a: AutoState, f: AutoFacts): AutoAction[] | null {
+  if (f.phase === 'tidying' || f.phase === 'compacting') return []
+  if (f.loss === 'cold' || f.loss === 'model') return [{ do: 'set', fn: offPatch(f.loss) }]
+  if (isTooSoon(a)) return [{ do: 'set', fn: haltPatch('again') }]
+  return f.loss === 'loss' ? [] : null
+}
+
+function startEnd(a: AutoState, f: AutoFacts): AutoAction[] {
+  if (f.ctx === null || f.ctx < f.autoStart) return []
+  const stop = autoGate(a, f)
+  if (stop) return stop
+  const chain: AutoChain = { path: 'end', stage: 'wait', atMs: f.nowMs, turnId: null, before: f.ctx }
+  return [
+    { do: 'set', fn: x => ({ ...x, chain }) },
+    { do: 'after', ms: AUTO_WAIT_MS, ev: { type: 'waitDone', at: f.nowMs, isHeld: false } },
+  ]
+}
+
+export function autoStep(m: AutoMachine, ev: AutoEvent, f: AutoFacts): AutoAction[] {
+  const a = m.auto
+  const c = a.chain
+  switch (ev.type) {
+    case 'toggle': {
+      const isOn = !isAutoActive(a)
+      const patch = (x: AutoState): AutoState => ({
+        ...x,
+        on: isOn,
+        stop: null,
+        note: null,
+        since: null,
+        chain: isOn || x.chain?.stage === 'saving' || x.chain?.stage === 'compacting' ? x.chain : null,
+      })
+      const a1 = patch(a)
+      const out: AutoAction[] = [{ do: 'set', fn: patch }, { do: 'toast', note: 'toggle', isOn }]
+      return !isOn || f.isLive || a1.chain ? out : [...out, ...startEnd(a1, f)]
+    }
+    case 'turnEnd': {
+      if (c?.stage === 'saving' && c.turnId === ev.turnId) {
+        if (!a.on || !ev.isGo) return [{ do: 'end' }]
+        return [
+          { do: 'recordSaveTurn' },
+          { do: 'compacting', at: f.nowMs },
+          { do: 'set', fn: x => ({ ...x, chain: { ...c, stage: 'compacting', atMs: f.nowMs, turnId: null } }) },
+          { do: 'startCompacting' },
+          { do: 'after', ms: 300, ev: { type: 'compactTime', at: f.nowMs, isHeld: false } },
+        ]
+      }
+      const out: AutoAction[] = []
+      let a1 = a
+      if (c?.stage === 'continuing' && c.turnId === ev.turnId) {
+        out.push({ do: 'set', fn: x => ({ ...x, chain: null }) })
+        a1 = { ...a, chain: null }
+      } else if (c || ev.turnId === m.saveTurn) return []
+      if (!isAutoActive(a) || ev.reason !== 'answer') return out
+      return [...out, ...startEnd(a1, f)]
+    }
+    case 'waitDone': {
+      if (c?.stage !== 'wait' || c.atMs !== ev.at) return []
+      if (!isAutoActive(a) || m.otherAt >= ev.at) return [{ do: 'end' }]
+      const held: AutoAction = { do: 'set', fn: x => (x.chain?.stage === 'wait' && x.chain.atMs === ev.at ? { ...x, chain: { ...x.chain, atMs: f.nowMs, isDraftHeld: true } } : x) }
+      return [
+        {
+          do: 'ifDraft',
+          yes: [held, ...(ev.isHeld ? [] : [{ do: 'toast', note: 'save' } as const]), { do: 'after', ms: DRAFT_POLL_MS, ev: { type: 'waitDone', at: f.nowMs, isHeld: true } }],
+          no: [{ do: 'save', path: 'end' }],
+        },
+      ]
+    }
+    case 'step': {
+      if (!isAutoActive(a) || (c && c.stage !== 'continuing') || a.since?.requests === 0) return []
+      if (f.ctx === null || f.ctx < f.autoEnd) return []
+      const stop = autoGate(a, f)
+      if (stop) return stop
+      const chain: AutoChain = { path: 'mid', stage: 'saving', atMs: f.nowMs, turnId: null, before: f.ctx }
+      return [{ do: 'ifDraft', yes: [], no: [{ do: 'set', fn: x => ({ ...x, chain }) }, { do: 'abortSave', turnId: ev.turnId }] }]
+    }
+    case 'afterStep': {
+      if (!a.since) return []
+      const n = a.since.requests + 1
+      if (n === 1 && isAutoActive(a) && ev.ctx >= f.autoStart) return [{ do: 'set', fn: haltPatch('stuck') }]
+      return [{ do: 'set', fn: x => (x.since ? { ...x, since: n > AUTO_AGAIN_REQUESTS ? null : { ...x.since, requests: n } } : x) }]
+    }
+    case 'compactTime': {
+      if (c?.stage !== 'compacting') return [{ do: 'compactingDone', at: ev.at }]
+      const poll: AutoAction = { do: 'after', ms: DRAFT_POLL_MS, ev: { type: 'compactTime', at: ev.at, isHeld: true } }
+      const hold: AutoAction[] = ev.isHeld
+        ? [poll]
+        : [{ do: 'phaseIdle' }, { do: 'set', fn: x => (x.chain?.stage === 'compacting' ? { ...x, chain: { ...x.chain, isDraftHeld: true } } : x) }, { do: 'toast', note: 'compact' }, poll]
+      const unhold: AutoAction[] = ev.isHeld ? [{ do: 'set', fn: x => (x.chain?.isDraftHeld ? { ...x, chain: { ...x.chain, isDraftHeld: false } } : x) }] : []
+      return [{ do: 'ifDraft', yes: hold, no: [...unhold, { do: 'compactNow', at: ev.at }] }]
+    }
+    case 'compactDone': {
+      if (c?.stage !== 'compacting') return []
+      const isNext = c.path === 'mid' && a.on && c.isInterrupted !== true && m.otherAt < c.atMs
+      const since = { atMs: f.nowMs, requests: 0 }
+      return [
+        {
+          do: 'set',
+          fn: x => (x.chain?.stage === 'compacting' ? { ...x, since, chain: isNext ? { ...x.chain, stage: 'continuing', atMs: f.nowMs, turnId: null } : null } : x),
+          then: isNext
+            ? [{ do: 'ifDraft', yes: [{ do: 'set', fn: x => (x.chain?.stage === 'continuing' ? { ...x, chain: null } : x) }, { do: 'toast', note: 'continue' }], no: [{ do: 'continue' }] }]
+            : [],
+        },
+      ]
+    }
+    case 'other': {
+      const out: AutoAction[] = [{ do: 'otherAt', at: f.nowMs }]
+      return c && (c.stage === 'compacting' || (c.stage === 'continuing' && c.turnId === null)) ? [...out, { do: 'set', fn: interruptPatch }] : out
+    }
+    case 'turnStart': {
+      const out: AutoAction[] = ev.kind === 'save' ? [{ do: 'saveTurn', turnId: ev.turnId }] : []
+      if (!c) return out
+      if (((ev.kind === 'save' && c.stage === 'saving') || (ev.kind === 'continue' && c.stage === 'continuing')) && c.turnId === null) {
+        return [...out, { do: 'set', fn: x => (x.chain ? { ...x, chain: { ...x.chain, turnId: ev.turnId } } : x) }]
+      }
+      if (ev.kind !== null) return out
+      if (c.stage === 'wait') return [...out, { do: 'end' }]
+      return c.stage === 'compacting' || (c.stage === 'continuing' && c.turnId === null) ? [...out, { do: 'set', fn: interruptPatch }] : out
+    }
+    case 'watch': {
+      if (c?.stage === 'compacting' && m.compacting !== c.atMs && f.phase !== 'compacting' && f.flowLoaded) {
+        return f.compactedSince ? [{ do: 'event', ev: { type: 'compactDone' } }] : [{ do: 'end' }]
+      }
+      if (c) return isChainStuck(c, f.nowMs) ? [{ do: 'end' }] : []
+      return isAutoActive(a) && f.cold ? [{ do: 'set', fn: offPatch(f.cold) }] : []
+    }
+  }
 }
 
 export function autoRangeText(s: Settings, window: number | null | undefined): string {

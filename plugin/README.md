@@ -5,8 +5,8 @@ easy-compact shows what your Claude Code session costs while you work, and tells
 - **Bar**: this session's cost, context size, cache time left and plan limits, with one button that says when it's time to compact.
 - **Pane**: what each question and request cost, the context over time, the compact range that costs least for this session, and what earlier compacts saved.
 - **Easy Compact**: one click asks Claude to save what isn't written down yet, then runs `/compact`. When the cache has gone cold, **Plain compact** runs `/compact` straight away. **Clear** runs `/clear` after you confirm.
-- **Easy Auto** (off until you turn it on, per session): when the context passes a range you set, it does the Easy Compact steps by itself — and if a long task was running, it stops that turn between requests, compacts, then asks Claude to carry on.
-- **Optional**: today's and this month's usage across all your sessions.
+- **Easy Auto** (off until you turn it on, per session): when the context passes that session's range (a new session starts at 400k–500k), it does the Easy Compact steps by itself — and if a long task was running, it stops that turn between requests, compacts, then asks Claude to carry on.
+- **Optional**: today's and this month's usage across all your sessions, and amounts in won instead of dollars.
 
 Costs are estimates from Anthropic's published API prices, worked out on your computer.
 
@@ -39,13 +39,14 @@ easy-compact is a Claude Code mod (`modules` in `hooks/hooks.json`), so it runs 
 
 ## What it sends
 
-- easy-compact itself sends nothing over the network: no telemetry and no requests of its own. Everything it measures stays on your computer. The diagnostics card's **Open an issue** is a plain link that opens this repository's new-issue page in your browser; nothing is attached to it.
+- easy-compact itself sends nothing over the network: no telemetry and no requests of its own, with one exception you opt into. Everything it measures stays on your computer.
+- **Exchange rate, only when you show amounts in won** (Settings → General → Currency; the default is dollars): a plain GET to `https://api.frankfurter.app/latest?from=USD&to=KRW` through Claude Code's `$.http.fetch`, at most once a day — when today's rate hasn't been fetched yet (an hour later if a try fails). It returns the European Central Bank's USD→KRW reference rate (about 71 bytes). The request carries nothing of yours: no session data, no costs, no credentials (no `auth`), only an `accept: application/json` header. With dollars it makes no request. The diagnostics card's **Open an issue** is a plain link that opens this repository's new-issue page in your browser; nothing is attached to it.
 - **Easy Compact** sends one message to Claude in your session, as part of your normal conversation. The message asks Claude to check what compacting would lose, to save decisions, progress and next steps that aren't in files yet (memory, work notes), and to reply with what to do next. It includes the message you picked in the compact popup (one of the presets, or your own text). Nothing else goes into it: no text from your conversation or files, and no costs. The text for "after /compact" is added to the `/compact` command as instructions for the summary.
 - **Easy Auto**, only in a session where you turned it on, sends two kinds of messages to Claude in that session, as part of your normal conversation: `[Easy Auto · summary]` followed by the same save message as Easy Compact's Normal preset (with the range it passed — nothing from your conversation or files, no costs), and, only after it stopped a long task and compacted, `[Easy Auto · continue] Compacting is done. Please continue what you were doing.`
 
 ## What it writes
 
-- Its settings, to Claude Code's plugin store on this computer — including, for each session, whether Easy Auto is on and which step of its save → compact → continue chain it is at.
+- Its settings, to Claude Code's plugin store on this computer — including the currency, the last exchange rate fetched (rate, its date and the day it was fetched) and, for each session, whether Easy Auto is on, its range and which step of its save → compact → continue chain it is at.
 - Each session's question history (question text, cost, the end of each answer), each session's running cost (so it survives an app restart), each session's cost by day of requests that aren't in the session records (compact summaries, Claude Code's own background requests — so today and this month include them) with the size and cost of each compact it measured, and its own small caches, to its data folder under `~/.claude/plugins/data`.
 - A diagnostics file, `debug-<session>.json` in that same folder (version, this session's settings, pane state, usage and question history, and how each compact was detected), only when you press **Save as file** in the diagnostics card (**Report a problem** → **Show diagnostics** — in the pane's version drawer or the Settings General tab). The card shows the content first; question text, answer endings, step names and custom texts are left out unless you turn that off. It stays on your computer; you attach it to a bug report yourself.
 - The same diagnostics text to your clipboard, only when you press **Copy** in that card, and the saved file's path, only when you press **Copy path**.

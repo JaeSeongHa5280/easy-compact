@@ -383,6 +383,38 @@ export function isNotShrunk(before: number, after: number): boolean {
   return before > 0 && after >= before * COMPACT_SHRINK
 }
 
+export type CompactResultLike = { tokensBefore?: number; tokensAfter?: number; usage?: Tokens }
+
+export type JudgeState = {
+  suspect: { before: number; atMs: number; since: number; checks: number } | null
+  engineHadTokens: boolean
+  startedAtSeen: number | null
+  missed: { trigger: string; result: CompactResultLike } | null
+}
+
+export function judgeMeasure(
+  st: JudgeState,
+  f: { engineTokens: number | undefined; startedAt: number; isBusy: boolean; last: { atMs: number; ctx: number } | null; hasCompactSince: boolean },
+): { st: JudgeState; next: { do: 'none' } | { do: 'missed'; missed: NonNullable<JudgeState['missed']> } | { do: 'look'; since: number; before: number } } {
+  const isClear = st.startedAtSeen !== null && f.startedAt !== st.startedAtSeen
+  const st1: JudgeState = { ...st, startedAtSeen: f.startedAt, suspect: isClear ? null : st.suspect }
+  if (st1.missed !== null) return { st: { ...st1, missed: null }, next: { do: 'missed', missed: st1.missed } }
+  if (typeof f.engineTokens === 'number' && f.engineTokens > 0) return { st: { ...st1, engineHadTokens: true }, next: { do: 'none' } }
+  if (!st1.engineHadTokens || f.isBusy) return { st: st1, next: { do: 'none' } }
+  const st2: JudgeState = { ...st1, engineHadTokens: false }
+  if (isClear || !f.last || f.last.ctx <= 0 || f.hasCompactSince) return { st: st2, next: { do: 'none' } }
+  return { st: st2, next: { do: 'look', since: f.last.atMs, before: f.last.ctx } }
+}
+
+export function judgeRequest(suspect: JudgeState['suspect'], isRecording: boolean, ctx: number): 'none' | 'not-shrunk' | 'shrink' {
+  if (suspect === null || isRecording) return 'none'
+  return isNotShrunk(suspect.before, ctx) ? 'not-shrunk' : 'shrink'
+}
+
+export function judgeOwn(hasBoundary: boolean, suspect: JudgeState['suspect']): 'boundary' | 'empty' | 'none' {
+  return hasBoundary ? 'boundary' : suspect !== null ? 'empty' : 'none'
+}
+
 function isUnconfirmed(c: CompactEvent): boolean {
   return c.kept === undefined && c.costUsd === null
 }

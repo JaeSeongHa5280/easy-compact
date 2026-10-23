@@ -40,6 +40,7 @@ export type Settings = {
   statusLine: boolean
   autoStart: number
   autoEnd: number
+  currency: 'usd' | 'krw'
 }
 
 export type AutoChain = {
@@ -59,6 +60,7 @@ export type AutoState = {
   chain: AutoChain | null
   since: { atMs: number; requests: number } | null
   atMs: number
+  range?: { start: number; end: number } | null
 }
 
 export type BarLayout = 'button' | 'one' | 'three'
