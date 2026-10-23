@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  그림으로 보는 안내서: <a href="https://jaeseongha5280.github.io/easy-compact/primer/ko.html"><b>Claude 비용, 눈으로 보기</b></a> — Claude Code 요금이 어떻게 붙는지, 세션이 길수록 왜 비싸지는지, 어떻게 줄이는지
+  그림으로 보는 안내서: <a href="https://jaeseongha5280.github.io/easy-compact/primer/ko.html"><b>이지 컴팩트로 Claude Code 비용 줄이기</b></a> — Claude Code 요금이 어떻게 붙는지, 세션이 길수록 왜 비싸지는지, 어떻게 줄이는지
 </p>
 
 ---

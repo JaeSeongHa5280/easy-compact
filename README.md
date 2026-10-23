@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  Interactive guide: <a href="https://jaeseongha5280.github.io/easy-compact/primer/"><b>Claude Costs, Made Visible</b></a> — how Claude Code is billed, why long sessions cost more, and how to cut it.
+  Interactive guide: <a href="https://jaeseongha5280.github.io/easy-compact/primer/"><b>Cutting Claude Code Costs with Easy Compact</b></a> — how Claude Code is billed, why long sessions cost more, and how to cut it.
 </p>
 
 ---
