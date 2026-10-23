@@ -664,13 +664,17 @@ ol.lplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;
 .rqn .note{margin:8px 0 0}
 @media (max-width:640px){.rqn .rqr{grid-template-columns:minmax(0,1fr) auto}.rqn .rqp{grid-column:1 / -1}}
 .rqn .rqh b{color:var(--text);font-size:14px;display:block;margin-bottom:2px}
+
+.lng .seg a{display:inline-flex;align-items:center;min-height:28px;padding:2px 10px;font-size:13px;border-radius:7px;border:1px solid var(--line);background:var(--card);color:var(--text);text-decoration:none}
+.lng .seg a:hover{border-color:var(--accent)}
+.lng .seg a[aria-current="page"]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 </style>
 </head>
 <body>
 <div class="top">
   <b>Cutting Claude Code Costs with Easy Compact</b>
-  <nav aria-label="Contents"><a href="#intro">Cost compared</a><a href="#ch2">How you're billed</a><a href="#ch3">Cache and context</a><a href="#ch4">Costly habits</a><a href="#ch5">Cutting costs</a><a href="#refs">References</a><a class="lang" href="ko.html" lang="ko" hreflang="ko">한국어</a></nav>
-  <div class="thm" role="group" aria-label="Color theme"><span>Theme</span><div class="seg" id="theme-seg"><button type="button" data-v="dark" aria-pressed="true">Dark</button><button type="button" data-v="light" aria-pressed="false">Light</button></div><button class="btn" id="theme" type="button" hidden>Light</button></div>
+  <nav aria-label="Contents"><a href="#intro">Cost compared</a><a href="#ch2">How you're billed</a><a href="#ch3">Cache and context</a><a href="#ch4">Costly habits</a><a href="#ch5">Cutting costs</a><a href="#refs">References</a></nav>
+  <div class="thm" role="group" aria-label="Color theme"><span>Theme</span><div class="seg" id="theme-seg"><button type="button" data-v="dark" aria-pressed="true">Dark</button><button type="button" data-v="light" aria-pressed="false">Light</button></div><button class="btn" id="theme" type="button" hidden>Light</button></div><div class="thm lng" role="group" aria-label="Language"><div class="seg"><a lang="ko" hreflang="ko" href="ko.html">한국어</a><a lang="en" aria-current="page">English</a></div></div>
 </div>
 <main>
 <header class="paper">
@@ -1903,5 +1907,6 @@ $id('inst-copy').addEventListener('click', function(){
 
 })();
 </script>
+<script>(function(){ var marks = [].slice.call(document.querySelectorAll('main section[id], main .chap[id], main figure[id]')); document.querySelectorAll('.lng a[href]').forEach(function(a){ var base = a.getAttribute('href'); a.addEventListener('click', function(){ var id = ''; for (var i = 0; i < marks.length; i++){ if (marks[i].getBoundingClientRect().top <= 100) id = marks[i].id; else break; } a.href = base + (id ? '#' + id : ''); }); }); })();</script>
 </body>
 </html>
