@@ -600,8 +600,6 @@ export const KRW_PER_USD_DEFAULT = 1320
 
 export type FxRate = { rate: number; date: string; gotOn: string }
 
-export const FX_URL = 'https://api.frankfurter.app/latest?from=USD&to=KRW'
-
 export const FX_RETRY_MS = 3_600_000
 
 let currency: Currency = 'usd'

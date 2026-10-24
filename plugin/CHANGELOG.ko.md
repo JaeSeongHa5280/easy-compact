@@ -4,6 +4,15 @@ easy-compact 의 버전마다 바뀐 것입니다. 버전 번호는 [유의적 �
 
 **업데이트 받기:** Claude 에게 `이 플러그인 업데이트해줘: easy-compact (claude plugin marketplace update easy-compact 후 claude plugin update easy-compact@easy-compact)` 를 보내거나, 셸에서 그 두 줄 → Claude 다시 켜기 — [업데이트 받기](README.ko.md#업데이트-받기) 참고.
 
+## [1.1.1] — 2026-10-24
+
+### 바뀜
+- **캐시 유지 시간 「정하는 곳」 글** — 설정에 *자동(로그인 방식 · 사용량에 따라 1시간 또는 5분)* 으로 보입니다. 전엔 *구독은 1시간, API 키 · 초과 사용은 5분* 이었는데, Claude 계정으로 로그인해 API 요금으로 쓰면서 1시간 캐시인 요금제와 어긋났습니다. 값은 그대로 이 세션에서 잽니다.
+
+### 고침
+- **새 데스크톱 앱에서 [업데이트 확인] 이 Claude Code 를 못 찾음** — Claude 데스크톱 앱(Windows 스토어 판)이 자료 폴더를 `%APPDATA%\Claude` → `%LOCALAPPDATA%\Claude-Data\claude_<설치 id>` 로 옮기고 옛 자리엔 표시 파일 하나만 남겼습니다. PATH 에 `claude` 가 없는 PC 에선 업데이트 단추가 돌릴 Claude Code 를 못 찾았습니다. 이제 앱이 적은 자료 폴더 자리(`Claude-Data` · `Claude-3p` · `Claude`)를 새 판부터 보고, 언어 **자동**도 앱 언어를 거기서 읽습니다.
+- **이지 오토가 식은 캐시에도 기다림** — 입력 칸 글을 기다리는 동안 깰 때마다 다시 봅니다: 캐시가 식었으면(모델이 바뀌었으면) 다른 때처럼 이지 오토를 끄고, Claude Code 가 쉬는 대화를 스스로 컴팩트했으면(Claude Code 2.1.290 이상) 기다림만 놓습니다. 전엔 글을 지우는 순간 이미 작아진 대화에도 요약 글을 보냈습니다.
+
 ## [1.1.0] — 2026-10-23
 
 ### 새로 생김

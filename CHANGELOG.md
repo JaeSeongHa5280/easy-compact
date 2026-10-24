@@ -4,6 +4,15 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.1.1] — 2026-10-24
+
+### Changed
+- **Cache lifetime "set by" wording** — Settings shows *automatic (1 h or 5 min, by how you sign in and your usage)*. It used to say *1 h on a subscription, 5 min on an API key or over the plan*, which misread plans billed at API rates that still get the 1-hour cache when you sign in with a Claude account. The value itself is still measured from your session.
+
+### Fixed
+- **[Check for updates] couldn't find Claude Code with the new desktop app** — the Claude desktop app (Windows Store build) moved its data folder from `%APPDATA%\Claude` to `%LOCALAPPDATA%\Claude-Data\claude_<install id>`, leaving only a marker file behind. On a computer without `claude` on PATH the update buttons found no Claude Code to run. easy-compact now looks where the app says its data lives (`Claude-Data`, `Claude-3p` or `Claude`), newest first, and the **Auto** language reads the app's language there too.
+- **Easy Auto kept waiting through a cold cache** — while it waits for text in your prompt box, it now looks again each time: if the cache went cold (or the model changed) it turns Easy Auto off as it does elsewhere, and if Claude Code compacted the idle conversation by itself (Claude Code 2.1.290 or later), it stops waiting. Before, clearing the box sent the summary message even to a conversation that was already small.
+
 ## [1.1.0] — 2026-10-23
 
 ### Added

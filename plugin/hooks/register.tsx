@@ -60,7 +60,6 @@ import {
   parseFx,
   needsFx,
   localDayOf,
-  FX_URL,
   SAVE_GUESS,
   WARM_COMPACT,
   ZERO_COST,
@@ -285,25 +284,38 @@ async function toggleUpdateOpen($: EngineInterface, key: 'changes' | 'error' | '
   $.ui.invalidate('ui.render')
 }
 
-async function claudeCandidates($: EngineInterface): Promise<string[]> {
-  const out = ['claude']
-  const appDirs: string[] = []
+async function appDataDirs($: EngineInterface): Promise<string[]> {
   const norm = (v: string | undefined) => v?.replace(/\\/g, '/') || null
-  const appData = norm(await $.env.get('APPDATA').catch(() => undefined))
-  if (appData) appDirs.push(`${appData}/Claude`)
+  const local = norm(await $.env.get('LOCALAPPDATA').catch(() => undefined))
+  const roaming = norm(await $.env.get('APPDATA').catch(() => undefined))
   const home = norm(await $.env.get('HOME').catch(() => undefined)) ?? norm(await $.env.get('USERPROFILE').catch(() => undefined))
-  if (home) appDirs.push(`${home}/Library/Application Support/Claude`, `${home}/.config/Claude`)
-  for (const dir of appDirs) {
+  const bases = [local, roaming, home && `${home}/Library/Application Support`, home && `${home}/.config`].filter((b): b is string => !!b)
+  const out: string[] = []
+  for (const base of bases) {
+    for (const name of ['Claude-Data', 'Claude-3p', 'Claude']) {
+      const dir = `${base}/${name}`
+      try {
+        for (const f of await $.fs.list(dir)) if (f.kind === 'dir' && /^claude_/i.test(f.name)) out.push(`${dir}/${f.name}`)
+      } catch {
+      }
+      out.push(dir)
+    }
+  }
+  return out
+}
+
+async function claudeCandidates($: EngineInterface): Promise<string[]> {
+  const found: { version: string; path: string }[] = []
+  for (const dir of await appDataDirs($)) {
     try {
       const vers = (await $.fs.list(`${dir}/claude-code`)).filter(f => f.kind === 'dir' && /^\d+\.\d+\.\d+$/.test(f.name)).map(f => f.name)
-      vers.sort((a, b) => (versionGt(a, b) ? -1 : versionGt(b, a) ? 1 : 0))
       for (const v of vers) {
         for (const build of await $.fs.list(`${dir}/claude-code/${v}`)) {
           if (build.kind !== 'dir') continue
           for (const exe of ['claude.exe', 'claude']) {
             const path = `${dir}/claude-code/${v}/${build.name}/${exe}`
             try {
-              if ((await $.fs.stat(path)).kind === 'file') out.push(path)
+              if ((await $.fs.stat(path)).kind === 'file') found.push({ version: v, path })
             } catch {
             }
           }
@@ -312,7 +324,8 @@ async function claudeCandidates($: EngineInterface): Promise<string[]> {
     } catch {
     }
   }
-  return out
+  found.sort((a, b) => (versionGt(a.version, b.version) ? -1 : versionGt(b.version, a.version) ? 1 : 0))
+  return ['claude', ...found.map(f => f.path)]
 }
 
 async function runClaude(
@@ -486,18 +499,7 @@ async function detectLang($: EngineInterface): Promise<Lang> {
     const v = (await readJson(path))?.language
     if (typeof v === 'string' && v.trim()) return isKorean(v) ? 'ko' : 'en'
   }
-  const appDirs: string[] = []
-  try {
-    const appData = await $.env.get('APPDATA')
-    if (appData) appDirs.push(`${appData.replace(/\\/g, '/')}/Claude`)
-  } catch {
-  }
-  try {
-    const home = await $.env.get('HOME')
-    if (home) appDirs.push(`${home.replace(/\\/g, '/')}/Library/Application Support/Claude`, `${home.replace(/\\/g, '/')}/.config/Claude`)
-  } catch {
-  }
-  for (const dir of appDirs) {
+  for (const dir of await appDataDirs($)) {
     const v = (await readJson(`${dir}/config.json`))?.locale
     if (typeof v === 'string' && v.trim()) return isKorean(v) ? 'ko' : 'en'
   }
@@ -1418,7 +1420,7 @@ async function ensureFx($: EngineInterface): Promise<void> {
   if (!needsFx(saved, today, nowMs, fxTriedAt)) return
   fxTriedAt = nowMs
   try {
-    const r = await $.http.fetch(FX_URL, { headers: { accept: 'application/json' } })
+    const r = await $.http.fetch('https://api.frankfurter.app/latest?from=USD&to=KRW', { headers: { accept: 'application/json' } })
     const got = r.ok ? parseFx(r.text, today) : null
     if (!got) return
     await $.store.set(FX_KEY, got)

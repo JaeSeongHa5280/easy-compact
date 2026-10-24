@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.0-4c9be8" alt="Version 1.1.0">
+  <img src="https://img.shields.io/badge/version-1.1.1-4c9be8" alt="Version 1.1.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-102">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-111">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,12 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.1.1
+
+- **[Check for updates] with the new desktop app** — the Claude desktop app (Windows Store build) moved its data folder from `%APPDATA%\Claude` to `%LOCALAPPDATA%\Claude-Data\…`, so on a computer without `claude` on PATH the update buttons couldn't find the Claude Code inside the app. They look in the new place first now; the **Auto** language reads the app's language there too.
+- **Easy Auto while it waits for your text** — if the cache goes cold while it waits, Easy Auto turns off; if Claude Code compacted the idle conversation itself, it just stops waiting. Before, clearing the box sent its summary even to a now-small conversation.
+- **Cache lifetime "set by" wording** — *automatic (1 h or 5 min, by how you sign in and your usage)*; it used to say subscription vs API key, which misread plans billed at API rates that still get 1 hour.
 
 ## What's new in 1.1.0
 
@@ -409,7 +415,7 @@ flowchart LR
 | The cache expires or the model changes | Turns Easy Auto off in that session with a one-line note |
 | Compacting now would cost more (cold cache · little to save) | Skips that one time |
 
-While it runs, the bar and the strip show the current step (*Easy Auto · saving → then compact* · *Easy Auto compact in progress…*). Typing doesn't turn it off — if the save answer doesn't end with *[Compact go]* (you typed in between, or there was something to lose), it doesn't compact that time, and if you typed after the compact it doesn't send the pick-up message. If your prompt box holds text you haven't sent, it doesn't send its summary or compact and waits (chip *Auto · waiting for your text*) — send it and it runs after that answer, clear it and it goes on; after a compact with text in the box it doesn't send the pick-up message (from 1.0.2 — it only checks whether the box has text, and neither keeps nor sends it). While it's on, a folded bar doesn't open by itself when it's time to compact (Easy Auto handles the alert). What Easy Auto sends starts with *[Easy Auto · summary]* · *[Easy Auto · continue]*, stays in the conversation, and those requests cost tokens.
+While it runs, the bar and the strip show the current step (*Easy Auto · saving → then compact* · *Easy Auto compact in progress…*). Typing doesn't turn it off — if the save answer doesn't end with *[Compact go]* (you typed in between, or there was something to lose), it doesn't compact that time, and if you typed after the compact it doesn't send the pick-up message. If your prompt box holds text you haven't sent, it doesn't send its summary or compact and waits (chip *Auto · waiting for your text*) — send it and it runs after that answer, clear it and it goes on (unless the cache went cold while it waited — then Easy Auto turns off — or Claude Code compacted the idle conversation itself and the context is now below the range; from 1.1.1); after a compact with text in the box it doesn't send the pick-up message (from 1.0.2 — it only checks whether the box has text, and neither keeps nor sends it). While it's on, a folded bar doesn't open by itself when it's time to compact (Easy Auto handles the alert). What Easy Auto sends starts with *[Easy Auto · summary]* · *[Easy Auto · continue]*, stays in the conversation, and those requests cost tokens.
 
 ### 6. The Easy Compact pane
 

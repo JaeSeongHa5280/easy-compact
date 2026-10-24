@@ -131,7 +131,7 @@ export function drawSettings(
   }
   const cfg = cache?.config ?? null
   const srcText = !cfg
-    ? L('자동(구독은 1시간, API 키 · 초과 사용은 5분)', 'automatic (1 h on a subscription, 5 min on an API key or over the plan)')
+    ? L('자동(로그인 방식 · 사용량에 따라 1시간 또는 5분)', 'automatic (1 h or 5 min, by how you sign in and your usage)')
     : cfg.source === 'force5m'
       ? L('환경 변수 FORCE_PROMPT_CACHING_5M(5분 고정)', 'env FORCE_PROMPT_CACHING_5M (5 min forced)')
       : cfg.source === 'env'
@@ -140,7 +140,7 @@ export function drawSettings(
           ? L(`설정 promptCacheTtl = ${cfg.value}`, `setting promptCacheTtl = ${cfg.value}`)
           : cfg.source === 'enable1h'
             ? L('환경 변수 ENABLE_PROMPT_CACHING_1H(1시간)', 'env ENABLE_PROMPT_CACHING_1H (1 h)')
-            : L('자동(구독은 1시간, API 키 · 초과 사용은 5분)', 'automatic (1 h on a subscription, 5 min on an API key or over the plan)')
+            : L('자동(로그인 방식 · 사용량에 따라 1시간 또는 5분)', 'automatic (1 h or 5 min, by how you sign in and your usage)')
   const rNow = ctxNow !== null && ctxNow > 0 && modelId ? ratesFor(modelId, ctxNow) : null
   const minsLeft = cache?.minsLeft ?? null
   const isLateNow = minsLeft !== null && minsLeft < cacheWarnFor(s, ttl)

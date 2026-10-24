@@ -162,6 +162,8 @@ export function autoStep(m: AutoMachine, ev: AutoEvent, f: AutoFacts): AutoActio
     case 'waitDone': {
       if (c?.stage !== 'wait' || c.atMs !== ev.at) return []
       if (!isAutoActive(a) || m.otherAt >= ev.at) return [{ do: 'end' }]
+      if (f.ctx === null || f.ctx < f.autoStart) return [{ do: 'end' }]
+      if (f.cold) return [{ do: 'set', fn: offPatch(f.cold) }]
       const held: AutoAction = { do: 'set', fn: x => (x.chain?.stage === 'wait' && x.chain.atMs === ev.at ? { ...x, chain: { ...x.chain, atMs: f.nowMs, isDraftHeld: true } } : x) }
       return [
         {
