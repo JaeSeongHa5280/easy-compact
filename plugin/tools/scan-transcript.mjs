@@ -7,6 +7,7 @@
 //                        엔진 버전 = 기록 줄의 version, 모르면 "-")
 //   c <시각ms> <trigger> <preTokens> <postTokens>   (postTokens 모르면 0)
 //   q <시각ms> <질문 글 앞부분>       (질문 시작 — promptId 가 처음 나온 사용자 줄, 글은 hooks/flow.ts promptTextOf 와 같은 규칙)
+//   i                                 (물려받은 시작 — 첫 자기 줄 앞에 다른 세션 줄이 있음(포크): 첫 점이 부모 대화 크기를 담는다. 한 번만)
 // <세션 id> 를 주면 그 세션 줄만.
 //
 // --costs: 세션 금액 단서만(hooks/flow.ts costScanOf 와 같은 규칙) —
@@ -87,6 +88,8 @@ const promptText = c => {
 }
 let carry
 let isOwnAsked = false
+let isOwnSeen = false
+let isInherited = false
 const lines = createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity })
 for await (const line of lines) {
   const isBoundary = line.includes('"compact_boundary"')
@@ -101,12 +104,17 @@ for await (const line of lines) {
   }
   if (r.isSidechain === true) continue
   if (own && typeof r.sessionId === 'string' && r.sessionId !== own) {
+    if (!isOwnSeen && !isInherited) {
+      isInherited = true
+      out.push('i')
+    }
     if (isNewPrompt && r.type === 'user') {
       seenPrompt.add(promptId)
       carry = promptText(r.message?.content)
     }
     continue
   }
+  isOwnSeen = true
   const at = Date.parse(String(r.timestamp ?? '')) || 0
   if (isNewPrompt && r.type === 'user') {
     seenPrompt.add(promptId)

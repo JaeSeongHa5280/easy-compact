@@ -260,6 +260,7 @@ export type CompactEvent = {
   index: number
   summary?: number | null
   kept?: number
+  fixed?: number
   via?: string
 }
 
@@ -308,6 +309,7 @@ declare module 'claude-code' {
       compactions: CompactEvent[]
       flowQuestions: number[]
       flowShared: Record<string, number>
+      flowInherited: boolean | null
       flowLoaded: boolean
       flowNote: string | null
       optimal: Optimal | null

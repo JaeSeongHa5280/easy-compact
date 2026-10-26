@@ -361,6 +361,7 @@ export function estimate(
   isModelSwitched = false,
   shared = 0,
   ttl: number = CACHE_TTL_MIN,
+  isAfterCompact = false,
 ): Estimate {
   const r = ratesFor(model, contextTokens)
   if (!r || contextTokens <= 0) return { kind: 'unpriced' }
@@ -368,15 +369,15 @@ export function estimate(
   if (isModelSwitched) return { kind: 'cold', rewriteUsd, rates: r, reason: 'model', ttlMin: ttl }
   const minsLeft = lastActivityMs === null ? null : Math.floor(ttl - (nowMs - lastActivityMs) / 60000)
   if (minsLeft !== null && minsLeft <= 0) return { kind: 'cold', rewriteUsd, rates: r, reason: 'expired', ttlMin: ttl }
-  return { kind: 'warm', perCallUsd: (contextTokens * r.read) / 1e6, minsLeft, ttlMin: ttl, rewriteUsd, rates: r }
+  return { kind: 'warm', perCallUsd: isAfterCompact ? rewriteUsd : (contextTokens * r.read) / 1e6, minsLeft, ttlMin: ttl, rewriteUsd, rates: r }
 }
 
 export function estimateFor(
-  u: Pick<Usage, 'contextTokens' | 'model' | 'lastActivityMs' | 'switchedFrom' | 'sharedTokens' | 'cacheTtlMin'>,
+  u: Pick<Usage, 'contextTokens' | 'model' | 'lastActivityMs' | 'switchedFrom' | 'sharedTokens' | 'cacheTtlMin' | 'isAfterCompact'>,
   nowMs: number,
   ctx = u.contextTokens,
 ): Estimate {
-  return estimate(ctx, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom), u.sharedTokens ?? 0, ttlOf(u))
+  return estimate(ctx, u.model, u.lastActivityMs, nowMs, Boolean(u.switchedFrom), u.sharedTokens ?? 0, ttlOf(u), u.isAfterCompact === true)
 }
 
 export const SAVE_GUESS: SaveTurn = { steps: 3, output: 2_000, write: 2_000 }

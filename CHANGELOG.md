@@ -4,6 +4,14 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.1.2] — 2026-10-27
+
+### Fixed
+- **The size right after a compact read low** — before the first request after a compact, *Context ~N just compacted* is an estimate: the conversation Claude Code kept plus the base load (system prompt, tools, instruction files). The base load came from the `/context` categories, which estimate by character count and put Korean instruction files at about 40% of their real size. It now uses this session's first request, which is measured — e.g. *~74k* (−30%) → *~100k* (−6%) against a real 105,823. A forked session still uses the categories, since its first request carries the parent's conversation.
+- **The compact summary in the Resident split read low** — in *Resident = base load + compact summary*, the summary was the kept size Claude Code reports (characters ÷ 4), which puts a Korean summary at under half. It's now what's left after the base load measured on the first request after the compact (cache read + instruction files + skill list) — e.g. *base load 95k + summary 27k* → *69k + 53k*. The compact effects' *incl. N summary* uses the same value, and before that first request the split uses the base load last measured on this computer, so it doesn't jump afterwards.
+- **"Next request" right after a compact read 4–5× low** — the first request after a compact writes the conversation cache anew, but the pane's *Next request* and the bar's *Per request* priced the whole context as cache reads (e.g. *~$0.06* against a real $0.29 of input). Until that request, they now price the shared prefix (system prompt, tools) as read and the rest as written, plus the usual per-request extra.
+- **"After that" in a forked session** — the parent's conversation cache that the fork's first request read was taken as the shared prefix, so a cold cache was still priced almost as reads (*~$0.04* when it should be about $1.07). A fork's first request no longer sets the shared prefix, and while a session doesn't know its own, it uses the one another session measured on this computer (before, everything was priced as rewritten — about 2× high).
+
 ## [1.1.1] — 2026-10-24
 
 ### Changed

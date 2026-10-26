@@ -21,7 +21,11 @@ export const SUMMARY_KEY = 'compactSummaryTokens'
 
 export const KEPT_KEY = 'compactKeptTokens'
 
+export const FIXED_KEY = 'compactFixedTokens'
+
 export const OUTPUT_KEY = 'compactOutputTokens'
+
+export const SHARED_KEY = 'sharedPrefixTokens'
 
 export const SAVE_KEEP = 5
 

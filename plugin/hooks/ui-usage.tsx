@@ -608,10 +608,11 @@ export function drawFlow(
 
 export type Perm = { tokens: number; fixed: number | null; summary: number | null; isEstimated: boolean; isRescaled: boolean }
 
-export function permanentOf(flow: Flow, isPartial: boolean, fallback: number | null): Perm | null {
+export function permanentOf(flow: Flow, isPartial: boolean, fallback: number | null, fixedHint: number | null = null): Perm | null {
   const pending = pendingCompact(flow)
   if (pending?.kept !== undefined && fallback !== null && fallback > pending.kept) {
-    return { tokens: fallback, fixed: fallback - pending.kept, summary: pending.kept, isEstimated: true, isRescaled: false }
+    const fixed = fixedHint !== null && fixedHint > 0 && fixedHint < fallback ? fixedHint : fallback - pending.kept
+    return { tokens: fallback, fixed, summary: fallback - fixed, isEstimated: true, isRescaled: false }
   }
   const measured = flow.compactions.filter(c => c.after !== null)
   const last = measured[measured.length - 1]

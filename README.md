@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.1-4c9be8" alt="Version 1.1.1">
+  <img src="https://img.shields.io/badge/version-1.1.2-4c9be8" alt="Version 1.1.2">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-111">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-112">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,15 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.1.2
+
+Four estimate fixes — sizes and costs around a compact are now closer to the real ones:
+
+- **The size right after a compact** — the base load added to what Claude Code kept now comes from this session's first request (measured), not the `/context` categories, which put Korean instruction files at about 40% of their size (e.g. *~74k* → *~100k* against a real 105,823).
+- **The Resident split** — the compact summary is what's left after the base load measured on the first request after the compact; it used to be Claude Code's character-based count, under half for a Korean summary (e.g. *95k + 27k* → *69k + 53k*).
+- **"Next request" right after a compact** — the first request after a compact writes the cache anew, so it's now priced that way (shared prefix read, the rest written) instead of all reads, which was 4–5× low.
+- **"After that" in a forked session** — no longer nearly free: a fork's first request doesn't count the parent's cache as the shared prefix, and a session that doesn't know its own uses the one measured on this computer.
 
 ## What's new in 1.1.1
 

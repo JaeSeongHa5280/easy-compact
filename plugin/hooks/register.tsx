@@ -81,9 +81,9 @@ import {
   OUTPUT_GUESS,
   SUMMARY_GUESS,
 } from './optimal'
-import { afterGuess, afterInNowTokens, compactSince, compactSummary, costScanFromLines, costScanOf, flowFromRecords, judgeMeasure, judgeOwn, judgeRequest, lacksModels, lastBoundaryAfter, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, ultraStateOf, withPoint, withQuestion, recordsFromTranscript } from './flow'
+import { afterGuess, afterInNowTokens, compactJustMeasured, compactSince, compactSummary, costScanFromLines, costScanOf, fitTokens, fixedHintOf, fixedOf, flowFromRecords, judgeMeasure, judgeOwn, judgeRequest, lacksModels, lastBoundaryAfter, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, ultraStateOf, withPoint, withQuestion, recordsFromTranscript } from './flow'
 import type { Boundary, CompactResultLike } from './flow'
-import type { CostScan, Flow, FlowRecord } from './flow'
+import type { CostScan, FixedStored, Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, agentPart, agentSum, attachHead, continuedName, ctxNumText, effortSplit, PLUGIN_SENT, promptHead, stepLabel, paneTitle } from './text'
 import type { AttachCounts } from './text'
@@ -112,7 +112,7 @@ import type { Lang } from './i18n'
 import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
 import { agentRunFromText, cellScopeOf, foldOlder, nextEffortOutput, nextQuestionCells, nextSwitches, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, turnsFromRecords, withAgentStep, withAppStep, withCellScopes } from './turns'
-import { AFTER_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
+import { AFTER_KEY, FIXED_KEY, SHARED_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
 import type { PaneEvent, Urgency } from './state'
 
 
@@ -632,6 +632,8 @@ const flowQuestions = atom({ plugin: 'easy-compact', key: 'flowQuestions' } as c
 
 const flowShared = atom({ plugin: 'easy-compact', key: 'flowShared' } as const, {})
 
+const flowInherited = atom({ plugin: 'easy-compact', key: 'flowInherited' } as const, null)
+
 const flowLoaded = atom({ plugin: 'easy-compact', key: 'flowLoaded' } as const, false)
 
 const flowNote = atom({ plugin: 'easy-compact', key: 'flowNote' } as const, null)
@@ -745,7 +747,14 @@ async function readTtlConfig($: EngineInterface): Promise<TtlConfig> {
 
 
 async function readFlow($: EngineInterface): Promise<Flow> {
-  return { points: await read($, flowPoints), compactions: await read($, compactions), questions: await read($, flowQuestions), shared: await read($, flowShared) }
+  const inherited = await read($, flowInherited)
+  return {
+    points: await read($, flowPoints),
+    compactions: await read($, compactions),
+    questions: await read($, flowQuestions),
+    shared: await read($, flowShared),
+    ...(inherited !== null ? { inherited } : {}),
+  }
 }
 
 async function turnsFile($: EngineInterface): Promise<string> {
@@ -943,12 +952,14 @@ async function flowFile($: EngineInterface): Promise<string> {
 async function writeFlow($: EngineInterface, flow: Flow): Promise<void> {
   const questions = flow.questions ?? (await read($, flowQuestions))
   const shared = flow.shared ?? (await read($, flowShared))
+  const inherited = flow.inherited ?? (await read($, flowInherited))
   await update($, flowPoints, () => flow.points)
   await update($, compactions, () => flow.compactions)
   await update($, flowQuestions, () => questions)
   await update($, flowShared, () => shared)
+  await update($, flowInherited, () => inherited)
   void flowFile($)
-    .then(path => $.fs.write(path, serializeFlow({ ...flow, questions, shared })))
+    .then(path => $.fs.write(path, serializeFlow({ ...flow, questions, shared, ...(inherited !== null ? { inherited } : {}) })))
     .catch(() => {})
 }
 
@@ -959,7 +970,7 @@ async function importFlow($: EngineInterface): Promise<Flow> {
   try {
     size = (await $.fs.stat(path)).size
   } catch {
-    return { points: [], compactions: [] }
+    return { points: [], compactions: [], inherited: false }
   }
   if (size <= READ_LIMIT) return scanTranscript(await $.fs.read(path), own)
   const mb = Math.round(size / 1048576)
@@ -991,7 +1002,13 @@ async function loadFlow($: EngineInterface, opts: { fromTranscript: boolean } = 
       }
     }
     flow ??= await importFlow($)
-    await writeFlow($, { points: flow.points, compactions: mergeMeasured(flow.compactions, [...old, ...saved]), questions: flow.questions ?? [], shared: flow.shared ?? {} })
+    await writeFlow($, {
+      points: flow.points,
+      compactions: mergeMeasured(flow.compactions, [...old, ...saved]),
+      questions: flow.questions ?? [],
+      shared: flow.shared ?? {},
+      ...(flow.inherited !== undefined ? { inherited: flow.inherited } : {}),
+    })
     await update($, flowNote, () => null)
     await syncCompactSteps($)
     const lastTtl = [...flow.points].reverse().find(p => p.ttl === 5 || p.ttl === 60)?.ttl
@@ -1080,7 +1097,7 @@ async function refreshUsageInner($: EngineInterface, opts: { categories: boolean
       lastActivityMs: lastAt,
       isAfterCompact: since !== null,
       history: opts.pushHistory ? [...(prev?.history ?? []), tokens].slice(-12) : (prev?.history ?? []),
-      sharedTokens: sharedFor(flow, model),
+      sharedTokens: sharedFor(flow, model, await storedShared($)),
       perCallExtraUsd: extraPerCall(flow, model),
       cacheTtlMin,
       cacheTtlMeasured: measuredTtl !== null,
@@ -1310,15 +1327,19 @@ async function loadSettings($: EngineInterface): Promise<void> {
   $.ui.invalidate('ui.render')
 }
 
-async function baseLoad($: EngineInterface, flow: Flow): Promise<number | null> {
-  const first = (await read($, flowNote)) === null && flow.points.length < MAX_POINTS ? (flow.points[0] ?? null) : null
-  return baseOfCategories((await read($, usage))?.categories ?? []) ?? first?.ctx ?? null
+async function baseLoad($: EngineInterface, flow: Flow, model: string): Promise<number | null> {
+  const head = (await read($, flowNote)) === null && flow.points.length < MAX_POINTS && !flow.compactions.some(c => c.index === 0) ? (flow.points[0] ?? null) : null
+  const first = head && (!head.model || !model || modelKey(head.model) === modelKey(model)) ? head.ctx : null
+  const categories = baseOfCategories((await read($, usage))?.categories ?? [])
+  if (flow.inherited === false) return first ?? categories ?? head?.ctx ?? null
+  if (flow.inherited === true) return categories
+  return categories ?? head?.ctx ?? null
 }
 
 async function measureOptimal($: EngineInterface, model: string): Promise<Optimal> {
   const flow = await readFlow($)
   const first = (await read($, flowNote)) === null ? (flow.points[0] ?? null) : null
-  const base = await baseLoad($, flow)
+  const base = await baseLoad($, flow, model)
   const measured = flow.compactions.filter(c => c.after !== null)
   const last = measured[measured.length - 1] ?? null
   const pcSummary = await storedCount($, SUMMARY_KEY)
@@ -1371,7 +1392,7 @@ async function measureOptimal($: EngineInterface, model: string): Promise<Optima
     at: best?.at ?? null,
     onceUsd: inputs && model ? onceUsd(model, inputs) : null,
     capped: best?.capped ?? null,
-    shared: sharedFor(flow, model),
+    shared: sharedFor(flow, model, await storedShared($)),
     perQuestion: await perQuestionOf($, flow, model),
   }
 }
@@ -1508,7 +1529,7 @@ async function followModel($: EngineInterface): Promise<void> {
   const used = (await read($, live))?.model ?? sums[sums.length - 1]?.model ?? null
   const switchedFrom = used !== null && modelKey(used) !== modelKey(model) ? used : null
   if (model === u.model && (u.switchedFrom ?? null) === switchedFrom) return
-  const sharedTokens = sharedFor({ shared: await read($, flowShared) }, model)
+  const sharedTokens = sharedFor({ shared: await read($, flowShared) }, model, await storedShared($))
   await update($, usage, prev => (prev ? { ...prev, model, switchedFrom, sharedTokens } : prev))
   if (model !== u.model) await applyThresholds($)
   $.ui.invalidate('ui.render')
@@ -1576,6 +1597,7 @@ async function recordStep(
   const isWhole = (await read($, flowLoaded)) && (await read($, flowNote)) === null
   const nextFlow = withPoint(flow, { atMs: await $.clock.now(), ctx: contextTokens, usd: cost.usd, model, ...(ttl !== null ? { ttl } : {}), ...(engineNow ? { engine: engineNow } : {}) }, tokens, isWhole)
   await writeFlow($, nextFlow)
+  await saveShared($, flow, nextFlow, model)
   if (nextFlow.compactions.length < flow.compactions.length) await syncCompactSteps($)
   await update($, live, prev => {
     const base: LiveTurn =
@@ -1840,7 +1862,7 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
   if (kept !== null) await $.store.set(KEPT_KEY, kept)
   const event: CompactEvent = { atMs: atMs ?? (await $.clock.now()), trigger, before, after: null, costUsd: measured, index: flow.points.length, ...(kept !== null ? { kept } : {}), via }
   const withEvent: Flow = { points: flow.points, compactions: [...flow.compactions, event] }
-  const after = afterGuess(withEvent, event, before0?.model ?? '', await baseLoad($, flow))
+  const after = afterGuess(withEvent, event, before0?.model ?? '', await baseLoad($, flow, before0?.model ?? ''))
   if (after !== null && before > after) {
     gaugeShrink = { from: before, to: after, at: await $.clock.now() }
     $.ui.invalidate('ui.render')
@@ -1967,6 +1989,47 @@ async function syncCompactSteps($: EngineInterface): Promise<void> {
     const details = syncCompactAfter(prev.details, list)
     return details === prev.details ? prev : { ...prev, details }
   })
+}
+
+async function measureFixed($: EngineInterface, atMs: number, read: number): Promise<void> {
+  const bd = (await $.session.usage({ breakdown: 'summary' })).context.breakdown
+  if (!bd) return
+  let memory = 0
+  for (const f of bd.memoryFiles ?? []) memory += await $.fs.read(f.path).then(text => fitTokens(String(text)), () => f.tokens)
+  const flow = await readFlow($)
+  const c = flow.compactions.find(x => x.atMs === atMs)
+  const p = c ? flow.points[c.index] : undefined
+  const fixed = c && p && c.fixed === undefined ? fixedOf(c, p, read, memory + (bd.skills?.tokens ?? 0)) : null
+  if (fixed === null) return
+  await writeFlow($, { ...flow, compactions: flow.compactions.map(x => (x === c ? { ...x, fixed } : x)) })
+  await $.store.set(FIXED_KEY, { model: p?.model ? modelKey(p.model) : '', tokens: fixed }).catch(() => {})
+  $.ui.invalidate('ui.render')
+}
+
+async function storedFixed($: EngineInterface): Promise<FixedStored | null> {
+  try {
+    const v = (await $.store.get(FIXED_KEY)) as Partial<FixedStored> | undefined
+    return v && typeof v.tokens === 'number' && Number.isFinite(v.tokens) && v.tokens > 0 ? { model: typeof v.model === 'string' ? v.model : '', tokens: v.tokens } : null
+  } catch {
+    return null
+  }
+}
+
+async function storedShared($: EngineInterface): Promise<Record<string, number>> {
+  try {
+    const v = (await $.store.get(SHARED_KEY)) as Record<string, unknown> | undefined
+    if (!v || typeof v !== 'object') return {}
+    return Object.fromEntries(Object.entries(v).filter((e): e is [string, number] => typeof e[1] === 'number' && Number.isFinite(e[1]) && e[1] > 0))
+  } catch {
+    return {}
+  }
+}
+
+async function saveShared($: EngineInterface, before: Flow, after: Flow, model: string): Promise<void> {
+  const key = modelKey(model)
+  const v = after.shared?.[key]
+  if (v === undefined || v <= 0 || v === before.shared?.[key]) return
+  await $.store.set(SHARED_KEY, { ...(await storedShared($)), [key]: v }).catch(() => {})
 }
 
 async function fillCompactAfter($: EngineInterface, after: number): Promise<void> {
@@ -3010,6 +3073,8 @@ export const register: Register = on => {
         const switchedFrom = (await read($, usage))?.switchedFrom ?? null
         if (cost) await recordStep($, e.turnId, cost, result.usage, stepLabel(result.toolUses), result.usage.model, e.effort, switchedFrom)
         const t = result.usage
+        const justMeasured = cost ? compactJustMeasured(await readFlow($)) : null
+        if (justMeasured) void measureFixed($, justMeasured.atMs, t.cache_read_input_tokens).catch(() => {})
         const ctxNow = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
         if (measureAfterCompact) {
           measureAfterCompact = false
@@ -3217,7 +3282,8 @@ export const register: Register = on => {
     const flowNow = await readFlow($)
     const opt = await read($, optimal)
     const inputsNow = opt?.inputs ?? null
-    const permRaw = permanentOf(flowNow, (await read($, flowNote)) !== null, inputsNow?.after ?? null)
+    const fixedHint = pendingCompact(flowNow) ? fixedHintOf(flowNow, u?.model ?? '', await storedFixed($)) : null
+    const permRaw = permanentOf(flowNow, (await read($, flowNote)) !== null, inputsNow?.after ?? null, fixedHint)
     const ctxForPerm = u?.contextTokens ?? null
     const perm = permRaw && ctxForPerm !== null && ctxForPerm > 0 ? { ...permRaw, tokens: Math.min(permRaw.tokens, ctxForPerm) } : permRaw
     const g = gridOf(e.surface)

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.1-4c9be8" alt="버전 1.1.1">
+  <img src="https://img.shields.io/badge/version-1.1.2-4c9be8" alt="버전 1.1.2">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code 플러그인">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Claude Code 2.1.295 이상 필요">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스">
@@ -19,7 +19,7 @@
 <p align="center">
   <a href="README.md">English</a> · <b>한국어</b>
   &nbsp;|&nbsp;
-  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#111-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
+  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#112-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,15 @@ claude plugin uninstall easy-compact@easy-compact
 `~/.claude` 에 clone 하거나 `settings.json` 을 고친 것이 없어 이것으로 끝입니다. 잠깐 쉬고 싶을 뿐이면 지우는 대신 [바를 끄세요](#숨기기--접기--다시-켜기).
 
 </details>
+
+## 1.1.2 에서 바뀐 것
+
+어림 고침 넷 — 컴팩트 앞뒤의 크기와 금액이 실제에 더 가까워졌습니다:
+
+- **컴팩트 직후 크기** — Claude Code 가 남긴 대화에 더하는 기본 적재를 `/context` 분류(한글 지시 파일을 실제의 4할로 셈) 대신 이 세션 첫 요청의 실제 크기로(예: 실제 105,823 에 *~74k* → *~100k*).
+- **상주 나눔** — 컴팩트 요약 = 컴팩트 뒤 첫 요청에서 잰 기본 적재를 뺀 나머지. 전엔 Claude Code 가 글자 수로 센 값이라 한글 요약을 절반 아래로 셌습니다(예: *95k + 27k* → *69k + 53k*).
+- **컴팩트 직후 「다음 요청」** — 컴팩트 뒤 첫 요청은 캐시를 새로 써서 이제 그렇게(공통 앞부분 읽기 · 나머지 새로 쓰기) 셉니다. 전엔 전부 읽기 값이라 4 ~ 5분의 1로 보였습니다.
+- **갈라 온(포크) 세션의 「넘기면」** — 거의 0 으로 보이지 않습니다: 포크의 첫 요청이 읽은 부모 캐시를 공통 앞부분으로 세지 않습니다. 아직 모르는 세션은 이 PC 에서 잰 값을 씁니다.
 
 ## 1.1.1 에서 바뀐 것
 

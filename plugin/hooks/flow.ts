@@ -3,7 +3,7 @@ import { barAnimCss, CACHE_TTL_MIN, costOf, dayOf, engineOfLine, fmtTokens, LEVE
 import type { Tokens } from './cost'
 import { L } from './i18n'
 
-export type Flow = { points: CtxPoint[]; compactions: CompactEvent[]; questions?: number[]; shared?: Record<string, number> }
+export type Flow = { points: CtxPoint[]; compactions: CompactEvent[]; questions?: number[]; shared?: Record<string, number>; inherited?: boolean }
 
 export const MAX_POINTS = 5000
 
@@ -13,6 +13,7 @@ export type FlowRecord =
   | { kind: 'p'; atMs: number; tokens: Tokens; model: string; engine?: string }
   | { kind: 'c'; atMs: number; trigger: string; pre: number; post?: number }
   | { kind: 'q'; atMs: number; text?: string }
+  | { kind: 'i' }
 
 export function promptTextOf(content: unknown): string {
   let text = ''
@@ -43,6 +44,8 @@ export function recordsFromTranscript(text: string, own: string | null = null): 
   const seenPrompt = new Set<string>()
   let carry: string | undefined
   let isOwnAsked = false
+  let isOwnSeen = false
+  let isInherited = false
   for (const line of text.split('\n')) {
     const isBoundary = line.includes('"compact_boundary"')
     const promptId = PROMPT_ID.exec(line)?.[1]
@@ -56,12 +59,17 @@ export function recordsFromTranscript(text: string, own: string | null = null): 
     }
     if (r.isSidechain === true) continue
     if (own !== null && typeof r.sessionId === 'string' && r.sessionId !== own) {
+      if (!isOwnSeen && !isInherited) {
+        isInherited = true
+        out.push({ kind: 'i' })
+      }
       if (isNewPrompt && r.type === 'user') {
         seenPrompt.add(promptId)
         carry = promptTextOf((r.message as { content?: unknown } | undefined)?.content)
       }
       continue
     }
+    isOwnSeen = true
     const atMs = Date.parse(String(r.timestamp ?? '')) || 0
     if (isNewPrompt && r.type === 'user') {
       seenPrompt.add(promptId)
@@ -179,6 +187,8 @@ export function recordsFromLines(text: string): FlowRecord[] {
     } else if (f[0] === 'q' && f.length >= 2) {
       const text = f.slice(2).join(' ')
       out.push(text ? { kind: 'q', atMs: Number(f[1]) || 0, text } : { kind: 'q', atMs: Number(f[1]) || 0 })
+    } else if (f[0] === 'i' && f.length === 1) {
+      out.push({ kind: 'i' })
     }
   }
   return out
@@ -250,8 +260,17 @@ export function isColdStart(flow: Flow, atMs: number, model: string): boolean {
 }
 
 export function noteShared(flow: Flow, atMs: number, model: string, read: number): void {
-  if (!model || model === '?' || !isColdStart(flow, atMs, model)) return
-  flow.shared = { ...flow.shared, [modelKey(model)]: Math.max(0, read) }
+  if (!model || model === '?') return
+  const key = modelKey(model)
+  const v = Math.max(0, read)
+  if (isColdStart(flow, atMs, model)) {
+    if (flow.inherited === true && flow.points.length === 0) return
+    flow.shared = { ...flow.shared, [key]: v }
+    return
+  }
+  if (compactSince(flow) === null) return
+  const known = flow.shared?.[key]
+  flow.shared = { ...flow.shared, [key]: known === undefined ? v : Math.min(known, v) }
 }
 
 export const PER_CALL_MIN = 3
@@ -275,13 +294,18 @@ export function extraPerCall(flow: Flow, model: string): number | null {
   return median(pts.map(p => Math.max(0, p.usd - ((ratesFor(model, p.ctx) ?? r).read * p.ctx) / 1e6)))
 }
 
-export function sharedFor(flow: Pick<Flow, 'shared'>, model: string): number {
-  return flow.shared?.[modelKey(model)] ?? 0
+export function sharedFor(flow: Pick<Flow, 'shared'>, model: string, pc: Readonly<Record<string, number>> = {}): number {
+  const key = modelKey(model)
+  return flow.shared?.[key] ?? pc[key] ?? 0
 }
 
 export function flowFromRecords(records: readonly FlowRecord[]): Flow {
-  const flow: Flow = { points: [], compactions: [], questions: [], shared: {} }
+  const flow: Flow = { points: [], compactions: [], questions: [], shared: {}, inherited: false }
   for (const r of records) {
+    if (r.kind === 'i') {
+      flow.inherited = true
+      continue
+    }
     if (r.kind === 'q') {
       flow.questions!.push(r.atMs)
       continue
@@ -335,12 +359,21 @@ export function serializeFlow(flow: Flow): string {
     const ei = engineIdOf(pt.engine)
     return ei >= 0 ? [...row, ttl, ei] : ttl ? [...row, ttl] : row
   })
-  return JSON.stringify({ v: 5, m: models, ...(engines.length > 0 ? { e: engines } : {}), p, c: flow.compactions, ...(flow.questions ? { q: flow.questions } : {}), ...(flow.shared ? { s: flow.shared } : {}) })
+  return JSON.stringify({
+    v: 5,
+    m: models,
+    ...(engines.length > 0 ? { e: engines } : {}),
+    p,
+    c: flow.compactions,
+    ...(flow.questions ? { q: flow.questions } : {}),
+    ...(flow.shared ? { s: flow.shared } : {}),
+    ...(flow.inherited !== undefined ? { i: flow.inherited ? 1 : 0 } : {}),
+  })
 }
 
 export function parseFlowFile(text: string): Flow | null {
   try {
-    const raw = JSON.parse(text) as { v?: number; m?: unknown; e?: unknown; p?: unknown; c?: unknown; q?: unknown; s?: unknown }
+    const raw = JSON.parse(text) as { v?: number; m?: unknown; e?: unknown; p?: unknown; c?: unknown; q?: unknown; s?: unknown; i?: unknown }
     if ((raw.v !== 1 && raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5) || !Array.isArray(raw.p) || !Array.isArray(raw.c)) return null
     const names = (list: unknown) => (Array.isArray(list) ? (list as unknown[]).map(x => (typeof x === 'string' ? x : '')) : [])
     const models = names(raw.m)
@@ -363,6 +396,7 @@ export function parseFlowFile(text: string): Flow | null {
         index: num(c.index),
         ...(typeof c.summary === 'number' ? { summary: c.summary } : {}),
         ...(typeof c.kept === 'number' && c.kept > 0 ? { kept: c.kept } : {}),
+        ...(typeof c.fixed === 'number' && c.fixed > 0 ? { fixed: c.fixed } : {}),
         ...(typeof c.via === 'string' ? { via: c.via } : {}),
       }))
       .filter((c, i, all) => all.findIndex(o => o.atMs === c.atMs && o.before === c.before) === i)
@@ -371,7 +405,8 @@ export function parseFlowFile(text: string): Flow | null {
       raw.v === 5 && raw.s !== null && typeof raw.s === 'object' && !Array.isArray(raw.s)
         ? Object.fromEntries(Object.entries(raw.s as Record<string, unknown>).map(([k, v]) => [k, num(v)]))
         : undefined
-    return fixAfters(dropFalseCompacts({ points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}) }))
+    const inherited = raw.i === 1 ? true : raw.i === 0 ? false : undefined
+    return fixAfters(dropFalseCompacts({ points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}), ...(inherited !== undefined ? { inherited } : {}) }))
   } catch {
     return null
   }
@@ -537,7 +572,10 @@ export function mergeMeasured(fresh: readonly CompactEvent[], old: readonly Comp
     const near = (o: CompactEvent) => Math.abs(o.atMs - c.atMs) < 10 * 60_000
     const same = old.find(o => o.costUsd !== null && near(o))
     const kept = c.kept ?? old.find(o => o.kept !== undefined && near(o))?.kept
-    return same || kept !== c.kept ? { ...c, ...(same ? { costUsd: same.costUsd } : {}), ...(kept !== undefined ? { kept } : {}) } : c
+    const fixed = c.fixed ?? old.find(o => o.fixed !== undefined && near(o))?.fixed
+    return same || kept !== c.kept || fixed !== c.fixed
+      ? { ...c, ...(same ? { costUsd: same.costUsd } : {}), ...(kept !== undefined ? { kept } : {}), ...(fixed !== undefined ? { fixed } : {}) }
+      : c
   })
 }
 
@@ -774,8 +812,34 @@ export function compactSummary(flow: Flow, c: CompactEvent, first: CtxPoint | nu
 }
 
 export function keptOf(flow: Flow, c: CompactEvent, first: CtxPoint | null): number | null {
+  if (c.fixed !== undefined && c.after !== null && c.after > c.fixed) return c.after - c.fixed
   if (c.kept !== undefined && c.after !== null) return Math.min(c.kept, c.after)
   return compactSummary(flow, c, first)
+}
+
+export function fitTokens(text: string): number {
+  const ko = (text.match(/[가-힣]/g) ?? []).length
+  return Math.round(ko * 1.7 + (text.length - ko) / 2.2)
+}
+
+export function compactJustMeasured(flow: Flow): CompactEvent | null {
+  const last = flow.compactions[flow.compactions.length - 1]
+  return last && last.after !== null && last.fixed === undefined && last.index === flow.points.length - 1 ? last : null
+}
+
+export function fixedOf(c: CompactEvent, p: CtxPoint, read: number, side: number): number | null {
+  if (c.after === null || read <= 0 || p.atMs - c.atMs > coldGapMs(ttlAt(p))) return null
+  const fixed = Math.round(read + side)
+  return fixed < c.after ? fixed : null
+}
+
+export type FixedStored = { model: string; tokens: number }
+
+export function fixedHintOf(flow: Flow, model: string, stored: FixedStored | null): number | null {
+  const last = [...flow.compactions].reverse().find(c => c.after !== null && c.fixed !== undefined)
+  const at = last ? flow.points[last.index]?.model : undefined
+  if (last?.fixed !== undefined && !(at && model && modelKey(at) !== modelKey(model))) return last.fixed
+  return stored && stored.tokens > 0 && (!stored.model || !model || stored.model === modelKey(model)) ? stored.tokens : null
 }
 
 export function measuredBase(flow: Flow, model: string): number | null {
