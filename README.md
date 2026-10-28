@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.2-4c9be8" alt="Version 1.1.2">
+  <img src="https://img.shields.io/badge/version-1.1.3-4c9be8" alt="Version 1.1.3">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-112">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-113">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,14 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.1.3
+
+Compact summaries stay on the real work. Every summary request easy-compact makes now says what's already done:
+
+- **Easy Compact · Easy Auto** — the save step is done, so *Current Work* and *Next Step* are the real work before it. The save answer itself stays word for word right after the summary.
+- **Plain compact** — the answer to your last message is done, so the summary no longer makes "write that answer" the next step (9 of 9 → 1 of 9 on three real conversations).
+- **Idle compaction** — when Claude Code (2.1.290 or later) writes the summary ahead of time for a session idle about an hour, it gets the same line as Plain compact.
 
 ## What's new in 1.1.2
 

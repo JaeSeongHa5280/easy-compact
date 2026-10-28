@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.2-4c9be8" alt="버전 1.1.2">
+  <img src="https://img.shields.io/badge/version-1.1.3-4c9be8" alt="버전 1.1.3">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code 플러그인">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Claude Code 2.1.295 이상 필요">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스">
@@ -19,7 +19,7 @@
 <p align="center">
   <a href="README.md">English</a> · <b>한국어</b>
   &nbsp;|&nbsp;
-  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#112-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
+  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#113-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,14 @@ claude plugin uninstall easy-compact@easy-compact
 `~/.claude` 에 clone 하거나 `settings.json` 을 고친 것이 없어 이것으로 끝입니다. 잠깐 쉬고 싶을 뿐이면 지우는 대신 [바를 끄세요](#숨기기--접기--다시-켜기).
 
 </details>
+
+## 1.1.3 에서 바뀐 것
+
+컴팩트 요약이 실제 작업을 적습니다. easy-compact 가 보내는 요약 요청마다 이미 끝난 것을 먼저 알립니다:
+
+- **이지 컴팩트 · 이지 오토** — 저장 단계는 끝났으니 「지금 하던 일」 · 「다음 단계」는 그 앞의 실제 작업입니다. 저장 답은 요약 바로 뒤에 글 그대로 남습니다.
+- **기본 컴팩트** — 마지막 메시지의 답은 끝났으니 요약이 「그 답 쓰기」를 다음 단계로 적지 않습니다(실제 대화 셋에서 9번 중 9번 → 1번).
+- **쉬는 동안 컴팩트** — Claude Code(2.1.290 부터)가 1시간쯤 쉰 세션의 요약을 미리 쓸 때도 기본 컴팩트와 같은 한 줄을 붙입니다.
 
 ## 1.1.2 에서 바뀐 것
 

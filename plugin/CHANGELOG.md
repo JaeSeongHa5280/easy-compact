@@ -4,6 +4,13 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.1.3] — 2026-10-28
+
+### Fixed
+- **Easy Compact and Easy Auto summaries listed the save step as unfinished** — Claude Code keeps the save answer word for word right after the summary, but writes the summary without seeing it, and the old `/compact` text asked the summary to keep "what the previous [Compact prep] answer wrote". The text now says the save step is already done: *Current Work* and *Next Step* are the real work before it, and the save answer and `[Compact go]` don't go in as a task. Your "after /compact" text follows as before.
+- **Plain compact summaries said the last answer was still to write** — the summary request now starts with one fixed line: the answer to your last message is already done and stays word for word after the summary. On three real conversations, summaries that made "write that answer" the next step went from 9 of 9 to 1 of 9, and the next steps were kept as before.
+- **Idle compaction went without instructions** — Claude Code 2.1.290 or later writes the summary ahead of time when a long session sits idle for about an hour. easy-compact now adds the same line as Plain compact, only when no turn is running. Without it, a summary listed an answer already written as the next step.
+
 ## [1.1.2] — 2026-10-27
 
 ### Fixed

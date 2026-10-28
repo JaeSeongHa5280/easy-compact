@@ -1538,6 +1538,7 @@ async function followModel($: EngineInterface): Promise<void> {
 let measureAfterCompact = false
 let missedCompact: { trigger: string; result: CompactResultLike } | null = null
 let hookCompact: { isRecorded: boolean } | null = null
+let mainTurn: string | null = null
 let engineHadTokens = false
 let suspectCompact: { before: number; atMs: number; since: number; checks: number } | null = null
 const BOUNDARY_CHECKS = 3
@@ -2947,6 +2948,7 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     await ensureLang($)
     const isMain = e.agentId === undefined
+    if (isMain) mainTurn = null
     if (!isMain) await markAgentsDone($, id => id === e.agentId)
     if (isMain) {
       await refreshTtl($)
@@ -2999,6 +3001,7 @@ export const register: Register = on => {
     const submitAt = await $.clock.now()
     if (e.agentId === undefined) await autoEvent($, { type: 'turnStart', turnId: e.turnId, kind: autoTurnOf(e.text.replace(PLUGIN_SENT, '')) }).catch(() => {})
     if (e.agentId === undefined) lastStepAnswer = ''
+    if (e.agentId === undefined) mainTurn = e.turnId
     if (e.agentId === undefined) liveCells = { turnId: e.turnId, tools: [], tails: [] }
     const sent = e.agentId === undefined && pendingSubmit && submitAt - pendingSubmit.atMs < 60_000 ? pendingSubmit : null
     if (e.agentId === undefined) pendingSubmit = null
@@ -3165,7 +3168,8 @@ export const register: Register = on => {
     const isMine = e.agentId === undefined && e.trigger !== 'precompute'
     if (isMine && (await read($, compactPhase)) !== 'compacting') await startCompacting($, compactKindOf(e.trigger))
     try {
-      const result = await next(e)
+      const isIdlePre = e.agentId === undefined && e.trigger === 'precompute' && !e.instructions && mainTurn === null
+      const result = await next(isIdlePre ? { ...e, instructions: directKeep(await currentSettings($)) } : e)
       if (e.agentId === undefined && e.trigger === 'precompute' && !result.skip && result.usage) {
         const pre = costOf(result.usage, (await read($, usage))?.model ?? (await $.session.model()), undefined, null, engineNow)
         if (pre) {

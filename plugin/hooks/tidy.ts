@@ -1,6 +1,6 @@
 import type { Settings } from '../types'
 import { L } from './i18n'
-import { compactText, tidyBody, tidyStyles } from './settings'
+import { compactText, tidyStyles } from './settings'
 
 export function kindDirect(): string {
   return L('기본 컴팩트', 'Plain compact')
@@ -63,30 +63,26 @@ export function tidyPrompt(body: readonly string[]): string {
   ].join('\n')
 }
 
-export function tidyScript(s: Settings): { text: string; isBody: boolean }[] {
-  const body = tidyBody(s)
-  return [
-    { text: L('[이지 컴팩트]', '[Easy Compact]'), isBody: false },
-    ...tidyPrompt(body)
-      .split('\n')
-      .map(text => ({ text, isBody: body.includes(text) })),
-    { text: L(`→ 답이 ${markGo()}으로 끝나면: /compact ${compactKeep(s)}`, `→ If the answer ends with ${markGo()}: /compact ${compactKeep(s)}`), isBody: false },
-    { text: '', isBody: false },
-    { text: L(`[기본 컴팩트] /compact ${directKeep(s)}`, `[Plain compact] /compact ${directKeep(s)}`), isBody: false },
-  ]
+function keepAfterTidy(tag: string): string {
+  return L(
+    `${tag} 요청은 컴팩트 전 정리 단계로 이미 끝났다 — 「지금 하던 일」 · 「다음 단계」는 그 앞에 하던 실제 작업으로 적을 것. 정리 답(이어서 할 일)이 보이면 그대로 남길 것. 준비 답 · ${markGo()}은 요약에 할 일로도 끝 줄로도 쓰지 말 것`,
+    `The ${tag} request was the tidy-up step before compacting and is already done — write "Current Work" and "Next Step" as the real work that came before it. If the tidy answer (next steps) is visible, keep it as is. Do not put the tidy answer or ${markGo()} in the summary, either as a task or as the last line`,
+  )
 }
 
 export function compactKeep(s?: Settings): string {
-  const fixed = L(
-    `직전 ${tidyTag()} 답에 적은 내용("이어서 할 일" 등)은 요약에 그대로 남길 것`,
-    `Keep what the previous ${tidyTag()} answer wrote (e.g. "next steps") in the summary as is`,
-  )
+  const fixed = keepAfterTidy(tidyTag())
   const extra = s ? compactText(s) : ''
   return extra ? `${fixed}. ${extra}` : fixed
 }
 
 export function directKeep(s?: Settings): string {
-  return s ? compactText(s) : L('진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것', 'Keep ongoing work, decisions and next steps in the summary')
+  const fixed = L(
+    '마지막 사용자 메시지에 대한 답은 이미 끝났고 요약 뒤에 원문으로 남는다 — 그 답 쓰기를 「지금 하던 일」 · 「다음 단계」 · 남은 일로 적지 말 것',
+    'The answer to the last user message is already done and stays verbatim after the summary — do not put writing that answer in "Current Work", "Next Step" or pending tasks',
+  )
+  const extra = s ? compactText(s) : L('진행 중 작업 · 결정 · 이어서 할 일은 요약에 남길 것', 'Keep ongoing work, decisions and next steps in the summary')
+  return extra ? `${fixed}. ${extra}` : fixed
 }
 
 export function tidyVerdict(reason: string, answer: string): 'go' | 'hold' | 'stopped' | 'unmarked' {
@@ -131,10 +127,7 @@ export function autoContinuePrompt(): string {
 }
 
 export function autoCompactKeep(): string {
-  return L(
-    `직전 ${pick(AUTO_TAGS.save)} 답에 적은 내용("이어서 할 일" 등)은 요약에 그대로 남길 것. ${tidyStyles().default.compact}`,
-    `Keep what the previous ${pick(AUTO_TAGS.save)} answer wrote (e.g. "next steps") in the summary as is. ${tidyStyles().default.compact}`,
-  )
+  return `${keepAfterTidy(pick(AUTO_TAGS.save))}. ${tidyStyles().default.compact}`
 }
 
 export function kindAuto(): string {
