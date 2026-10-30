@@ -733,8 +733,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     </Box>
   )
 
-  const row = (key: string, left: unknown, rightEl: unknown, align: 'center' | 'flex-start') => (
-    <Box key={key} flexWrap="nowrap" alignItems={align} columnGap={2}>
+  const row = (key: string, left: unknown, rightEl: unknown, align: 'center' | 'flex-start', isUnderWindow = false) => (
+    <Box key={key} flexWrap="nowrap" alignItems={align} columnGap={2} {...(isUnderWindow && !isTerm ? { marginTop: 1 } : {})}>
       <Box flexGrow={1} flexShrink={1} minWidth={0}>
         {left ?? <Text> </Text>}
       </Box>
@@ -920,7 +920,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       <Box flexDirection="column">
         {row('b-r1', grid.limits, controls, 'center')}
         {grid.money ? row('b-r2', grid.money, null, 'center') : null}
-        {row('b-r3', grid.now, compactRow, 'center')}
+        {row('b-r3', grid.now, compactRow, 'center', !grid.money)}
         {confirm}
       </Box>
     )
@@ -939,8 +939,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         : limitsLine
           ? row('b-r1', limitsLine, controls, 'flex-start')
           : row('b-r1', estimateLine, compactOnCost ? oneRight : controls, 'center')}
-      {limitsLine && estimateLine ? row('b-r2', estimateLine, compactOnCost ? compactRow : null, 'center') : null}
-      {compactOnCost ? null : row('b-r3', lastLine, compactRow, 'center')}
+      {limitsLine && estimateLine ? row('b-r2', estimateLine, compactOnCost ? compactRow : null, 'center', compactOnCost) : null}
+      {compactOnCost ? null : row('b-r3', lastLine, compactRow, 'center', !(limitsLine && estimateLine))}
       {confirm}
     </Box>
   )

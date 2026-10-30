@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.1.4] — 2026-10-30
+
+### Fixed
+- **✕ covered the compact button on the row below** — the desktop app draws bar buttons taller than their row and lets them reach into the rows above and below. Where it uses its larger buttons (28px on a 20px row), two buttons on neighboring rows overlapped by 8px. That happens when the row with the compact button (**[Cancel]** while it saves) sits right under the row with ✕ — for example with no limits row (an API key session) or with the question row turned off. Only in those layouts and only in the desktop app, that row now has half a line of space above it, so the bar is about 10px taller there. The terminal and the other layouts are unchanged.
+
 ## [1.1.3] — 2026-10-28
 
 ### Fixed
