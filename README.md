@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.1.4-4c9be8" alt="Version 1.1.4">
+  <img src="https://img.shields.io/badge/version-1.2.0-4c9be8" alt="Version 1.2.0">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-114">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-120">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,13 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.2.0
+
+- **Easy Auto switch on the bar** — right next to **[Compact]**: press it to turn Easy Auto on or off in this session. It's blue when on, and hovering it shows the range. It used to sit at the top right of the *Compact now?* card. In a terminal it's **[ Easy Auto ]**.
+- **Turn Easy Auto off while it saves or compacts** — the switch stays on the bar while Easy Auto is at work; turn it back on and that run carries on.
+- **Old records cleaned up once a day** — easy-compact deletes its own per-session records left untouched for longer than Claude Code keeps conversations (at least 32 days). There's nothing to set.
+- **The bar's top row is cut off less often** when the card opens — the card's blank lines shrink to fit the 12 lines the app gives the space above the input.
 
 ## What's new in 1.1.4
 
@@ -402,11 +409,11 @@ Hover the gauge for the context and your compact range (as size, % or both — *
 
 ### 4. Easy Compact — one click
 
-<img src="docs/img/confirm.png" width="860" alt="Compact now? card: context 312k to 82k, savings per question, the message toolbar, the Easy Auto switch at the top right, Easy Compact · Clear · Cancel">
+<img src="docs/img/confirm.png" width="860" alt="Compact now? card: context 312k to 82k, savings per question, the message toolbar, Easy Compact · Clear · Cancel; the bar above it shows Compact overdue and the Easy Auto switch">
 
 <img src="docs/img/keep-working.png" width="860" alt="The cache has expired and compacting now would cost more: the card says Keep working, with only an OK button">
 
-**"Compact now?" shows what you save per question and what the compact costs.** Its toolbar [Normal | Long-session handoff | Wrap-up | Write my own] picks what to keep, and what the chosen text does is shown in two lines (*Save* · *Reply*) — with **Write my own**, type into the two boxes right there (**①** text sent before compacting · **②** text after /compact) and it saves with that. The buttons are **▶ Easy Compact** · **Clear** · **✕ Cancel**. **Clear** (/clear — start over with an empty conversation, no summary) doesn't clear right away: the same spot asks *Clear the conversation?* with how many questions and how much context Claude forgets, and **[← Back]** · **[Clear]**. The **Easy Auto** switch at the card's top right is in [5. Easy Auto](#5-easy-auto--compacts-for-you). With a cold cache it's the *Cache expired* card — continuing vs a plain compact, with no save question: **▶ Plain compact** (Claude's /compact, showing the text it adds) · **Clear** · **✕ Cancel** (a save question would first re-send everything). **When compacting now would cost more** (a cold cache where continuing is cheaper, or little to save), the card has no compact buttons, just *Keep working* — easy-compact decides the money side with numbers and doesn't leave it to the session. In a terminal the card's buttons are numbered — **1** Easy (Plain) compact · **2** Clear · **3** Cancel · **4** Easy Auto on / off (not on the cold-cache card) — and typing the number in an empty prompt presses it (while it asks about Clear: **1** Clear · **2** Back). Pressing **Easy Compact**:
+**"Compact now?" shows what you save per question and what the compact costs.** Its toolbar [Normal | Long-session handoff | Wrap-up | Write my own] picks what to keep, and what the chosen text does is shown in two lines (*Save* · *Reply*) — with **Write my own**, type into the two boxes right there (**①** text sent before compacting · **②** text after /compact) and it saves with that. The buttons are **▶ Easy Compact** · **Clear** · **✕ Cancel**. **Clear** (/clear — start over with an empty conversation, no summary) doesn't clear right away: the same spot asks *Clear the conversation?* with how many questions and how much context Claude forgets, and **[← Back]** · **[Clear]**. Easy Auto has its own switch on the bar, right next to **[Compact]** — see [5. Easy Auto](#5-easy-auto--compacts-for-you). With a cold cache it's the *Cache expired* card — continuing vs a plain compact, with no save question: **▶ Plain compact** (Claude's /compact, showing the text it adds) · **Clear** · **✕ Cancel** (a save question would first re-send everything). **When compacting now would cost more** (a cold cache where continuing is cheaper, or little to save), the card has no compact buttons, just *Keep working* — easy-compact decides the money side with numbers and doesn't leave it to the session. In a terminal the card's buttons are numbered — **1** Easy (Plain) compact · **2** Clear · **3** Cancel — and typing the number in an empty prompt presses it (while it asks about Clear: **1** Clear · **2** Back). Pressing **Easy Compact**:
 
 ```mermaid
 flowchart LR
@@ -424,9 +431,9 @@ flowchart LR
 
 ### 5. Easy Auto — compacts for you
 
-<img src="docs/img/auto.png" width="900" alt="Easy Auto on: the bar's compact button becomes a blue Auto 200k chip, and the Easy Auto switch at the top right of the Compact now? popup is on">
+<img src="docs/img/auto.png" width="900" alt="Easy Auto on: the Easy Auto switch next to the bar's Compact button is blue, with the Compact now? card open above the input">
 
-**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch at the top right of the card the bar's **[Compact]** opens (per session — new sessions start with it off; in a terminal it's **4** on the card). While it's on, the bar's compact button becomes a blue *Auto 200k* chip, and with the bar folded or on Slim the line below the input shows *🔄 Auto 200k* (press it for that card). While Claude is answering, pressing the bar's blue chip turns Easy Auto off in that session right away instead of opening the card. The range is **Easy Auto range**, right below the compact range — in the Settings **Compact** tab and in the Overview tab's Compact timing card (per session — a new session starts at 400k–500k and a range you pick stays in that session; on a model with a smaller context window it starts at the highest range below Claude Code's auto-compact line).
+**Leave it on and a long task won't stall at a compact.** Turn it on with the **Easy Auto** switch right next to the bar's **[Compact]** (per session — new sessions start with it off; in a terminal it's **[ Easy Auto ]**). The switch turns blue and a short note shows the range; hover it for the range and what Easy Auto is doing. With the bar folded or on Slim, the line below the input shows *🔄 Auto 200k* — press it to turn Easy Auto off. The switch stays on the bar while Easy Auto saves or compacts: turn it off then and it stops after the save without compacting, or skips the pick-up message after the compact; turn it back on and that run carries on. The range is **Easy Auto range**, right below the compact range — in the Settings **Compact** tab and in the Overview tab's Compact timing card (per session — a new session starts at 400k–500k and a range you pick stays in that session; on a model with a smaller context window it starts at the highest range below Claude Code's auto-compact line).
 
 | When | What it does |
 |---|---|
@@ -436,7 +443,7 @@ flowchart LR
 | The cache expires or the model changes | Turns Easy Auto off in that session with a one-line note |
 | Compacting now would cost more (cold cache · little to save) | Skips that one time |
 
-While it runs, the bar and the strip show the current step (*Easy Auto · saving → then compact* · *Easy Auto compact in progress…*). Typing doesn't turn it off — if the save answer doesn't end with *[Compact go]* (you typed in between, or there was something to lose), it doesn't compact that time, and if you typed after the compact it doesn't send the pick-up message. If your prompt box holds text you haven't sent, it doesn't send its summary or compact and waits (chip *Auto · waiting for your text*) — send it and it runs after that answer, clear it and it goes on (unless the cache went cold while it waited — then Easy Auto turns off — or Claude Code compacted the idle conversation itself and the context is now below the range; from 1.1.1); after a compact with text in the box it doesn't send the pick-up message (from 1.0.2 — it only checks whether the box has text, and neither keeps nor sends it). While it's on, a folded bar doesn't open by itself when it's time to compact (Easy Auto handles the alert). What Easy Auto sends starts with *[Easy Auto · summary]* · *[Easy Auto · continue]*, stays in the conversation, and those requests cost tokens.
+While it runs, the bar and the strip show the current step (*Easy Auto · saving → then compact* · *Easy Auto compact in progress…*). Typing doesn't turn it off — if the save answer doesn't end with *[Compact go]* (you typed in between, or there was something to lose), it doesn't compact that time, and if you typed after the compact it doesn't send the pick-up message. If your prompt box holds text you haven't sent, it doesn't send its summary or compact and waits (*Auto · waiting for your text* on the switch's tip) — send it and it runs after that answer, clear it and it goes on (unless the cache went cold while it waited — then Easy Auto turns off — or Claude Code compacted the idle conversation itself and the context is now below the range; from 1.1.1); after a compact with text in the box it doesn't send the pick-up message (from 1.0.2 — it only checks whether the box has text, and neither keeps nor sends it). While it's on, a folded bar doesn't open by itself when it's time to compact (Easy Auto handles the alert). What Easy Auto sends starts with *[Easy Auto · summary]* · *[Easy Auto · continue]*, stays in the conversation, and those requests cost tokens.
 
 ### 6. The Easy Compact pane
 
@@ -448,7 +455,7 @@ Open it by clicking the bar's **gauge** (in a terminal, **[Pane ▸]**). The fir
 
 <img src="docs/img/terminal.png" width="900" alt="The same bar and Easy Compact pane in the Claude Code terminal">
 
-**The same bar and pane in the CLI.** To press the bar's buttons, press ctrl+x tab to move into the bar (or click, in fullscreen mode). A folded bar leaves one **[⇱ Easy Compact]** line in its place — reach it the same way and press Enter to open the bar again. Slim is one line in the bar's place (**[120k]** — press it for the pane, plus the compact button when it's time), and Easy Auto turns on and off with **4** on the compact card.
+**The same bar and pane in the CLI.** To press the bar's buttons, press ctrl+x tab to move into the bar (or click, in fullscreen mode). A folded bar leaves one **[⇱ Easy Compact]** line in its place — reach it the same way and press Enter to open the bar again. Slim is one line in the bar's place (**[120k]** — press it for the pane, plus the compact button and **[ Easy Auto ]** when it's time).
 
 ## Hide, fold, bring it back
 

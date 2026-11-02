@@ -1,16 +1,17 @@
 import type { CompactEvent, CompactInputs, CompactPhase, PaneView, Settings, TurnSummary, Usage } from '../types'
-import { approxUsd, average, coldFor, compactPayoff, estimateFor, fmtTokens, fmtUsd, isLittleToSave, LEVEL_HEX, LEVEL_TEXT, levelOf, thresholds } from './cost'
+import { approxUsd, compactPayoff, estimateFor, fmtTokens, LEVEL_HEX, levelOf, thresholds } from './cost'
 import { flashAnyOn, isFlashBusy } from './flash'
 import { withIcon } from './glyph'
 import { L } from './i18n'
-import { isSlim, revealLabel, slimViewOf, TIDY_IDS, tidySteps, tidyStyles, viewOf } from './settings'
-import { cellsOf, ctxNumText, fitCells, paneTitle, rangeNumText, textCh, widthOf } from './text'
-import { directKeep } from './tidy'
+import { isSlim, revealLabel, slimViewOf, viewOf } from './settings'
+import { cellsOf, ctxNumText, paneTitle, rangeNumText, textCh, widthOf } from './text'
+import { directKeep, isAutoSaveKind, kindAuto } from './tidy'
+import { cardCalc, clearDescEl, clearLeadEl, coldLineEl, costLineEl, easyParts, keepEl, plainParts, tidyPickerEl } from './ui-ask'
 import { afterCells, bandGrid, costGroups, drawLimitsLine, fitEstimateLine, fitLastTurnLine, fitLine, lastTurnCells, minShowOf, setCtxUnit, SLIM_BUTTON_PARTS, slimButtonText, slimParts, slimSummaryCells, bandShowNow } from './ui-band'
 import type { SpendShown } from './ui-band'
-import { ACCENT, CH_PX, segChoice, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, nameColW, phaseLook, pulseDot, stageText } from './ui-common'
+import { ACCENT, CH_PX, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, nameColW, phaseLook, pulseDot, stageText } from './ui-common'
 import { gaugeWidth } from './gauge'
-import { autoBarChip, autoBarChipW, autoToggleEl } from './ui-auto'
+import { autoBarChip, autoBarChipW } from './ui-auto'
 import type { IconName, Ui } from './ui-common'
 
 export type BarEvent = { surface: string; props: { isWorking: boolean; bodyColumns: number; maxRows: number } }
@@ -34,6 +35,7 @@ export type BarData = {
   compactDraft: string | null
   clearAsk: { questions: number | null } | null
   auto?: { isOn: boolean; label: string; tip: string } | null
+  aboveRows?: number
 }
 
 export type BarActions = {
@@ -58,13 +60,80 @@ export type BarActions = {
   toggleAuto?: () => Promise<unknown>
 }
 
-function autoPress(act: BarActions, isConfirming: boolean, isWorking: boolean): (() => void) | null {
-  if (isConfirming) return () => void act.closeConfirm()
-  if (isWorking) return act.toggleAuto ? () => void act.toggleAuto!() : null
-  return () => void act.openConfirm()
+const autoOffTip = () => L('누르면 이 세션의 이지 오토를 끕니다', 'Press to turn Easy Auto off in this session')
+const autoOnTip = () => L('누르면 이 세션의 이지 오토를 켭니다', 'Press to turn Easy Auto on in this session')
+
+type Drawn = { type?: unknown; props?: Record<string, unknown>; children?: unknown }
+
+const TEXT_SLACK = 1.05
+
+const CARD_FRAME_ROWS = 2
+
+const numOf = (v: unknown) => (typeof v === 'number' ? v : 0)
+const isShown = (p: Record<string, unknown>) => p.display !== 'none' && p.position !== 'absolute'
+const padCols = (p: Record<string, unknown>) => numOf(p.paddingLeft ?? p.paddingX ?? p.padding) + numOf(p.paddingRight ?? p.paddingX ?? p.padding)
+const marginRows = (n: unknown) => {
+  const p = (n as Drawn | null)?.props ?? {}
+  return (numOf(p.marginTop ?? p.marginY ?? p.margin) + numOf(p.marginBottom ?? p.marginY ?? p.margin)) / 2
 }
 
-const autoOffTip = () => L('누르면 이 세션의 이지 오토를 끕니다', 'Press to turn Easy Auto off in this session')
+function kidsOf(n: unknown): unknown[] {
+  const el = n as Drawn
+  const out: unknown[] = []
+  const add = (k: unknown) => {
+    if (Array.isArray(k)) k.forEach(add)
+    else if (k !== null && k !== undefined && typeof k !== 'boolean' && k !== '') out.push(k)
+  }
+  add(el.children ?? el.props?.children)
+  return out
+}
+
+function textOf(n: unknown): string {
+  if (typeof n === 'string' || typeof n === 'number') return String(n)
+  if (Array.isArray(n)) return n.map(textOf).join('')
+  return n && typeof n === 'object' ? kidsOf(n).map(textOf).join('') : ''
+}
+
+function natCols(n: unknown): number {
+  if (typeof n === 'string' || typeof n === 'number') return textCh(String(n)) * TEXT_SLACK
+  if (Array.isArray(n)) return n.reduce((s: number, k) => s + natCols(k), 0)
+  if (!n || typeof n !== 'object') return 0
+  const el = n as Drawn
+  const p = el.props ?? {}
+  if (!isShown(p)) return 0
+  if (el.type === 'Text') return natCols(textOf(el))
+  if (el.type === 'Button') return natCols(typeof p.label === 'string' ? p.label : textOf(el)) + 2
+  if (el.type !== 'Box') return 3
+  if (typeof p.width === 'number') return p.width
+  const kids = kidsOf(el)
+  if (p.flexDirection === 'column') return Math.max(0, ...kids.map(natCols)) + padCols(p)
+  return kids.reduce((s: number, k) => s + natCols(k), 0) + numOf(p.columnGap ?? p.gap) * Math.max(0, kids.length - 1) + padCols(p)
+}
+
+export function deskRows(n: unknown, cols: number): number {
+  if (Array.isArray(n)) return n.reduce((s: number, k) => s + deskRows(k, cols) + marginRows(k), 0)
+  if (typeof n === 'string' || typeof n === 'number') return Math.max(1, Math.ceil(natCols(n) / Math.max(1, cols)))
+  if (!n || typeof n !== 'object') return 0
+  const el = n as Drawn
+  const p = el.props ?? {}
+  if (!isShown(p)) return 0
+  if (el.type === 'Text') return String(p.wrap ?? '').startsWith('truncate') ? 1 : deskRows(textOf(el), cols)
+  if (el.type !== 'Box') return 1
+  if (typeof p.height === 'number') return p.height
+  const inner = cols - padCols(p)
+  const kids = kidsOf(el)
+  if (p.flexDirection === 'column') return deskRows(kids, inner) + (numOf(p.rowGap ?? p.gap) * Math.max(0, kids.length - 1)) / 2
+  if (kids.length === 0) return 0
+  const fixedOf = (k: unknown) => ((k as Drawn).type === 'Box' && typeof (k as Drawn).props?.width === 'number' ? ((k as Drawn).props!.width as number) : null)
+  const canShrink = (k: unknown) => fixedOf(k) === null && (typeof k === 'string' || (k as Drawn).type === 'Text' || ((k as Drawn).type === 'Box' && (k as Drawn).props?.minWidth === 0))
+  const gaps = numOf(p.columnGap ?? p.gap) * (kids.length - 1)
+  const firm = kids.filter(k => !canShrink(k)).reduce((s: number, k) => s + (fixedOf(k) ?? natCols(k)), 0)
+  const want = kids.filter(canShrink).reduce((s: number, k) => s + natCols(k), 0)
+  const room = inner - gaps - firm
+  if (p.flexWrap === 'wrap' && firm + want + gaps > inner) return Math.max(1, Math.ceil((firm + want + gaps) / Math.max(1, inner)))
+  const widthOfKid = (k: unknown) => fixedOf(k) ?? (canShrink(k) && want > room ? Math.max(4, (room * natCols(k)) / Math.max(1, want)) : Math.min(natCols(k), Math.max(4, inner)))
+  return Math.max(1, ...kids.map(k => deskRows(k, widthOfKid(k))))
+}
 
 export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const { Box, Button, Text } = ui
@@ -79,14 +148,11 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
 
   const lineEst = u && !e.props.isWorking ? estimateFor(u, nowMs) : null
   const showLastLine = !(mode !== 'full' || !show.lastTurn || lineEst?.kind === 'cold' || u?.isAfterCompact)
-  const afterTokens = inputs?.after ?? u?.contextTokens ?? 0
+  const calc = cardCalc(u, inputs, sums, nowMs)
+  const { est, isSwitched, cold, isColdWin, callsPerQ, isLittle, isLoss } = calc
 
   const level = u ? levelOf(u.contextTokens) : 'ok'
   const look = phaseLook(phase, kind, false)
-  const est = u ? estimateFor(u, nowMs) : null
-  const isSwitched = est?.kind === 'cold' && est.reason === 'model'
-  const cold = u && inputs && est?.kind === 'cold' ? coldFor(u, inputs) : null
-  const isColdWin = cold !== null && cold.compactUsd < cold.continueUsd
   const shownLevel = est?.kind === 'cold' && !isColdWin ? 'ok' : level
   const pulse = (hex: string, alt: string) => pulseDot(ui, e.surface, hex, alt)
   const withTip = (key: string, button: unknown, text: string | readonly string[], right = 4) =>
@@ -105,9 +171,6 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       </Box>
     )
   const isRange = thresholds().isRange === true
-  const callsPerQ = average(sums.slice(-10).map(t => t.steps).filter(n => n > 0))
-  const pay = u && inputs && est?.kind === 'warm' ? compactPayoff(u.contextTokens, inputs, u.model, callsPerQ) : null
-  const isLittle = pay !== null && u !== null && isLittleToSave(u.contextTokens, afterTokens, pay.breakEvenCalls)
   const isJustShrunk = just !== null && u !== null && just.before > u.contextTokens
   const justPay = isJustShrunk && inputs ? compactPayoff(just.before, inputs, u.model, callsPerQ) : null
   const justTip = isJustShrunk
@@ -163,7 +226,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           : L('곧 컴팩트할 때', 'Compact soon')
         : compactCore
   const autoOn = d.auto?.isOn === true
-  const compactLabel = autoOn ? d.auto!.label : isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : compactText
+  const compactLabel = isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : compactText
   const canBlink = !isConfirming && phase !== 'tidying' && phase !== 'compacting' && !isNotNow && !isLittle && level === 'cut' && !autoOn
   const motion = sNow.motion !== 'reduce'
   const isBusy = phase === 'compacting' || phase === 'tidying'
@@ -206,20 +269,23 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const txtW = (text: string) => widthOf(text, isTerm)
   const gaugePx = gaugeWidth(gaugeShapeNow(), 16)
   const ICON_W = isTerm ? 0 : Math.ceil(gaugePx / CH_PX) + 1
-  const shortLabel = autoOn ? L('오토', 'Auto') : L('컴팩트', 'Compact')
+  const shortLabel = L('컴팩트', 'Compact')
   const dotW = ICON_W > 0 ? 0 : 2
+  const isAutoBusy = isBusy && (isAutoSaveKind(kind) || kind === kindAuto())
+  const hasAutoCtl = d.auto != null && act.toggleAuto !== undefined && (autoOn || isAutoBusy || (!isBusy && est?.kind !== 'cold'))
+  const autoName = L('이지 오토', 'Easy Auto')
+  const autoCtlW = hasAutoCtl ? 1 + autoBarChipW(autoName, isTerm) : 0
   const compactW = (label: string) =>
     phase === 'compacting' && look
-      ? ICON_W + dotW + txtW(look.text)
+      ? ICON_W + dotW + txtW(look.text) + autoCtlW
       : phase === 'tidying' && look
-        ? ICON_W + dotW + txtW(look.text) + 1 + btnW(L('취소', 'Cancel'))
-        : autoOn
-          ? ICON_W + autoBarChipW(isConfirming ? `${label} ▾` : label, isTerm)
-          : e.props.isWorking
-          ? ICON_W + txtW(isTerm ? `[ ${label} ]` : label)
-          : isConfirming
-            ? ICON_W + btnW(`${label} ▾`)
-            : (phase === 'held' ? txtW(withIcon('⏸', L('보류됨', 'On hold'))) + 1 : 0) + ICON_W + btnW(label)
+        ? ICON_W + dotW + txtW(look.text) + 1 + btnW(L('취소', 'Cancel')) + autoCtlW
+        : autoCtlW +
+          (e.props.isWorking
+            ? ICON_W + txtW(isTerm ? `[ ${label} ]` : label)
+            : isConfirming
+              ? ICON_W + btnW(`${label} ▾`)
+              : (phase === 'held' ? txtW(withIcon('⏸', L('보류됨', 'On hold'))) + 1 : 0) + ICON_W + btnW(label))
   const hasGaugeDoor = !isTerm && offIcon !== null
   const controlsW = (isTerm ? btnW(view === 'usage' ? L('패널 ▾', 'Pane ▾') : L('패널 ▸', 'Pane ▸')) + 1 : hasGaugeDoor ? 0 : btnW('◔') + 1) + (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
   const hasLimitsLine = hasLimitsRow && u !== null
@@ -279,12 +345,22 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         {withTip('band-compact-box-busy', <Text dimColor>{name}</Text>, tipLines(busyTip), tipRight(txtW(name)))}
       </Box>
     )
+  const autoCtl = () =>
+    hasAutoCtl
+      ? withTip(
+          `band-auto-${autoOn ? 'on' : 'off'}${e.props.isWorking ? '-busy' : ''}`,
+          autoBarChip(ui, e.surface, autoName, () => void act.toggleAuto!(), autoOn),
+          [...(d.auto!.label !== L('오토', 'Auto') ? [d.auto!.label] : []), autoOn ? autoOffTip() : autoOnTip(), d.auto!.tip],
+          tipRight(autoBarChipW(autoName, isTerm)),
+        )
+      : null
   const compactRow =
     phase === 'compacting' && look ? (
       <Box columnGap={1} alignItems="center" flexShrink={0}>
         {gaugeDoor(brandIcon)}
         {brandIcon ? null : pulse(look.hex, L('컴팩트 중', 'Compacting'))}
         <Text color={look.color}>{look.text}</Text>
+        {autoCtl()}
       </Box>
     ) : phase === 'tidying' && look ? (
       <Box columnGap={1} alignItems="center" flexShrink={0}>
@@ -292,21 +368,15 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         {brandIcon ? null : pulse(look.hex, L('저장 중', 'Saving'))}
         <Text color={look.color}>{look.text}</Text>
         <Button key="compact-cancel" label={L('취소', 'Cancel')} variant="secondary" onPress={() => act.cancelTidy()} />
-      </Box>
-    ) : autoOn ? (
-      <Box columnGap={1} alignItems="center">
-        {gaugeDoor(offIcon)}
-        {withTip(
-          `band-auto-chip-${isConfirming ? 'open' : e.props.isWorking ? 'busy' : 'idle'}`,
-          autoBarChip(ui, e.surface, isConfirming ? `${barLabel} ▾` : barLabel, autoPress(act, isConfirming, e.props.isWorking)),
-          tipLines(isConfirming ? L('누르면 확인창 닫기', 'Press to close the card') : e.props.isWorking ? autoOffTip() : d.auto!.tip),
-          tipRight(autoBarChipW(barLabel, isTerm)),
-        )}
+        {autoCtl()}
       </Box>
     ) : e.props.isWorking ? (
-      busyName(barLabel, canBlink ? brandIcon : offIcon)
+      <Box columnGap={1} alignItems="center" flexShrink={0}>
+        {busyName(barLabel, canBlink ? brandIcon : offIcon)}
+        {autoCtl()}
+      </Box>
     ) : isConfirming ? (
-      <Box columnGap={1} alignItems="center">
+      <Box columnGap={1} alignItems="center" flexShrink={0}>
         {gaugeDoor(isNotNow ? offIcon : brandIcon)}
         {withTip(
           'band-compact-box-open',
@@ -314,9 +384,10 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
           tipRight(btnW(`${barLabel} ▾`)),
         )}
+        {autoCtl()}
       </Box>
     ) : (
-      <Box columnGap={1} alignItems="center">
+      <Box columnGap={1} alignItems="center" flexShrink={0}>
         {phase === 'held' ? (
           <Box key="held" columnGap={1} alignItems="center">
             {decoIcon(ui, 'held', LEVEL_HEX.warn, L('보류됨', 'On hold'), 'held-icon', { color: 'warning' })}
@@ -325,7 +396,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         ) : null}
         {gaugeDoor(isNotNow ? offIcon : brandIcon)}
         {withTip(
-          `band-compact-tip-${autoOn ? 'auto' : isNotNow ? 'not-now' : shownLevel}`,
+          `band-compact-tip-${isNotNow ? 'not-now' : shownLevel}`,
           <Button
             key="compact"
             label={barLabel}
@@ -333,26 +404,21 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             onPress={() => act.openConfirm()}
           />,
           tipLines(
-            autoOn
-              ? d.auto!.tip
-              : isNotNow
-                ? notNowTip
-                : (coldWinTip ?? (isShortLabel ? `${compactLabel} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}` : L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
+            isNotNow
+              ? notNowTip
+              : (coldWinTip ?? (isShortLabel ? `${compactLabel} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}` : L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
           ),
           tipRight(btnW(barLabel)),
         )}
+        {autoCtl()}
       </Box>
     )
 
-  const tidyNow = tidySteps(sNow)
+  const tidyIn = { sNow, tidyDraft, compactDraft }
   const isWide = e.props.bodyColumns >= 115
   const limitsLine = hasLimitsRow && u ? drawLimitsLine(ui, e.surface, u, nowMs, show) : null
   const isNarrowTerminal = e.surface === 'terminal' && e.props.bodyColumns < 100
   const baseRows = (limitsLine ? (isNarrowTerminal ? 4 : 3) : 2) + 2 + 1 + (isWide ? 1 : 2) + (isWide ? 1 : 2) + (isWide ? 2 : 4) + 1
-  const spare = e.surface === 'desktop' ? 3 : e.props.maxRows - baseRows
-  const gapBelowSummary = spare >= 1 ? 1 : 0
-  const gapAboveSummary = spare >= 2 ? 1 : 0
-  const gapAboveActions = spare >= 3 ? 1 : 0
   const isTermCard = e.surface === 'terminal'
   const keyOf = (digit: string) => (isTermCard ? { hotkey: digit } : {})
   const numbered = (digit: string, text: string) => (isTermCard ? `${digit} ${text}` : text)
@@ -368,36 +434,39 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       </Box>
     </Box>
   )
-  const card = (key: string, icon: IconName, title: string, summary: unknown, rows: unknown[], isColdFirst: boolean, acts?: unknown, headRight: unknown = null) => (
-    <Box key={key} flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1}>
-      <Box key={`${key}-head`} columnGap={1} justifyContent="space-between" alignItems="center">
-      <Box columnGap={1}>
-        {(() => {
-          const el =
-            u
-              ? gaugeEl(ui, e.surface, u.contextTokens, { key: 'card-icon-svg', alt: title, px: 16, motion: false })
-              : gaugeEl(ui, e.surface, 0, { key: 'card-icon-svg', alt: title, px: 16, motion: false })
-          return el ? <Box key="card-icon">{el}</Box> : null
-        })()}
-        <Text bold>{title}</Text>
+  const card = (barRows: number, key: string, icon: IconName, title: string, summary: unknown, rows: unknown[], isColdFirst: boolean, acts?: (gapTop: number) => unknown) => {
+    const spare = isTerm ? e.props.maxRows - baseRows : Math.floor(2 * (e.props.maxRows - barRows - deskRows([summary, ...rows], W - 5) - 2 - CARD_FRAME_ROWS))
+    const gapBelowSummary = spare >= 1 ? 1 : 0
+    const gapAboveSummary = spare >= 2 ? 1 : 0
+    const gapAboveActions = spare >= 3 ? 1 : isTerm ? 0 : 0.5
+    return (
+      <Box key={key} flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1}>
+        <Box key={`${key}-head`} columnGap={1} justifyContent="space-between" alignItems="center">
+        <Box columnGap={1}>
+          {(() => {
+            const el =
+              u
+                ? gaugeEl(ui, e.surface, u.contextTokens, { key: 'card-icon-svg', alt: title, px: 16, motion: false })
+                : gaugeEl(ui, e.surface, 0, { key: 'card-icon-svg', alt: title, px: 16, motion: false })
+            return el ? <Box key="card-icon">{el}</Box> : null
+          })()}
+          <Text bold>{title}</Text>
+        </Box>
+        </Box>
+        <Box paddingLeft={2} marginTop={gapAboveSummary} marginBottom={gapBelowSummary}>
+          {summary}
+        </Box>
+        <Box flexDirection="column" paddingLeft={2}>
+          {rows}
+        </Box>
+        {acts ? acts(gapAboveActions) : actions(isColdFirst, gapAboveActions)}
       </Box>
-      {headRight}
-      </Box>
-      <Box paddingLeft={2} marginTop={gapAboveSummary} marginBottom={gapBelowSummary}>
-        {summary}
-      </Box>
-      <Box flexDirection="column" paddingLeft={2}>
-        {rows}
-      </Box>
-      {acts ?? actions(isColdFirst)}
-    </Box>
-  )
+    )
+  }
   const pad = (text: string) => `\u00a0\u00a0${text}\u00a0\u00a0`
   const wide = (text: string) => <Text bold>{pad(text)}</Text>
-  const isLoss = (cold !== null && !isColdWin) || isLittle
-  const autoButton = d.auto && act.toggleAuto ? autoToggleEl(ui, e.surface, d.auto.isOn, () => void act.toggleAuto!(), keyOf('4')) : null
-  const actions = (isColdFirst: boolean) => (
-    <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapAboveActions}>
+  const actions = (isColdFirst: boolean, gapTop: number) => (
+    <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapTop}>
       {isLoss ? (
         <Button key="compact-no" label={pad(numbered('1', L('✓ 확인 · 이어 가기', '✓ OK · keep working')))} variant="primary" {...keyOf('1')} onPress={() => act.closeConfirm()}>
           {wide(numbered('1', L('✓ 확인 · 이어 가기', '✓ OK · keep working')))}
@@ -435,85 +504,9 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       )}
     </Box>
   )
-  const keepRow = (isCold: boolean) => (
-    <Box key="e-keep">
-      <Text wrap="wrap">
-        <Text bold color="success">
-          {L('작업을 이어 가세요', 'Keep working')}
-        </Text>
-        <Text>
-          {isCold
-            ? L('. 다음 질문이 캐시를 다시 데웁니다. 컴팩트할 때가 되면 바가 알려 줍니다.', '. Your next question warms the cache again. The bar tells you when it is time to compact.')
-            : L('. 지금은 아낄 게 거의 없습니다.', '. There is little to save right now.')}
-        </Text>
-      </Text>
-    </Box>
-  )
-  const saves = pay !== null && pay.saveCallUsd > 0 && !isLittle
-  const costLine =
-    pay && u ? (
-      <Text wrap="wrap">
-        <Text>{L('컨텍스트 ', 'Context ')}</Text>
-        {stageText(ui, 'ctx', LEVEL_TEXT[levelOf(u.contextTokens)], fmtTokens(u.contextTokens), { noFlash: true })}
-        <Text dimColor> → </Text>
-        <Text bold color="success">
-          ~{fmtTokens(Math.min(afterTokens, u.contextTokens))}
-        </Text>
-        <Text dimColor>{' · '}</Text>
-        {!saves ? (
-          <Text bold color="error">{L('아낄 게 거의 없어 지금 컴팩트하면 손해입니다', 'little to save, so compacting now is a loss')}</Text>
-        ) : (
-          <Text>
-            <Text>{pay.saveQuestionUsd !== null ? L('질문 1개당 ', 'saves ') : L('요청 1회당 ', 'saves ')}</Text>
-            <Text bold color="success">
-              ~{fmtUsd(pay.saveQuestionUsd ?? pay.saveCallUsd)}
-            </Text>
-            <Text>{pay.saveQuestionUsd !== null ? L(' 아낌', ' per question') : L(' 아낌', ' per request')}</Text>
-          </Text>
-        )}
-        <Text dimColor>{' · '}</Text>
-        <Text>{L('이지 컴팩트 ', 'Easy Compact ')}</Text>
-        <Text bold>
-          ~{fmtUsd(pay.costUsd)}
-        </Text>
-      </Text>
-    ) : null
-  const tidyPicker = () =>
-    segChoice(
-      ui,
-      'pick-tidy',
-      [...TIDY_IDS.map(id => ({ value: id, label: tidyStyles()[id].name })), { value: 'custom', label: L('직접 쓰기', 'Write my own') }],
-      sNow.tidy,
-      v => void act.pickTidy(v),
-    )
-  const InputEl = (ui as unknown as { Input?: (p: Record<string, unknown>) => unknown }).Input
-  const inputBox = (key: string, el: unknown) => (
-    <Box key={key} {...(isTerm ? { borderStyle: 'round' as const, borderColor: 'promptBorder', paddingX: 1 } : {})}>
-      {el}
-    </Box>
-  )
-  const tidyInput = () =>
-    InputEl ? (
-      <InputEl
-        key="pick-tidy-text"
-        placeholder={tidyStyles().default.body.join(' ')}
-        value={tidyDraft ?? sNow.tidyCustom}
-        submitLabel={L('저장', 'Save')}
-        onInput={(v: string) => void act.typeTidy(v)}
-        onSubmit={(v: string) => void act.saveTidy(v)}
-      />
-    ) : null
-  const compactInput = () =>
-    InputEl ? (
-      <InputEl
-        key="pick-compact-text"
-        placeholder={tidyStyles().default.compact}
-        value={compactDraft ?? (sNow.compactCustom !== '' ? sNow.compactCustom : tidyStyles().default.compact)}
-        submitLabel={L('저장', 'Save')}
-        onInput={(v: string) => void act.typeCompact(v)}
-        onSubmit={(v: string) => void act.saveCompact(v)}
-      />
-    ) : null
+  const keepRow = (isCold: boolean) => keepEl(ui, isCold)
+  const costLine = costLineEl(ui, calc, u)
+  const tidyPicker = () => tidyPickerEl(ui, tidyIn, act)
   const saveRow = () => (
     <Box key="e-save" columnGap={1}>
       <Box width={choiceW} flexShrink={0}>
@@ -524,30 +517,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         <Box key="e-save-pick" columnGap={1} alignItems="center" flexWrap="wrap">
           {tidyPicker()}
         </Box>
-        {sNow.tidy === 'custom' && InputEl ? (
-          <Box key="e-save-custom" flexDirection="column" rowGap={0.5}>
-            <Text key="e-save-pre-name" dimColor>{L('① 컴팩트 전에 보낼 글(저장 턴)', '① Sent before compacting (save turn)')}</Text>
-            {inputBox('e-save-pre', tidyInput())}
-            <Text key="e-save-post-name" dimColor>{L('② /compact 뒤에 붙일 글', '② After /compact')}</Text>
-            {inputBox('e-save-post', compactInput())}
-          </Box>
-        ) : sNow.tidy === 'custom' ? (
-          <Text key="e-save-custom" wrap="wrap">
-            <Text dimColor>{L('보낼 글 ', 'Sends ')}</Text>
-            <Text>{L(`「${fitCells(sNow.tidyCustom !== '' ? sNow.tidyCustom : tidyStyles().default.body.join(' '), 44)}」`, `"${fitCells(sNow.tidyCustom !== '' ? sNow.tidyCustom : tidyStyles().default.body.join(' '), 44)}"`)}</Text>
-          </Text>
-        ) : (
-          <Text key="e-save-keep" wrap="wrap">
-            <Text dimColor>{L('저장 ', 'Save ')}</Text>
-            <Text bold>{tidyNow.keep}</Text>
-          </Text>
-        )}
-        {sNow.tidy === 'custom' ? null : (
-          <Text key="e-save-reply" wrap="wrap">
-            <Text dimColor>{L('답 ', 'Reply ')}</Text>
-            <Text bold>{tidyNow.reply}</Text>
-          </Text>
-        )}
+        {easyParts(ui, tidyIn, act, e.surface)}
       </Box>
     </Box>
   )
@@ -561,38 +531,12 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         <Box key="e-direct-pick" columnGap={1} alignItems="center" flexWrap="wrap">
           {tidyPicker()}
         </Box>
-        {sNow.tidy === 'custom' && InputEl ? (
-          <Box key="e-direct-custom" flexDirection="column">
-            <Text key="e-direct-post-name" dimColor>{L('② /compact 뒤에 붙일 글', '② After /compact')}</Text>
-            {inputBox('e-direct-post', compactInput())}
-          </Box>
-        ) : (
-          <Text key="e-direct-text" wrap="wrap">
-            <Text bold>{L('/compact 뒤 글로 컴팩트합니다', 'Runs /compact with the text after it')}</Text>
-            <Text dimColor> · </Text>
-            <Text>{L(`「${directKeep(sNow)}」`, `"${directKeep(sNow)}"`)}</Text>
-          </Text>
-        )}
-        <Text key="e-direct-note" dimColor wrap="wrap">
-          {L('저장 질문 없이 바로 컴팩트합니다.', 'Compacts right away, without the save question.')}
-        </Text>
+        {plainParts(ui, tidyIn, act, e.surface)}
       </Box>
     </Box>
   )
   const clearRow = (isCold: boolean) =>
-    explain(
-      'e-clear',
-      numbered('2', L('클리어', 'Clear')),
-      <Text>
-        <Text bold>{L('대화를 비우고 새로 시작(/clear)', 'Start over with an empty conversation (/clear)')}</Text>
-        <Text dimColor> · </Text>
-        <Text>
-          {isCold
-            ? L('비용 없음 · 요약 없음', 'no cost · no summary')
-            : L('요약 없이 지웁니다. 남기지 않은 결정은 사라집니다.', 'Clears without a summary. Anything not saved yet is gone.')}
-        </Text>
-      </Text>,
-    )
+    explain('e-clear', numbered('2', L('클리어', 'Clear')), clearDescEl(ui, isCold))
   const clearYes = (
     <Button key="clear-yes" label={pad(numbered('1', L('지우기', 'Clear')))} variant="secondary" {...keyOf('1')} onPress={() => act.clearNow()}>
       {wide(numbered('1', L('지우기', 'Clear')))}
@@ -604,31 +548,27 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     </Button>
   )
   const lostQ = clearAsk?.questions ? clearAsk.questions : null
-  const lostLead =
-    L('요약 없이 새 대화로 시작합니다. 지금까지의 ', 'Starts a new conversation without a summary. Claude forgets everything so far') +
-    (lostQ !== null ? L('', ': ') : u ? L('대화 ', ': ') : L('대화', ''))
-  const clearAskCard = clearAsk
-    ? card(
-        'confirm-clear',
-        'compact',
-        L('대화를 지울까요?', 'Clear the conversation?'),
-        <Text wrap="wrap">
-          <Text>{lostLead}</Text>
-          {lostQ !== null ? <Text bold>{L(`질문 ${lostQ}개`, `${lostQ} question${lostQ === 1 ? '' : 's'}`)}</Text> : null}
-          {u && lostQ !== null ? <Text dimColor>{' · '}</Text> : null}
-          {u ? stageText(ui, 'ctx', LEVEL_TEXT[levelOf(u.contextTokens)], fmtTokens(u.contextTokens), { noFlash: true }) : null}
-          <Text>{L(u ? ' 를 Claude 가 잊습니다.' : '를 Claude 가 잊습니다.', '.')}</Text>
-        </Text>,
-        [],
-        false,
-        <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapAboveActions}>
-          {isTermCard ? [clearYes, clearBack] : [clearBack, clearYes]}
-        </Box>,
-      )
-    : null
-  const coldConfirm =
+  const clearAskCard = (barRows: number) =>
+    clearAsk
+      ? card(
+          barRows,
+          'confirm-clear',
+          'compact',
+          L('대화를 지울까요?', 'Clear the conversation?'),
+          clearLeadEl(ui, u, lostQ),
+          [],
+          false,
+          gapTop => (
+            <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapTop}>
+              {isTermCard ? [clearYes, clearBack] : [clearBack, clearYes]}
+            </Box>
+          ),
+        )
+      : null
+  const coldConfirm = (barRows: number) =>
     est?.kind === 'cold' && u
       ? card(
+          barRows,
           'confirm-cold',
           isSwitched ? 'switch' : 'cold',
           isSwitched
@@ -638,50 +578,20 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             : isLoss
               ? L('캐시가 만료됐지만 지금은 컴팩트하지 않는 편이 낫습니다', 'The cache has expired, but it’s better not to compact now')
               : L('캐시가 만료됐습니다. 기본 컴팩트할까요?', 'The cache has expired. Do a plain compact?'),
-          <Text wrap="wrap">
-            <Text>{L('그냥 이어 가면 첫 요청이 ', (u.sharedTokens ?? 0) > 0 ? 'Continuing as is, the first request rewrites ' : 'Continuing as is, the first request rewrites all ')}</Text>
-            {stageText(ui, 'ctx', LEVEL_TEXT[levelOf(u.contextTokens)], fmtTokens(u.contextTokens), { noFlash: true })}
-            <Text>
-              {(u.sharedTokens ?? 0) > 0
-                ? L(
-                    ` 중 ~${fmtTokens(u.contextTokens - Math.min(u.sharedTokens!, u.contextTokens))} 를 다시 씀 `,
-                    ` (~${fmtTokens(u.contextTokens - Math.min(u.sharedTokens!, u.contextTokens))} of it, the shared prefix is read) `,
-                  )
-                : L(' 전체를 다시 씀 ', ' ')}
-            </Text>
-            <Text bold>~{fmtUsd(cold?.continueUsd ?? est.rewriteUsd)}</Text>
-            {cold === null ? null : (
-              <Text>
-                <Text dimColor>{' · '}</Text>
-                <Text>{L('기본 컴팩트하면 ', 'a plain compact ')}</Text>
-                <Text bold>~{fmtUsd(cold.compactUsd)}</Text>
-                <Text dimColor> → </Text>
-                <Text bold>~{fmtTokens(Math.min(afterTokens, u.contextTokens))}</Text>
-                <Text dimColor>{' · '}</Text>
-                {isColdWin ? (
-                  <Text bold color="success">
-                    {L(`${fmtUsd(cold.continueUsd - cold.compactUsd)} 이득`, `saves ${fmtUsd(cold.continueUsd - cold.compactUsd)}`)}
-                  </Text>
-                ) : (
-                  <Text>
-                    <Text bold color="error">
-                      {L(`${approxUsd(cold.compactUsd - cold.continueUsd)} 손해`, `${approxUsd(cold.compactUsd - cold.continueUsd)} more`)}
-                    </Text>
-                    <Text>{L(' · 그냥 이어 가는 편이 쌉니다', ' · continuing as is is cheaper')}</Text>
-                  </Text>
-                )}
-              </Text>
-            )}
-          </Text>,
+          coldLineEl(ui, calc, u),
           isLoss ? [keepRow(true)] : [directRow, clearRow(true)],
           true,
         )
       : null
-  const confirm = !isConfirming ? null : (clearAskCard ?? coldConfirm ??
+  const confirmUnder = (bar: unknown[]) => {
+    if (!isConfirming) return null
+    const barRows = isTerm ? 0 : deskRows(bar, W) + (d.aboveRows ?? 0)
+    return clearAskCard(barRows) ?? coldConfirm(barRows) ??
       (isLoss
         ?
-          card('confirm', 'compact', L('지금 컴팩트하면 손해입니다', 'Compacting now would cost more than it saves'), costLine, [keepRow(false)], false, undefined, autoButton)
-        : card('confirm', 'compact', L('컴팩트할까요?', 'Compact now?'), costLine, [saveRow(), clearRow(false)], false, undefined, autoButton)))
+          card(barRows, 'confirm', 'compact', L('지금 컴팩트하면 손해입니다', 'Compacting now would cost more than it saves'), costLine, [keepRow(false)], false)
+        : card(barRows, 'confirm', 'compact', L('컴팩트할까요?', 'Compact now?'), costLine, [saveRow(), clearRow(false)], false))
+  }
   const panelButton = (key: PaneView, name: string) => (
     <Button
       key={key}
@@ -755,7 +665,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             {isBusyPhase || isConfirming || wantsButton || autoOn ? compactRow : null}
           </Box>
           {over.length === 0 || isBusyPhase ? null : <Box key="b-slim-more">{fitLine(ui, over, W - 2).el}</Box>}
-          {confirm}
+          {confirmUnder([])}
         </Box>
       )
     }
@@ -784,7 +694,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         {roomWhy}
       </Text>
     ) : null
-    const btnLabel = autoOn ? d.auto!.label : isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : L('이지 컴팩트', 'Easy Compact')
+    const btnLabel = isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : L('이지 컴팩트', 'Easy Compact')
     const btnLook = autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const }
     const right = isBusyPhase ? (
       <Box key="b-slim-right" columnGap={1} alignItems="center" flexShrink={0}>
@@ -793,14 +703,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     ) : (
       <Box key="b-slim-right" columnGap={1} alignItems="center" flexShrink={0}>
         {gaugeDoor(slimIcon)}
-        {autoOn && (isConfirming || showBtn) ? (
-          withTip(
-            'band-auto-chip-slim',
-            autoBarChip(ui, e.surface, isConfirming ? `${btnLabel} ▾` : btnLabel, autoPress(act, isConfirming, e.props.isWorking)),
-            tipLines(e.props.isWorking && !isConfirming ? autoOffTip() : d.auto!.tip),
-            tipRight(autoBarChipW(btnLabel, false)),
-          )
-        ) : isConfirming ? (
+        {isConfirming ? (
           withTip(
             'band-compact-box-open',
             <Button key="compact-close" label={`${btnLabel} ▾`} {...btnLook} onPress={() => act.closeConfirm()} />,
@@ -811,46 +714,51 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           withTip('band-compact-box-busy', <Text dimColor>{btnLabel}</Text>, tipLines(busyTip), tipRight(txtW(btnLabel)))
         ) : showBtn ? (
           withTip(
-            `band-compact-tip-${autoOn ? 'auto' : isNotNow ? 'not-now' : shownLevel}`,
+            `band-compact-tip-${isNotNow ? 'not-now' : shownLevel}`,
             <Button key="compact" label={btnLabel} {...btnLook} onPress={() => act.openConfirm()} />,
-            tipLines(autoOn ? d.auto!.tip : isNotNow ? notNowTip : (coldWinTip ?? L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
+            tipLines(isNotNow ? notNowTip : (coldWinTip ?? L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
             tipRight(btnW(btnLabel)),
           )
         ) : null}
+        {showBtn || isConfirming ? autoCtl() : null}
         {isSum
           ? withTip('sc-close-tip', <Button key="sc-close" label="✕" plain dimColor onPress={() => void act.toggleSummary()} />, [L('닫습니다. 아래 버튼으로 다시 열 수 있습니다', 'Closes it. Reopen it with the button below')], 4)
           : withTip('slim-dismiss-tip', <Button key="slim-dismiss" label="✕" plain dimColor onPress={() => act.dismissSlim()} />, [L('닫습니다. 늦어지거나 캐시가 만료되면 다시 알려 드립니다', 'Closes it. It shows again if it runs late or the cache expires')], 4)}
       </Box>
     )
-    const rightW = isBusyPhase ? 0 : ICON_W + (showBtn || isConfirming ? btnW(`${btnLabel} ▾`) + 1 : 0) + btnW('✕')
+    const rightW = isBusyPhase ? 0 : ICON_W + (showBtn || isConfirming ? btnW(`${btnLabel} ▾`) + 1 + autoCtlW : 0) + btnW('✕')
     const lineCells = isSum && u ? slimSummaryCells(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : over
     const sideW = availOf(rightW + 2) - (whyText ? txtW(`${whyText} · `) + 1 : 0) - 3
     const side = lineCells.length > 0 ? fitLine(ui, lineCells, Math.max(0, sideW), null) : null
     const isBelow = side !== null && side.over
     const cells = side === null || isBelow ? null : side.el
     const more = isBelow ? fitLine(ui, lineCells, W - 2).el : null
+    const slimRow = (
+      <Box key={isSum ? 'b-slim-sum' : 'b-slim'} columnGap={2} alignItems="center" justifyContent="space-between" flexWrap="nowrap">
+        <Box key="b-slim-left" columnGap={1} alignItems="center" flexShrink={1} minWidth={0} flexWrap="wrap">
+          {isBusyPhase ? null : why}
+          {isBusyPhase || cells === null ? null : (
+            <Box key="b-slim-cells" flexShrink={1} minWidth={0}>
+              {why ? <Text dimColor>· </Text> : null}
+              {cells}
+            </Box>
+          )}
+        </Box>
+        {right}
+      </Box>
+    )
+    const moreRow = more === null || isBusyPhase ? null : <Box key={isSum ? 'b-slim-sum-more' : 'b-slim-more'}>{more}</Box>
     return (
       <Box flexDirection="column">
-        <Box key={isSum ? 'b-slim-sum' : 'b-slim'} columnGap={2} alignItems="center" justifyContent="space-between" flexWrap="nowrap">
-          <Box key="b-slim-left" columnGap={1} alignItems="center" flexShrink={1} minWidth={0} flexWrap="wrap">
-            {isBusyPhase ? null : why}
-            {isBusyPhase || cells === null ? null : (
-              <Box key="b-slim-cells" flexShrink={1} minWidth={0}>
-                {why ? <Text dimColor>· </Text> : null}
-                {cells}
-              </Box>
-            )}
-          </Box>
-          {right}
-        </Box>
-        {more === null || isBusyPhase ? null : <Box key={isSum ? 'b-slim-sum-more' : 'b-slim-more'}>{more}</Box>}
-        {confirm}
+        {slimRow}
+        {moreRow}
+        {confirmUnder([slimRow, moreRow])}
       </Box>
     )
   }
   if (mode === 'min') {
     const isShort = e.surface !== 'terminal'
-    const miniName = autoOn ? L('오토', 'Auto') : L('컴팩트', 'Compact')
+    const miniName = L('컴팩트', 'Compact')
     const miniLook = autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const }
     const compactTip = isColdWin
       ? (coldWinTip ?? (isSwitched ? L('모델 바뀜 · 기본 컴팩트 권장', 'Model switched · plain compact advised') : L('캐시 만료 · 기본 컴팩트 권장', 'Cache expired · plain compact advised')))
@@ -864,10 +772,13 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             : L('곧 컴팩트할 때', 'Compact soon')
           : L('컴팩트', 'Compact')
     const compactMini =
-      !isShort || autoOn || phase === 'compacting' || phase === 'tidying' ? (
+      !isShort || phase === 'compacting' || phase === 'tidying' ? (
         compactRow
       ) : e.props.isWorking ? (
-        busyName(miniName, canBlink ? brandIcon : offIcon)
+        <Box columnGap={1} alignItems="center">
+          {busyName(miniName, canBlink ? brandIcon : offIcon)}
+          {autoCtl()}
+        </Box>
       ) : isConfirming ? (
         <Box columnGap={1} alignItems="center">
           {gaugeDoor(isNotNow ? offIcon : brandIcon)}
@@ -877,6 +788,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             tipLines(L('누르면 확인창 닫기', 'Press to close the card')),
             tipRight(btnW(`${miniName} ▾`)),
           )}
+          {autoCtl()}
         </Box>
       ) : (
         <Box columnGap={1} alignItems="center">
@@ -890,23 +802,25 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
               {...miniLook}
               onPress={() => act.openConfirm()}
             />,
-            tipLines(autoOn ? `${d.auto!.label} · ${d.auto!.tip}` : isNotNow ? notNowTip : `${compactTip} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}`),
+            tipLines(isNotNow ? notNowTip : `${compactTip} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}`),
             tipRight(btnW(miniName)),
           )}
+          {autoCtl()}
         </Box>
       )
+    const miniRow = row(
+      'b-r1',
+      estimateLine,
+      <Box key="b-one-right" columnGap={2} alignItems="center" flexShrink={0}>
+        {compactMini}
+        {controls}
+      </Box>,
+      'center',
+    )
     return (
       <Box flexDirection="column">
-        {row(
-          'b-r1',
-          estimateLine,
-          <Box key="b-one-right" columnGap={2} alignItems="center" flexShrink={0}>
-            {compactMini}
-            {controls}
-          </Box>,
-          'center',
-        )}
-        {confirm}
+        {miniRow}
+        {confirmUnder([miniRow])}
       </Box>
     )
   }
@@ -916,12 +830,15 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       ? bandGrid(ui, e.surface, u, nowMs, show, sNow.sessionColors, spendNow, showLastLine ? lastSum : null, availOf(Math.max(controlsW, compactW(barLabel))))
       : null
   if (grid) {
+    const g1 = row('b-r1', grid.limits, controls, 'center')
+    const g2 = grid.money ? row('b-r2', grid.money, null, 'center') : null
+    const g3 = row('b-r3', grid.now, compactRow, 'center', !grid.money)
     return (
       <Box flexDirection="column">
-        {row('b-r1', grid.limits, controls, 'center')}
-        {grid.money ? row('b-r2', grid.money, null, 'center') : null}
-        {row('b-r3', grid.now, compactRow, 'center', !grid.money)}
-        {confirm}
+        {g1}
+        {g2}
+        {g3}
+        {confirmUnder([g1, g2, g3])}
       </Box>
     )
   }
@@ -931,17 +848,22 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       {controls}
     </Box>
   )
+  const r0 = limitsLine && isNarrowTerminal ? row('b-r0', null, controls, 'center') : null
+  const r1 =
+    limitsLine && isNarrowTerminal
+      ? row('b-r1', limitsLine, null, 'flex-start')
+      : limitsLine
+        ? row('b-r1', limitsLine, controls, 'flex-start')
+        : row('b-r1', estimateLine, compactOnCost ? oneRight : controls, 'center')
+  const r2 = limitsLine && estimateLine ? row('b-r2', estimateLine, compactOnCost ? compactRow : null, 'center', compactOnCost) : null
+  const r3 = compactOnCost ? null : row('b-r3', lastLine, compactRow, 'center', !(limitsLine && estimateLine))
   return (
     <Box flexDirection="column">
-      {limitsLine && isNarrowTerminal ? row('b-r0', null, controls, 'center') : null}
-      {limitsLine && isNarrowTerminal
-        ? row('b-r1', limitsLine, null, 'flex-start')
-        : limitsLine
-          ? row('b-r1', limitsLine, controls, 'flex-start')
-          : row('b-r1', estimateLine, compactOnCost ? oneRight : controls, 'center')}
-      {limitsLine && estimateLine ? row('b-r2', estimateLine, compactOnCost ? compactRow : null, 'center', compactOnCost) : null}
-      {compactOnCost ? null : row('b-r3', lastLine, compactRow, 'center', !(limitsLine && estimateLine))}
-      {confirm}
+      {r0}
+      {r1}
+      {r2}
+      {r3}
+      {confirmUnder([r0, r1, r2, r3])}
     </Box>
   )
 }

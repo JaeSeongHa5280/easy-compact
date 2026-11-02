@@ -4,6 +4,19 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.2.0] — 2026-11-02
+
+### Added
+- **Easy Auto switch on the bar** — right next to **[Compact]**: press it to turn Easy Auto on or off in this session. It's blue when on, and hovering it shows the range and what Easy Auto is doing. It used to sit at the top right of the *Compact now?* card, which now holds only Easy Compact. In a terminal it's **[ Easy Auto ]** (**[ ✓ Easy Auto ]** when on), and the card's **4** is gone.
+- **Turn Easy Auto off while it saves or compacts** — the switch stays on the bar while Easy Auto is at work. Turned off while saving, it stops after the save and doesn't compact; while compacting, it doesn't send the pick-up message afterwards. Turn it back on and that run carries on.
+- **Old records cleaned up once a day** — when a session starts, at most once a day, easy-compact deletes from its own data folder the per-session records nobody touched for longer than Claude Code keeps conversations (`cleanupPeriodDays`, at least 32 days), and old logs it no longer writes. There's nothing to set; the current session's records and the diagnostics you saved stay.
+
+### Changed
+- **The 🔄 chip below the input turns Easy Auto off** — with the bar folded or on Slim, pressing it turns Easy Auto off in that session. It used to open the card.
+
+### Fixed
+- **The bar's top row was cut off when the card opened** — the desktop app gives the space above the input 12 lines. The card's blank lines now shrink to fit what's left, so the limits row stays in view more often. A very narrow window or a long cold-cache card can still go over.
+
 ## [1.1.4] — 2026-10-30
 
 ### Fixed

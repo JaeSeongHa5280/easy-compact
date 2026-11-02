@@ -99,7 +99,7 @@ import { permanentOf, drawAllSpend, setPaneBarMotion } from './ui-usage'
 import type { AllSpendLine, Tally } from './ui-usage'
 import { drawSettingsView, drawUpdateDrawer } from './ui-settings'
 import { cellMark, drawAnswerChip, liveStrip, sampleTurn, sampleUsage, spinnerCost } from './ui-answer'
-import { drawBar } from './ui-bar'
+import { deskRows, drawBar } from './ui-bar'
 import type { BarActions, BarData } from './ui-bar'
 import { drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
 import type { PaneMainActions } from './ui-pane'
@@ -658,6 +658,26 @@ function log($: EngineInterface, text: string): void {
   try {
     $.ui.log(`easy-compact: ${text}`, { to: 'debug' })
   } catch {
+  }
+}
+
+const CLEAN_KEY = 'dataCleanAt'
+
+async function cleanupOwnData($: EngineInterface): Promise<void> {
+  try {
+    const now = await $.clock.now()
+    const last = await $.store.get(CLEAN_KEY)
+    if (typeof last === 'number' && now - last < 86_400_000) return
+    await $.store.set(CLEAN_KEY, now)
+    const kept = await $.settings.read({ key: 'cleanupPeriodDays' }).catch(() => undefined)
+    const days = Math.max(32, typeof kept === 'number' && kept >= 1 ? Math.floor(kept) : 30)
+    const ran = await $.process.run(['node', `${$.plugin.root}/tools/clean-data.mjs`, await dataDir($), String(days), await $.session.id()], { timeoutMs: 20_000 })
+    const gone = ran.exitCode === 0 ? (JSON.parse(ran.stdout) as Record<string, number>) : null
+    const total = gone ? Object.values(gone).reduce((s, n) => s + n, 0) : 0
+    if (ran.exitCode !== 0) log($, `data cleanup exit ${ran.exitCode}`)
+    else if (total > 0) log($, `data cleanup (${days} days): ${ran.stdout.trim()}`)
+  } catch (err) {
+    log($, `data cleanup failed — ${String(err)}`)
   }
 }
 
@@ -2716,7 +2736,7 @@ async function autoChip($: EngineInterface, ui: Ui, s: Settings, surface: string
   if (!a?.on) return null
   const u = await read($, usage)
   const text = autoChipText(a, s, u?.contextTokens ?? null, u?.window)
-  return <ui.Button key="auto-chip" label={surface === 'terminal' ? text : `🔄 ${text}`} variant="secondary" {...(a.stop ? { dimColor: true } : {})} onPress={() => void barActs($).openConfirm()} />
+  return <ui.Button key="auto-chip" label={surface === 'terminal' ? text : `🔄 ${text}`} variant="secondary" {...(a.stop ? { dimColor: true } : {})} onPress={() => void barActs($).toggleAuto!()} />
 }
 
 async function autoBarOf($: EngineInterface, s: Settings, u: Usage | null): Promise<NonNullable<BarData['auto']>> {
@@ -2881,6 +2901,7 @@ export const register: Register = on => {
       .then(() => refreshUsage($, { categories: true, pushHistory: false }))
       .catch(() => {})
     void refreshUpdateInfo($).catch(() => {})
+    void cleanupOwnData($)
     $.clock.every(1500, () => {
       void syncPane($).catch(() => {})
       void loadSettings($).catch(() => {})
@@ -3480,9 +3501,10 @@ export const register: Register = on => {
     const older = isConfirming && (await read($, isAskingClear)) ? await read($, turnsOlder) : undefined
     const clearAsk = older === undefined ? null : { questions: older === null ? null : sums.length + older.count }
     const isStrip = e.surface !== 'terminal' && slimViewOf(sNow).spin !== 'off'
-    const bar = drawingBar(nowMs, () => drawBar(ui, e, { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, ...drafts, clearAsk, auto: autoBar }, barActs($)))
     const noteEl = await autoNoteOf($, ui, sNow)
     const others = await next(e).catch(() => null)
+    const aboveRows = isConfirming && e.surface !== 'terminal' ? deskRows([others, noteEl], e.props.bodyColumns) : 0
+    const bar = drawingBar(nowMs, () => drawBar(ui, e, { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, ...drafts, clearAsk, auto: autoBar, aboveRows }, barActs($)))
     if (e.surface === 'terminal') {
       return bar || noteEl ? (
         <ui.Box key="ec-band-t" flexDirection="column">
