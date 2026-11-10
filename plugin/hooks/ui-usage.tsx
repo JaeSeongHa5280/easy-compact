@@ -23,7 +23,7 @@ import {
   pendingCompact,
 } from './flow'
 import type { CompactEffect, Flow } from './flow'
-import { APP_MIN_USD, ctxNumText, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, betweenSwitchText, callsOf, costBreakdown, effortKey, effortLabel, limitName, midSwitchText, switchText, switchTags, recentSteps } from './text'
+import { APP_MIN_USD, advisorOf, advisorText, ctxNumText, promptHead, clipText, cellsOf, fitCells, gainText, agoText, agentHead, agentPart, agentSum, betweenSwitchText, callsOf, costBreakdown, effortKey, effortLabel, limitName, midSwitchText, switchText, switchTags, recentSteps } from './text'
 import {
   ACCENT,
   TALK_HEX,
@@ -73,6 +73,7 @@ import { L, plural } from './i18n'
 import { iconOf, onDesktop, withIcon } from './glyph'
 import { BRAND_HEX, questionScope, rasterOf, ultraPieces } from './ui-common'
 import { flowCells, flowLayout, timingCells } from './cells'
+import { addModelCounts } from './turns'
 
 const FLOW_ROWS = 6
 
@@ -117,9 +118,9 @@ export function liveBlock(
 ) {
   const { Box, Text } = ui
   const { fromModel, fromEffort, toModel, toEffort } = changesOf(now, older)
-  const mainIdx = now.details.flatMap((d, i) => (d.agent || d.app || d.compact ? [] : [i]))
+  const mainIdx = now.details.flatMap((d, i) => (d.agent || d.app || d.advisor || d.compact ? [] : [i]))
   const keepFrom = mainIdx[Math.max(0, mainIdx.length - LIVE_SHOWN)] ?? 0
-  const shown = now.details.filter((d, i) => d.agent || d.app || d.compact || i >= keepFrom)
+  const shown = now.details.filter((d, i) => d.agent || d.app || d.advisor || d.compact || i >= keepFrom)
   const hidden = now.details.length - shown.length
   const midModel = midSwitchText(now.switches, 'model')
   const midEffort = midSwitchText(now.switches, 'effort')
@@ -939,10 +940,13 @@ export function tallyOf(sums: readonly TurnSummary[], tally: Tally | null) {
   const usd = sums.reduce((s, t) => s + t.cost.usd, 0) + (older?.usd ?? 0)
   const agentUsd = sums.reduce((s, t) => s + (agentSum(t.details)?.usd ?? 0), 0) + (older?.agentUsd ?? 0)
   const appUsd = sums.reduce((s, t) => s + (t.appUsd ?? 0), 0) + (older?.appUsd ?? 0)
+  const advisorUsd = sums.reduce((s, t) => s + (t.advisorUsd ?? 0), 0) + (older?.advisorUsd ?? 0)
+  const advisorCalls = sums.reduce((s, t) => s + (t.advisorCalls ?? 0), 0) + (older?.advisorCalls ?? 0)
+  const advisorModels = sums.reduce((m, t) => addModelCounts(m, t.details?.find(d => d.advisor)?.advisorModels), addModelCounts(undefined, older?.advisorModels))
   const cum = tally?.costUsd ?? null
   const gap = cum === null ? 0 : cum - usd - (tally?.liveUsd ?? 0)
   const outsideUsd = cum !== null && gap >= OUTSIDE_MIN_USD && gap >= cum * OUTSIDE_MIN_PART ? gap : 0
-  return { count, usd, agentUsd, appUsd, outsideUsd, rebuiltCount: older?.rebuilt ? older.count : 0 }
+  return { count, usd, agentUsd, appUsd, advisorUsd, advisorCalls, advisorModels, outsideUsd, rebuiltCount: older?.rebuilt ? older.count : 0 }
 }
 
 function outsideText(t: ReturnType<typeof tallyOf>, isShort: boolean): string {
@@ -1052,7 +1056,7 @@ export function drawHistory(
         const isFull = isOpen && act.isFull?.(id) === true
         const fullEl =
           isOpen && act.toggleFull && (isFull || detailCut(top.shown, textBox - DETAIL_INSET, g, tags)) ? fullButton(ui, `hf-${i}`, isFull, () => act.toggleFull!(id)) : null
-        const costLines = isOpen ? costBreakdown(t.cost, t.appUsd, t.details, t.steps, t.outputByEffort, t.ultra) : []
+        const costLines = isOpen ? costBreakdown(t.cost, t.appUsd, t.details, t.steps, t.outputByEffort, t.ultra, advisorOf(t)) : []
         const extra = isOpen ? (
           <Box key={`hbox-${i}`} {...DETAIL_BOX}>
             {costLines.map((line, k) => {
@@ -1372,6 +1376,7 @@ export function drawSummary(
   const total = tallied.usd
   const agentUsd = tallied.agentUsd
   const appUsd = tallied.appUsd
+  const advisorUsd = tallied.advisorUsd >= APP_MIN_USD ? tallied.advisorUsd : 0
   const names = [L('질문', 'Questions'), L('지금', 'Now')]
   const labelW = nameColW(names)
   const isStacked = isStackedFor(cols, labelW)
@@ -1403,20 +1408,24 @@ export function drawSummary(
       </Text>
     )
   const outside = tallied.outsideUsd > 0 ? <Text wrap="wrap" dimColor>{outsideText(tallied, false)}</Text> : null
-  const mainPart = L(`메인 ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`, `main ${fmtUsd(Math.max(0, total - agentUsd - appUsd))}`)
+  const mainUsd = Math.max(0, total - agentUsd - appUsd - advisorUsd)
+  const mainPart = L(`메인 ${fmtUsd(mainUsd)}`, `main ${fmtUsd(mainUsd)}`)
   const agentPartText = agentUsd > 0 ? withIcon('🤖', L(`에이전트 ${fmtUsd(agentUsd)}`, `agents ${fmtUsd(agentUsd)}`)) : null
+  const advisorPart = advisorUsd > 0 ? withIcon('🎓', advisorText(Math.max(1, tallied.advisorCalls), advisorUsd, tallied.advisorModels)) : null
   const appPart = appUsd >= APP_MIN_USD ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd)}`, `app's own ${fmtUsd(appUsd)}`)) : null
+  const isMarked = (agentPartText?.startsWith('🤖 ') || advisorPart?.startsWith('🎓 ')) && onDesktop()
   const split =
-    agentUsd > 0 || appUsd >= APP_MIN_USD ? (
-      agentPartText && agentPartText.startsWith('🤖 ') && onDesktop() ? (
+    agentUsd > 0 || advisorPart || appUsd >= APP_MIN_USD ? (
+      isMarked ? (
         <Box key="m-split-row" flexDirection="row" flexWrap="wrap" alignItems="center">
           <Text dimColor>{mainPart}</Text>
-          {agentText(ui, 'm-split-agents', agentPartText, sums.reduce((n, s) => n + (agentSum(s.details)?.runningCount ?? 0), 0), { dimColor: true }, ' · ')}
+          {agentPartText ? agentText(ui, 'm-split-agents', agentPartText, sums.reduce((n, s) => n + (agentSum(s.details)?.runningCount ?? 0), 0), { dimColor: true }, ' · ') : null}
+          {advisorPart ? agentText(ui, 'm-split-advisor', advisorPart, false, { dimColor: true }, ' · ') : null}
           {appPart ? <Text dimColor>{` · ${appPart}`}</Text> : null}
         </Box>
       ) : (
         <Text wrap="wrap" dimColor>
-          {[mainPart, agentPartText, appPart].filter(Boolean).join(' · ')}
+          {[mainPart, agentPartText, advisorPart, appPart].filter(Boolean).join(' · ')}
         </Text>
       )
     ) : null

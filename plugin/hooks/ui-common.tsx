@@ -4,14 +4,14 @@ import { barSvg, CTX_MARK_PAD, ctxBarSvg, fmtTokens, fmtUsd, levelOf, modelName,
 import type { BarAnim } from './cost'
 import { gaugeFrac, gaugeSvg, gaugeWidth, redDepth } from './gauge'
 import type { GaugeShape } from './gauge'
-import { AGENT_MAX_SHOWN, type AgentPose, agentCharSvg, agentCharWidth, workCharSvg, workCharWidth } from './agent-char'
+import { AGENT_MAX_SHOWN, type AgentPose, advisorCharSvg, agentCharSvg, agentCharWidth, workCharSvg, workCharWidth } from './agent-char'
 import { flashText } from './flash'
 import type { FlashKey } from './flash'
 import { L } from './i18n'
 import { MIN_ENGINE } from './paths'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
 import { barCells } from './cells'
-import { cellsOf, fitCells, compactStepText, labelNow, toolParts, widthOf } from './text'
+import { advisorText, cellsOf, fitCells, compactStepText, labelNow, toolParts, widthOf } from './text'
 import type { ToolKind } from './text'
 import { isAutoSaveKind } from './tidy'
 
@@ -115,6 +115,12 @@ export function agentMark(ui: Ui, key: string, running: boolean | number) {
   )
 }
 
+export function advisorMark(ui: Ui, key: string) {
+  const Svg = onDesktop() ? (ui as unknown as { Svg?: SvgElement }).Svg : undefined
+  if (!Svg) return null
+  return <Svg key={key} source={advisorCharSvg(16)} alt="advisor" width={16} height={16} />
+}
+
 export function stageText(ui: Ui, key: FlashKey, color: string | undefined, children: unknown, o: { noFlash?: boolean; bold?: false; textKey?: string } = {}) {
   const look = o.noFlash ? (color ? { color } : {}) : flashText(key, color)
   return (
@@ -144,9 +150,11 @@ export function agentText(ui: Ui, key: string, text: string, isRunning: boolean 
   const { Box, Text } = ui
   const AGENT = '🤖 '
   const COMPACT = '🗜 '
+  const ADVISOR = '🎓 '
   const isAgent = text.startsWith(AGENT)
-  const ICON = isAgent ? AGENT : COMPACT
-  const mark = isAgent ? agentMark(ui, `${key}-mark`, isRunning) : text.startsWith(COMPACT) ? compactMark(ui, `${key}-mark`) : null
+  const isAdvisor = text.startsWith(ADVISOR)
+  const ICON = isAgent ? AGENT : isAdvisor ? ADVISOR : COMPACT
+  const mark = isAgent ? agentMark(ui, `${key}-mark`, isRunning) : isAdvisor ? advisorMark(ui, `${key}-mark`) : text.startsWith(COMPACT) ? compactMark(ui, `${key}-mark`) : null
   const extra = isAgent && typeof isRunning === 'number' && isRunning > AGENT_MAX_SHOWN && isMotionOn ? `+${isRunning - AGENT_MAX_SHOWN} ` : ''
   if (!mark)
     return (
@@ -285,11 +293,13 @@ export function stepText(d: StepDetail): { text: string; note: string } {
   const label = labelNow(d.label)
   const text = d.agent
     ? withIcon('🤖', `${L(`에이전트 요청 ${d.steps ?? 1}회`, `agent requests ×${d.steps ?? 1}`)}${state} · ${d.model ? `${modelName(d.model)} · ` : ''}${label}`)
-    : d.app
-      ? withIcon('⚙', `${L('앱 자체 요청', "app's own requests")} · ${label}`)
-      : d.compact
-        ? compactStepText(d.compact, d.usd)
-        : label
+    : d.advisor
+      ? withIcon('🎓', advisorText(d.advisor, undefined, d.advisorModels))
+      : d.app
+        ? withIcon('⚙', `${L('앱 자체 요청', "app's own requests")} · ${label}`)
+        : d.compact
+          ? compactStepText(d.compact, d.usd)
+          : label
   return { text, note }
 }
 
@@ -309,7 +319,7 @@ function toolPieces(raw: string): { text: string; kind?: ToolKind }[] | null {
 
 function rowShown(d: StepDetail): { shown: string; text: string; note: string; isMain: boolean } {
   const { text, note } = stepText(d)
-  const isMain = !d.agent && !d.app && !d.compact
+  const isMain = !d.agent && !d.app && !d.advisor && !d.compact
   const pieces = isMain ? toolPieces(labelNow(d.label)) : null
   return { shown: pieces ? pieces.map(p => p.text).join('') : text, text, note, isMain }
 }
@@ -386,7 +396,7 @@ export function detailRows(ui: Ui, details: readonly StepDetail[], key: string, 
         <Text dimColor>{j === details.length - 1 && !hasMore ? '└─' : '├─'}</Text>
         {usdCell(ui, d.usd, false, g.amountW)}
         <Box flexShrink={1} minWidth={0}>
-          {((d.agent && label.startsWith('🤖 ')) || (d.compact && label.startsWith('🗜 '))) && onDesktop() ? (
+          {((d.agent && label.startsWith('🤖 ')) || (d.compact && label.startsWith('🗜 ')) || (d.advisor && label.startsWith('🎓 '))) && onDesktop() ? (
             agentText(ui, `${key}-${j}-agent`, label, d.done === false, { wrap })
           ) : (
             <Text wrap={wrap}>

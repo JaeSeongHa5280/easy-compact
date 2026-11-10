@@ -81,8 +81,8 @@ import {
   OUTPUT_GUESS,
   SUMMARY_GUESS,
 } from './optimal'
-import { afterGuess, afterInNowTokens, compactJustMeasured, compactSince, compactSummary, costScanFromLines, costScanOf, fitTokens, fixedHintOf, fixedOf, flowFromRecords, judgeMeasure, judgeOwn, judgeRequest, lacksModels, lastBoundaryAfter, lastCtxOf, lastMainTtl, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, ultraStateOf, withPoint, withQuestion, recordsFromTranscript } from './flow'
-import type { Boundary, CompactResultLike } from './flow'
+import { afterGuess, afterInNowTokens, compactJustMeasured, compactSince, compactSummary, costScanFromLines, costScanOf, fitTokens, fixedHintOf, fixedOf, flowFromRecords, judgeMeasure, judgeOwn, judgeRequest, lacksModels, lastBoundaryAfter, lastCtxOf, lastMainTtl, advisorCallsIn, advisorModelsByIds, parseAdvisorCalls, parseAdvisorModels, MAX_POINTS, mergeMeasured, parseFlowFile, pendingCompact, recordsFromLines, restoredOf, scanTranscript, serializeFlow, sharedFor, syncCompactAfter, extraPerCall, ultraStateOf, withPoint, withQuestion, recordsFromTranscript, stepCtxOf } from './flow'
+import type { AdvisorCall, Boundary, CompactResultLike } from './flow'
 import type { CostScan, FixedStored, Flow, FlowRecord } from './flow'
 import type { Tokens } from './cost'
 import { APP_MIN_USD, agentPart, agentSum, attachHead, continuedName, ctxNumText, effortSplit, PLUGIN_SENT, promptHead, stepLabel, paneTitle } from './text'
@@ -111,7 +111,7 @@ import { setSurface } from './glyph'
 import type { Lang } from './i18n'
 import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
-import { agentRunFromText, cellScopeOf, foldOlder, nextEffortOutput, nextQuestionCells, nextSwitches, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, turnsFromRecords, withAgentStep, withAppStep, withCellScopes } from './turns'
+import { advisorCallsOf, advisorModelSum, agentRunFromText, cellScopeOf, fillAdvisorModels, foldOlder, nextEffortOutput, nextQuestionCells, nextSwitches, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, trimDetails, turnsFromRecords, withAdvisorModelsUpTo, withAdvisorStep, withAgentStep, withAppStep, withCellScopes } from './turns'
 import { AFTER_KEY, FIXED_KEY, SHARED_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
 import type { PaneEvent, Urgency } from './state'
 
@@ -690,8 +690,47 @@ async function noteCompact($: EngineInterface, what: string): Promise<void> {
   log($, what)
 }
 
+const TRANSCRIPT_SCAN_MS = 60_000
+
+let transcriptAt: { id: string; path: string; scanMs: number } | null = null
+
 async function transcriptPath($: EngineInterface): Promise<string> {
-  return `${await claudeHome($)}/projects/${projectSlug(await $.session.cwd())}/${await $.session.id()}.jsonl`
+  const id = await $.session.id()
+  if (transcriptAt?.id === id && transcriptAt.path !== '') return transcriptAt.path
+  const projects = `${await claudeHome($)}/projects`
+  const byCwd = `${projects}/${projectSlug(await $.session.cwd())}/${id}.jsonl`
+  const found = (await isPathThere($, byCwd)) ? byCwd : await findTranscript($, projects, id)
+  if (found) transcriptAt = { id, path: found, scanMs: 0 }
+  return found ?? byCwd
+}
+
+async function isPathThere($: EngineInterface, path: string): Promise<boolean> {
+  try {
+    await $.fs.stat(path)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function findTranscript($: EngineInterface, projects: string, id: string): Promise<string | null> {
+  try {
+    const byRoot = `${projects}/${projectSlug(await $.session.root())}/${id}.jsonl`
+    if (await isPathThere($, byRoot)) return byRoot
+  } catch {
+  }
+  const nowMs = await $.clock.now()
+  if (transcriptAt?.id === id && nowMs - transcriptAt.scanMs < TRANSCRIPT_SCAN_MS) return null
+  transcriptAt = { id, path: '', scanMs: nowMs }
+  try {
+    for (const dir of await $.fs.list(projects)) {
+      if (dir.kind !== 'dir') continue
+      const path = `${projects}/${dir.name}/${id}.jsonl`
+      if (await isPathThere($, path)) return path
+    }
+  } catch {
+  }
+  return null
 }
 
 async function lastActivity($: EngineInterface): Promise<number | null> {
@@ -818,6 +857,7 @@ async function loadTurns($: EngineInterface): Promise<void> {
     if ((await read($, turnsOlder)) === null) await update($, turnsOlder, () => olderOf(fileOlder, inMemory))
     isOlderUnknown = (await read($, turnsOlder)) === null
     saveTurns($)
+    await shareAdvisor($).catch(() => {})
     return
   }
   let list: TurnSummary[]
@@ -838,6 +878,7 @@ async function loadTurns($: EngineInterface): Promise<void> {
   isOlderUnknown = older === null
   if (!saved || (fileOlder === null && older !== null)) saveTurns($)
   await syncCompactSteps($)
+  await shareAdvisor($).catch(() => {})
   $.ui.invalidate('ui.render')
 }
 
@@ -1010,6 +1051,7 @@ async function loadFlow($: EngineInterface, opts: { fromTranscript: boolean } = 
   try {
     let flow: Flow | null = null
     let saved: Flow['compactions'] = []
+    let stale: Flow | null = null
     if (!opts.fromTranscript) {
       try {
         flow = parseFlowFile(await $.fs.read(await flowFile($)))
@@ -1019,7 +1061,18 @@ async function loadFlow($: EngineInterface, opts: { fromTranscript: boolean } = 
       if (flow && (lacksModels(flow) || flow.questions === undefined || flow.shared === undefined)) {
         saved = flow.compactions
         flow = null
+      } else if (flow?.stale) {
+        stale = flow
+        saved = flow.compactions
+        flow = null
       }
+    }
+    if (flow === null && stale !== null) {
+      const old = stale
+      flow = await importFlow($).then(
+        f => (f.points.length === 0 && old.points.length > 0 ? old : f),
+        () => old,
+      )
     }
     flow ??= await importFlow($)
     await writeFlow($, {
@@ -1604,18 +1657,19 @@ async function recordStep(
   turnId: string,
   cost: CostParts,
   tokens: Tokens,
+  contextTokens: number,
   label: string,
   model: string,
   effort: string | number | undefined,
   switchedFrom: string | null,
 ): Promise<void> {
   trackedUsd += cost.usd
-  const contextTokens = tokens.input_tokens + tokens.cache_read_input_tokens + tokens.cache_creation_input_tokens
+  const isSplit = contextTokens !== tokens.input_tokens + tokens.cache_read_input_tokens + tokens.cache_creation_input_tokens
   await settleSuspect($, contextTokens)
   const flow = await readFlow($)
   const ttl = await read($, ttlMeasured)
   const rewrite = rewriteOf(tokens, model, lastCtxOf(flow), ttl ?? ttlOf(await read($, usage)), null, engineNow)
-  const isWhole = (await read($, flowLoaded)) && (await read($, flowNote)) === null
+  const isWhole = (await read($, flowLoaded)) && (await read($, flowNote)) === null && !isSplit
   const nextFlow = withPoint(flow, { atMs: await $.clock.now(), ctx: contextTokens, usd: cost.usd, model, ...(ttl !== null ? { ttl } : {}), ...(engineNow ? { engine: engineNow } : {}) }, tokens, isWhole)
   await writeFlow($, nextFlow)
   await saveShared($, flow, nextFlow, model)
@@ -1633,7 +1687,7 @@ async function recordStep(
       cost: addCost(base.cost, cost),
       contextTokens,
       outputTokens: base.outputTokens + tokens.output_tokens,
-      details: [...base.details, { label, usd: cost.usd, write: cost.write, ...(rewrite > 0 ? { rewrite } : {}) }].slice(-60),
+      details: trimDetails([...base.details, { label, usd: cost.usd, write: cost.write, ...(rewrite > 0 ? { rewrite } : {}) }], 60),
       ...(rewrite > 0 ? { rewriteUsd: (base.rewriteUsd ?? 0) + rewrite } : {}),
       model,
       ...(effortText === undefined ? {} : { effort: effortText }),
@@ -1768,6 +1822,138 @@ async function appExtraSince($: EngineInterface, mark: { ledger: number; tracked
   return ledger === null ? null : { extra: ledger - mark.ledger - (trackedUsd - mark.tracked), ledger }
 }
 
+async function ledgerMark($: EngineInterface): Promise<{ ledger: number; tracked: number } | null> {
+  const ledger = await ledgerUsd($)
+  return ledger === null ? null : { ledger, tracked: trackedUsd }
+}
+
+const ADVISOR_SHARE_DIR = 'plugins/data/advisor-use'
+
+let advisorShared: string | null = null
+
+async function shareAdvisor($: EngineInterface): Promise<void> {
+  const sums = await read($, turnSummaries)
+  const now = await read($, live)
+  const older = await read($, turnsOlder)
+  const cur = now && !sums.some(s => s.turnId === now.turnId) ? now : null
+  const n = sums.reduce((s, t) => s + (t.advisorCalls ?? 0), 0) + (cur?.advisorCalls ?? 0) + (older?.advisorCalls ?? 0)
+  const usd = Math.round((sums.reduce((s, t) => s + (t.advisorUsd ?? 0), 0) + (cur?.advisorUsd ?? 0) + (older?.advisorUsd ?? 0)) * 1e6) / 1e6
+  if (n <= 0 && usd <= 0) return
+  const id = await $.session.id()
+  const key = `${id}:${n}:${usd}`
+  if (key === advisorShared) return
+  advisorShared = key
+  await $.fs.write(`${await claudeHome($)}/${ADVISOR_SHARE_DIR}/${id}.json`, `${JSON.stringify({ v: 1, n, usd, at: await $.clock.now() })}\n`)
+}
+
+async function recordAdvisor($: EngineInterface, mark: { ledger: number; tracked: number }, calls: number, turnId: string | null): Promise<boolean> {
+  const got = await appExtraSince($, mark)
+  if (!got || got.extra < APP_MIN_USD) return false
+  trackedUsd += got.extra
+  await addAdvisorCost($, got.extra, calls, turnId)
+  return true
+}
+
+const ADVISOR_RETRY_MS = 3_000
+
+const ADVISOR_PENDING_KEEP = 50
+
+const advisorPending = atom({ plugin: 'easy-compact', key: 'advisorPending' } as const, [])
+
+async function noteAdvisorIds($: EngineInterface, turnId: string, agentId: string | undefined, uses: readonly { id: string; name: string; endedAt?: number }[] | undefined): Promise<void> {
+  const ids = (uses ?? []).filter(u => u.name === 'advisor' && u.endedAt !== undefined).map(u => u.id)
+  if (ids.length === 0) return
+  await update($, advisorPending, list => [...list, { turnId, ...(agentId !== undefined ? { agentId } : {}), ids }].slice(-ADVISOR_PENDING_KEEP))
+}
+
+async function resolveAdvisorModels($: EngineInterface, agentId: string | undefined): Promise<void> {
+  let mine: { turnId: string; agentId?: string; ids: string[] }[] = []
+  await update($, advisorPending, list => {
+    mine = list.filter(p => p.agentId === agentId)
+    return mine.length === 0 ? list : list.filter(p => p.agentId !== agentId)
+  })
+  if (mine.length === 0) return
+  const main = await transcriptPath($)
+  const path = agentId === undefined ? main : `${main.replace(/\.jsonl$/, '')}/subagents/${agentId.startsWith('agent-') ? agentId : `agent-${agentId}`}.jsonl`
+  const left = await attachAdvisorModels($, path, mine)
+  if (left.length === 0) return
+  try {
+    $.clock.after(ADVISOR_RETRY_MS, () => void attachAdvisorModels($, path, left).catch(err => log($, `advisor model retry failed — ${String(err)}`)))
+  } catch {
+  }
+}
+
+async function attachAdvisorModels($: EngineInterface, path: string, list: readonly { turnId: string; ids: string[] }[]): Promise<{ turnId: string; ids: string[] }[]> {
+  const found = await advisorModelsIn($, path, list.flatMap(p => p.ids))
+  const left: { turnId: string; ids: string[] }[] = []
+  for (const p of list) {
+    const models: Record<string, number> = {}
+    for (const id of p.ids) {
+      const m = found[id]
+      if (m) models[m] = (models[m] ?? 0) + 1
+    }
+    if (Object.keys(models).length > 0) await addAdvisorModels($, p.turnId, models)
+    const missing = p.ids.filter(id => !found[id])
+    if (missing.length > 0) left.push({ turnId: p.turnId, ids: missing })
+  }
+  return left
+}
+
+async function advisorModelsIn($: EngineInterface, path: string, ids: readonly string[]): Promise<Record<string, string>> {
+  try {
+    const size = (await $.fs.stat(path)).size
+    if (size <= READ_LIMIT) return advisorModelsByIds(await $.fs.read(path), ids)
+    const ran = await $.process.run(['node', `${$.plugin.root}/tools/advisor-models.mjs`, path, ...ids], { timeoutMs: 20_000 }).catch((err: unknown) => ({ exitCode: -1, stdout: '', stderr: String(err) }))
+    return ran.exitCode === 0 ? parseAdvisorModels(ran.stdout) : {}
+  } catch (err) {
+    log($, `advisor model scan failed — ${String(err)}`)
+    return {}
+  }
+}
+
+async function addAdvisorModels($: EngineInterface, turnId: string, models: Record<string, number>): Promise<void> {
+  const now = await read($, live)
+  if (now && now.turnId === turnId) {
+    await update($, live, prev => (prev ? { ...prev, details: withAdvisorModelsUpTo(prev.details, prev.advisorCalls ?? 0, models) } : prev))
+    return
+  }
+  await updateTurns($, list => {
+    const i = list.findLastIndex(s => s.turnId === turnId)
+    const s = list[i]
+    return s ? [...list.slice(0, i), { ...s, details: withAdvisorModelsUpTo(s.details ?? [], s.advisorCalls ?? 0, models) }, ...list.slice(i + 1)] : list
+  })
+}
+
+async function advisorCallsInFile($: EngineInterface, path: string): Promise<AdvisorCall[]> {
+  const size = (await $.fs.stat(path)).size
+  if (size <= READ_LIMIT) return advisorCallsIn(await $.fs.read(path))
+  const ran = await $.process.run(['node', `${$.plugin.root}/tools/advisor-models.mjs`, '--all', path], { timeoutMs: 60_000 }).catch((err: unknown) => ({ exitCode: -1, stdout: '', stderr: String(err) }))
+  if (ran.exitCode !== 0) log($, `advisor model fill could not read the transcript — node exit ${ran.exitCode} ${String(ran.stderr ?? '').trim().slice(0, 120)}`)
+  return ran.exitCode === 0 ? parseAdvisorCalls(ran.stdout) : []
+}
+
+async function fillOldAdvisor($: EngineInterface): Promise<void> {
+  if (!(await read($, turnSummaries)).some(t => (t.advisorCalls ?? 0) > advisorModelSum(t.details))) return
+  const calls = await advisorCallsInFile($, await transcriptPath($))
+  const skip = new Set((await read($, advisorPending)).map(p => p.turnId))
+  const liveId = (await read($, live))?.turnId
+  if (liveId) skip.add(liveId)
+  const hasOlder = ((await read($, turnsOlder))?.count ?? 1) > 0
+  const tried = fillAdvisorModels(await read($, turnSummaries), calls, skip, hasOlder)
+  if (tried.filled === 0) return
+  await updateTurns($, list => fillAdvisorModels(list, calls, skip, hasOlder).list)
+  await shareAdvisor($).catch(() => {})
+  $.ui.invalidate('ui.render')
+}
+
+async function trimAdvisor($: EngineInterface, over: number): Promise<void> {
+  const now = await read($, live)
+  const cut = Math.min(over, now?.advisorUsd ?? 0)
+  if (!now || cut < APP_MIN_USD) return
+  trackedUsd -= cut
+  await addAdvisorCost($, -cut, 0, now.turnId)
+}
+
 async function fixAppRequests($: EngineInterface, mark: NonNullable<typeof idleMark>): Promise<void> {
   if (idleMark !== mark || mark.isFixed) return
   const got = await appExtraSince($, mark)
@@ -1798,7 +1984,8 @@ async function appCarryAtStart($: EngineInterface): Promise<number> {
 }
 
 async function addExtraSpend($: EngineInterface, usd: number, compactBefore: number | null = null): Promise<void> {
-  if (!(usd > 0) && compactBefore === null) return
+  const isMoney = Number.isFinite(usd) && usd !== 0
+  if (!isMoney && compactBefore === null) return
   try {
     const path = `${await dataDir($)}/extra/${await $.session.id()}.json`
     let days: Record<string, number> | null = null
@@ -1821,11 +2008,12 @@ async function addExtraSpend($: EngineInterface, usd: number, compactBefore: num
           if (d.app || d.compact) days[spendDay(s.atMs)] = (days[spendDay(s.atMs)] ?? 0) + d.usd
           if (d.compact && d.compact.before > 0) compacts.push([d.compact.before, d.usd])
         }
+        if (s.advisorUsd) days[spendDay(s.atMs)] = (days[spendDay(s.atMs)] ?? 0) + s.advisorUsd
       }
     }
-    if (usd > 0) {
+    if (isMoney) {
       const day = spendDay(await $.clock.now())
-      days[day] = (days[day] ?? 0) + usd
+      days[day] = Math.max(0, (days[day] ?? 0) + usd)
     }
     if (compactBefore !== null && compactBefore > 0) compacts.push([compactBefore, usd > 0 ? usd : 0])
     await $.fs.write(path, JSON.stringify({ v: 1, days, ...(compacts.length > 0 ? { compacts: compacts.slice(-LEDGER_COMPACTS_MAX) } : {}) }))
@@ -1849,6 +2037,32 @@ async function addAppCost($: EngineInterface, usd: number, label: string): Promi
       return s ? [...list.slice(0, -1), add(s, s.details ?? [])] : list
     })
   }
+}
+
+async function addAdvisorCost($: EngineInterface, usd: number, calls: number, turnId: string | null): Promise<void> {
+  await addExtraSpend($, usd)
+  const add = <T extends { cost: CostParts; advisorUsd?: number; advisorCalls?: number }>(t: T, details: readonly StepDetail[]) => ({
+    ...t,
+    cost: { ...t.cost, usd: Math.max(0, t.cost.usd + usd) },
+    advisorUsd: Math.max(0, (t.advisorUsd ?? 0) + usd),
+    advisorCalls: (t.advisorCalls ?? 0) + calls,
+    details: withAdvisorStep(details, usd, calls),
+  })
+  const now = await read($, live)
+  if (now && (turnId === null || now.turnId === turnId)) {
+    await update($, live, prev => (prev ? add(prev, prev.details) : prev))
+  } else {
+    await updateTurns($, list => {
+      let i = list.length - 1
+      if (turnId !== null) {
+        const found = list.findLastIndex(s => s.turnId === turnId)
+        if (found >= 0) i = found
+      }
+      const s = list[i]
+      return s ? [...list.slice(0, i), add(s, s.details ?? []), ...list.slice(i + 1)] : list
+    })
+  }
+  await shareAdvisor($).catch(() => {})
 }
 
 async function addCompactStep($: EngineInterface, parts: CostParts | null, before: number): Promise<void> {
@@ -2116,6 +2330,7 @@ async function closeTurn($: EngineInterface, text: string, isAborted = false): P
     steps: now.steps,
     cost: now.cost,
     ...(now.appUsd ? { appUsd: now.appUsd } : {}),
+    ...(now.advisorUsd ? { advisorUsd: now.advisorUsd, advisorCalls: now.advisorCalls ?? 1 } : {}),
     ...(now.rewriteUsd ? { rewriteUsd: now.rewriteUsd } : {}),
     prompt: now.prompt,
     atMs: await $.clock.now(),
@@ -2897,6 +3112,8 @@ export const register: Register = on => {
       .catch(() => {})
       .then(() => fillOlder($))
       .catch(() => {})
+      .then(() => fillOldAdvisor($))
+      .catch(err => log($, `advisor model fill failed — ${String(err)}`))
     void loadFlow($)
       .then(() => refreshUsage($, { categories: true, pushHistory: false }))
       .catch(() => {})
@@ -2971,6 +3188,7 @@ export const register: Register = on => {
     const isMain = e.agentId === undefined
     if (isMain) mainTurn = null
     if (!isMain) await markAgentsDone($, id => id === e.agentId)
+    if (!isMain) void resolveAdvisorModels($, e.agentId).catch(err => log($, `advisor model failed — ${String(err)}`))
     if (isMain) {
       await refreshTtl($)
       await update($, ttlConfig, () => null)
@@ -2984,9 +3202,10 @@ export const register: Register = on => {
         const got = await appExtraSince($, mark)
         if (got && got.extra >= APP_MIN_USD) {
           await addAppCost($, got.extra, e.isAborted ? L('중단 · 도중 끊긴 요청 등', 'stopped · interrupted requests, etc.') : L('질문 도중 · 앱 자체 요청', 'during the question · app requests'))
-        }
+        } else if (got && got.extra <= -APP_MIN_USD) await trimAdvisor($, -got.extra)
       }
       await closeTurn($, e.answer.trim() !== '' ? e.answer : lastStepAnswer, e.isAborted)
+      void resolveAdvisorModels($, undefined).catch(err => log($, `advisor model failed — ${String(err)}`))
       lastStepAnswer = ''
       await markIdle($)
       void refreshSpend($).catch(() => {})
@@ -3014,6 +3233,10 @@ export const register: Register = on => {
 
   on('turn.start', async ($, e, next) => {
     await ensureLang($)
+    if (e.agentId !== undefined) {
+      if (!agentInfo.has(e.agentId)) agentInfo.set(e.agentId, { label: L('하위 에이전트', 'subagent'), turnId: (await read($, live))?.turnId ?? null, tries: 0 })
+      return next(e)
+    }
     if (e.agentId === undefined && (await read($, summaryCard))) await update($, summaryCard, () => false)
     if (gaugeNote && (e as { agentId?: string }).agentId === undefined) void showGaugeNote($).catch(() => {})
     if (e.agentId === undefined && (await read($, compactPhase)) === 'held') await update($, compactPhase, () => 'idle')
@@ -3079,6 +3302,7 @@ export const register: Register = on => {
     await ensureLang($)
     if (e.agentId === undefined) await autoEvent($, { type: 'step', turnId: e.turnId }).catch(() => {})
     if (e.agentId === undefined && e.index === 0) void watchUltra($, e.turnId).catch(() => {})
+    const before = await ledgerMark($).catch(() => null)
     const result = yield* next(e)
     if (e.agentId === undefined && typeof result.answer === 'string' && result.answer.trim() !== '') {
       lastStepAnswer = result.answer
@@ -3095,11 +3319,12 @@ export const register: Register = on => {
       try {
         const cost = costOf(result.usage, result.usage.model, ttlOf(await read($, usage)), null, engineNow)
         const switchedFrom = (await read($, usage))?.switchedFrom ?? null
-        if (cost) await recordStep($, e.turnId, cost, result.usage, stepLabel(result.toolUses), result.usage.model, e.effort, switchedFrom)
         const t = result.usage
-        const justMeasured = cost ? compactJustMeasured(await readFlow($)) : null
+        const sum = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
+        const ctxNow = stepCtxOf(t, result.serverToolUses, lastCtxOf(await readFlow($)))
+        if (cost) await recordStep($, e.turnId, cost, t, ctxNow, stepLabel(result.toolUses), t.model, e.effort, switchedFrom)
+        const justMeasured = cost && ctxNow === sum ? compactJustMeasured(await readFlow($)) : null
         if (justMeasured) void measureFixed($, justMeasured.atMs, t.cache_read_input_tokens).catch(() => {})
-        const ctxNow = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
         if (measureAfterCompact) {
           measureAfterCompact = false
           await $.store.set(AFTER_KEY, ctxNow)
@@ -3127,6 +3352,15 @@ export const register: Register = on => {
         await autoEvent($, { type: 'afterStep', ctx: ctxNow })
       } catch {
       }
+    }
+    const calls = advisorCallsOf(result.serverToolUses)
+    if (calls > 0 && before) {
+      const turnId = e.agentId === undefined ? e.turnId : (agentInfo.get(e.agentId)?.turnId ?? null)
+      const isAdded = await recordAdvisor($, before, calls, turnId).catch(err => {
+        log($, `advisor record failed — ${String(err)}`)
+        return false
+      })
+      if (isAdded && turnId !== null) await noteAdvisorIds($, turnId, e.agentId, result.serverToolUses).catch(err => log($, `advisor ids failed — ${String(err)}`))
     }
     return result
   })

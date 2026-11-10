@@ -115,6 +115,7 @@ export function deskRows(n: unknown, cols: number): number {
   if (typeof n === 'string' || typeof n === 'number') return Math.max(1, Math.ceil(natCols(n) / Math.max(1, cols)))
   if (!n || typeof n !== 'object') return 0
   const el = n as Drawn
+  if (el.type === 'engine') return 0
   const p = el.props ?? {}
   if (!isShown(p)) return 0
   if (el.type === 'Text') return String(p.wrap ?? '').startsWith('truncate') ? 1 : deskRows(textOf(el), cols)

@@ -3,14 +3,15 @@ import { barAnimCss, CACHE_TTL_MIN, costOf, dayOf, engineOfLine, fmtTokens, LEVE
 import type { Tokens } from './cost'
 import { L } from './i18n'
 
-export type Flow = { points: CtxPoint[]; compactions: CompactEvent[]; questions?: number[]; shared?: Record<string, number>; inherited?: boolean }
+export type Flow = { points: CtxPoint[]; compactions: CompactEvent[]; questions?: number[]; shared?: Record<string, number>; inherited?: boolean; stale?: boolean }
 
 export const MAX_POINTS = 5000
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
 export type FlowRecord =
-  | { kind: 'p'; atMs: number; tokens: Tokens; model: string; engine?: string }
+  | { kind: 'p'; atMs: number; tokens: Tokens; model: string; engine?: string; ctx?: number }
+  | { kind: 'a'; atMs: number; tokens: Tokens; model: string; engine?: string }
   | { kind: 'c'; atMs: number; trigger: string; pre: number; post?: number }
   | { kind: 'q'; atMs: number; text?: string }
   | { kind: 'i' }
@@ -39,7 +40,8 @@ export function ultraStateOf(text: string): boolean | null {
 
 export function recordsFromTranscript(text: string, own: string | null = null): FlowRecord[] {
   const out: FlowRecord[] = []
-  const seen = new Map<string, Tokens>()
+  const seen = new Map<string, Extract<FlowRecord, { kind: 'p' }>>()
+  const advised = new Set<string>()
   const seenBoundary = new Set<string>()
   const seenPrompt = new Set<string>()
   let carry: string | undefined
@@ -89,22 +91,78 @@ export function recordsFromTranscript(text: string, own: string | null = null): 
     }
     const m = r.message as { id?: string; model?: string; usage?: Record<string, unknown> } | undefined
     if (r.type !== 'assistant' || !m?.usage || !m.id) continue
+    const engine = engineOfLine(r.version)
     const prev = seen.get(m.id)
+    const ctx = ctxOfUsage(m.usage)
+    const isSplit = ctx !== sumOfUsage(m.usage)
     if (prev) {
       const outNow = num(m.usage.output_tokens)
-      if (outNow > prev.output_tokens) prev.output_tokens = outNow
+      if (outNow > prev.tokens.output_tokens) prev.tokens.output_tokens = outNow
+      if (isSplit) prev.ctx = ctx
+      pushAdvisor(out, advised, m.id, m.usage, atMs, engine)
       continue
     }
-    const tokens = tokensOfUsage(m.usage)
-    seen.set(m.id, tokens)
+    const rec: Extract<FlowRecord, { kind: 'p' }> = { kind: 'p', atMs, model: m.model ?? '?', tokens: tokensOfUsage(m.usage), ...(engine ? { engine } : {}), ...(isSplit ? { ctx } : {}) }
+    seen.set(m.id, rec)
     if (carry !== undefined && !isOwnAsked) {
       isOwnAsked = true
       out.push(carry ? { kind: 'q', atMs, text: carry } : { kind: 'q', atMs })
     }
-    const engine = engineOfLine(r.version)
-    out.push({ kind: 'p', atMs, model: m.model ?? '?', tokens, ...(engine ? { engine } : {}) })
+    out.push(rec)
+    pushAdvisor(out, advised, m.id, m.usage, atMs, engine)
   }
   return out
+}
+
+const sumOfUsage = (u: Record<string, unknown>) => num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens)
+
+export function ctxOfUsage(u: Record<string, unknown>): number {
+  const sum = sumOfUsage(u)
+  if (sum === 0 || !Array.isArray(u.iterations)) return sum
+  const list = u.iterations as unknown[]
+  let last: unknown
+  for (let i = list.length - 1; i >= 0; i--) {
+    const it = list[i]
+    const type = typeof it === 'object' && it !== null ? (it as { type?: unknown }).type : undefined
+    if (type === 'advisor_message' || type === 'compaction') continue
+    last = it
+    break
+  }
+  const x = (typeof last === 'object' && last !== null ? last : {}) as Record<string, unknown>
+  const isNum = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+  if (x.type !== 'message' && x.type !== 'fallback_message') return sum
+  if (!isNum(x.input_tokens) || !isNum(x.output_tokens) || !isNum(x.cache_creation_input_tokens) || !isNum(x.cache_read_input_tokens)) return sum
+  const ctx = sumOfUsage(x)
+  return ctx > 0 ? ctx : sum
+}
+
+export function stepCtxOf(t: Tokens, uses: readonly { name: string; endedAt?: number }[] | undefined, prevCtx: number | null): number {
+  const raw = t as unknown as Record<string, unknown>
+  if (Array.isArray(raw.iterations)) return ctxOfUsage(raw)
+  const sum = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
+  const calls = (uses ?? []).filter(u => u.name === 'advisor' && u.endedAt !== undefined).length
+  if (calls === 0) return sum
+  const even = Math.round(sum / (calls + 1))
+  if (prevCtx === null || prevCtx <= 0) return even
+  if (sum <= prevCtx * (calls + 0.5)) return sum
+  const est = prevCtx + t.cache_creation_input_tokens
+  return est >= sum / (calls + 1) && est <= sum - calls * prevCtx ? est : even
+}
+
+export function advisorTokensOf(u: Record<string, unknown>): { model: string; tokens: Tokens }[] {
+  const list = Array.isArray(u.iterations) ? (u.iterations as unknown[]) : []
+  return list.flatMap(it => {
+    const x = it as Record<string, unknown> | null
+    return x && x.type === 'advisor_message' ? [{ model: typeof x.model === 'string' ? x.model : '?', tokens: tokensOfUsage(x) }] : []
+  })
+}
+
+function pushAdvisor(out: FlowRecord[], advised: Set<string>, id: string, u: Record<string, unknown>, atMs: number, engine: string | undefined): void {
+  if (advised.has(id)) return
+  const list = advisorTokensOf(u)
+  if (list.length === 0) return
+  advised.add(id)
+  for (const a of list) out.push({ kind: 'a', atMs, model: a.model, tokens: a.tokens, ...(engine ? { engine } : {}) })
 }
 
 export function tokensOfUsage(u: Record<string, unknown>): Tokens {
@@ -137,6 +195,85 @@ export function lastMainTtl(text: string): number | null {
   return null
 }
 
+export type AdvisorCall = { id: string; atMs: number | null; model: string | null; isDone: boolean }
+
+export function advisorCallsIn(text: string): AdvisorCall[] {
+  const msgs = new Map<string, { uses: string[]; at: Map<string, number>; done: Set<string>; models: string[] | null }>()
+  for (const line of text.split('\n')) {
+    if (!line.includes('advisor')) continue
+    let r: { type?: unknown; timestamp?: unknown; message?: { id?: unknown; content?: unknown; usage?: Record<string, unknown> } } | null
+    try {
+      r = JSON.parse(line) as typeof r
+    } catch {
+      continue
+    }
+    const m = r?.message
+    if (r?.type !== 'assistant' || !m || typeof m.id !== 'string') continue
+    let g = msgs.get(m.id)
+    if (!g) {
+      g = { uses: [], at: new Map(), done: new Set(), models: null }
+      msgs.set(m.id, g)
+    }
+    const atMs = typeof r.timestamp === 'string' ? Date.parse(r.timestamp) : NaN
+    for (const b of Array.isArray(m.content) ? (m.content as unknown[]) : []) {
+      const x = b as { type?: unknown; name?: unknown; id?: unknown; tool_use_id?: unknown } | null
+      if (x?.type === 'server_tool_use' && x.name === 'advisor' && typeof x.id === 'string' && !g.uses.includes(x.id)) {
+        g.uses.push(x.id)
+        if (Number.isFinite(atMs)) g.at.set(x.id, atMs)
+      }
+      if (x?.type === 'advisor_tool_result' && typeof x.tool_use_id === 'string') g.done.add(x.tool_use_id)
+    }
+    if (g.models === null && m.usage && Array.isArray(m.usage.iterations)) g.models = advisorTokensOf(m.usage).map(a => a.model)
+  }
+  const out: AdvisorCall[] = []
+  for (const g of msgs.values()) {
+    const finished = g.done.size > 0 ? g.uses.filter(id => g.done.has(id)) : g.uses
+    const list = (g.models ?? []).filter(x => x !== '?')
+    const one = list.length > 0 && list.every(x => x === list[0]) ? list[0]! : null
+    for (const id of g.uses) {
+      const k = finished.indexOf(id)
+      const model = k < 0 ? null : (one ?? (finished.length === list.length ? list[k]! : null))
+      out.push({ id, atMs: g.at.get(id) ?? null, model, isDone: g.done.has(id) })
+    }
+  }
+  return out
+}
+
+export function advisorModelsByIds(text: string, ids: readonly string[]): Record<string, string> {
+  const want = new Set(ids.filter(id => id !== ''))
+  if (want.size === 0) return {}
+  const out: Record<string, string> = {}
+  for (const c of advisorCallsIn(text)) {
+    if (c.model && want.has(c.id)) out[c.id] = c.model
+  }
+  return out
+}
+
+export function parseAdvisorCalls(text: string): AdvisorCall[] {
+  let j: unknown
+  try {
+    j = JSON.parse(text)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(j)) return []
+  return j.filter((c): c is AdvisorCall => {
+    const x = c as Partial<AdvisorCall> | null
+    return !!x && typeof x.id === 'string' && (x.atMs === null || (typeof x.atMs === 'number' && Number.isFinite(x.atMs))) && (x.model === null || typeof x.model === 'string') && typeof x.isDone === 'boolean'
+  })
+}
+
+export function parseAdvisorModels(text: string): Record<string, string> {
+  let j: unknown
+  try {
+    j = JSON.parse(text)
+  } catch {
+    return {}
+  }
+  if (!j || typeof j !== 'object' || Array.isArray(j)) return {}
+  return Object.fromEntries(Object.entries(j as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''))
+}
+
 export type Boundary = { atMs: number; trigger: string; pre: number; post?: number }
 
 export function lastBoundaryAfter(text: string, own: string | null, sinceMs: number): Boundary | null {
@@ -166,7 +303,7 @@ export function recordsFromLines(text: string): FlowRecord[] {
   for (const line of text.split('\n')) {
     const f = line.trim().split(/\s+/)
     if (f[0] === 'p' && f.length >= 7) {
-      const [, at, input, output, read, write, model, w5, w1, ver] = f
+      const [, at, input, output, read, write, model, w5, w1, ver, ctx] = f
       const engine = engineOfLine(ver)
       out.push({
         kind: 'p',
@@ -180,6 +317,17 @@ export function recordsFromLines(text: string): FlowRecord[] {
           cache_creation_input_tokens: Number(write) || 0,
           ...(w5 !== undefined && w1 !== undefined ? { cache_creation_5m: Number(w5) || 0, cache_creation_1h: Number(w1) || 0 } : {}),
         },
+        ...(Number(ctx) > 0 ? { ctx: Number(ctx) } : {}),
+      })
+    } else if (f[0] === 'a' && f.length >= 7) {
+      const [, at, model, input, output, read, write, ver] = f
+      const engine = engineOfLine(ver)
+      out.push({
+        kind: 'a',
+        atMs: Number(at) || 0,
+        model: model!,
+        ...(engine ? { engine } : {}),
+        tokens: { input_tokens: Number(input) || 0, output_tokens: Number(output) || 0, cache_read_input_tokens: Number(read) || 0, cache_creation_input_tokens: Number(write) || 0 },
       })
     } else if (f[0] === 'c' && f.length >= 4) {
       const post = Number(f[4]) || 0
@@ -310,6 +458,7 @@ export function flowFromRecords(records: readonly FlowRecord[]): Flow {
       flow.questions!.push(r.atMs)
       continue
     }
+    if (r.kind === 'a') continue
     if (r.kind === 'c') {
       if (flow.compactions.some(c => c.atMs === r.atMs && c.before === r.pre)) continue
       const last = flow.points[flow.points.length - 1]
@@ -317,9 +466,9 @@ export function flowFromRecords(records: readonly FlowRecord[]): Flow {
       continue
     }
     const t = r.tokens
-    const ctx = t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
+    const ctx = r.ctx ?? t.input_tokens + t.cache_read_input_tokens + t.cache_creation_input_tokens
     if (ctx <= 0) continue
-    noteShared(flow, r.atMs, r.model, t.cache_read_input_tokens)
+    if (r.ctx === undefined) noteShared(flow, r.atMs, r.model, t.cache_read_input_tokens)
     const ttl = ttlOfTokens(t) ?? ttlAt(flow.points[flow.points.length - 1])
     addPoint(
       flow,
@@ -361,6 +510,7 @@ export function serializeFlow(flow: Flow): string {
   })
   return JSON.stringify({
     v: 5,
+    a: 1,
     m: models,
     ...(engines.length > 0 ? { e: engines } : {}),
     p,
@@ -373,7 +523,7 @@ export function serializeFlow(flow: Flow): string {
 
 export function parseFlowFile(text: string): Flow | null {
   try {
-    const raw = JSON.parse(text) as { v?: number; m?: unknown; e?: unknown; p?: unknown; c?: unknown; q?: unknown; s?: unknown; i?: unknown }
+    const raw = JSON.parse(text) as { v?: number; a?: unknown; m?: unknown; e?: unknown; p?: unknown; c?: unknown; q?: unknown; s?: unknown; i?: unknown }
     if ((raw.v !== 1 && raw.v !== 2 && raw.v !== 3 && raw.v !== 4 && raw.v !== 5) || !Array.isArray(raw.p) || !Array.isArray(raw.c)) return null
     const names = (list: unknown) => (Array.isArray(list) ? (list as unknown[]).map(x => (typeof x === 'string' ? x : '')) : [])
     const models = names(raw.m)
@@ -406,7 +556,8 @@ export function parseFlowFile(text: string): Flow | null {
         ? Object.fromEntries(Object.entries(raw.s as Record<string, unknown>).map(([k, v]) => [k, num(v)]))
         : undefined
     const inherited = raw.i === 1 ? true : raw.i === 0 ? false : undefined
-    return fixAfters(dropFalseCompacts({ points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}), ...(inherited !== undefined ? { inherited } : {}) }))
+    const stale = raw.a !== 1 ? { stale: true } : {}
+    return fixAfters(dropFalseCompacts({ points, compactions, ...(questions ? { questions } : {}), ...(shared ? { shared } : {}), ...(inherited !== undefined ? { inherited } : {}), ...stale }))
   } catch {
     return null
   }

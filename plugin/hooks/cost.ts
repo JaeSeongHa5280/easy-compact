@@ -22,6 +22,7 @@ type PriceRow = {
 }
 
 const PRICE_TABLE: PriceRow[] = [
+  { match: /(fable|mythos)-5-2/, base: rates('Fable 5.2', 8, 40, 0.2) },
   { match: /(fable|mythos)-5-1/, base: rates('Fable 5.1', 10, 50, 0.25) },
   { match: /(fable|mythos)-5/, base: rates('Fable 5', 10, 50, 1) },
   { match: /opus-5-5/, base: rates('Opus 5.5', 4, 20, 0.2) },
@@ -42,8 +43,10 @@ const PRICE_TABLE: PriceRow[] = [
 ]
 
 const KNOWN_MODELS = new Set([
+  'fable-5-2',
   'fable-5-1',
   'fable-5',
+  'mythos-5-2',
   'mythos-5-1',
   'mythos-5',
   'opus-5-5',
@@ -480,7 +483,7 @@ export function otherModelOf(model: string): string | null {
 }
 
 export function repriceTurns(
-  turns: readonly { cost: CostParts; appUsd?: number; model?: string; details?: readonly StepDetail[]; atMs?: number }[],
+  turns: readonly { cost: CostParts; appUsd?: number; advisorUsd?: number; model?: string; details?: readonly StepDetail[]; atMs?: number }[],
   to: string,
   ttl: number = CACHE_TTL_MIN,
 ): { now: number; other: number; count: number; models: string[] } | null {
@@ -498,7 +501,7 @@ export function repriceTurns(
     const c = t.cost
     count++
     models.add(modelKey(t.model!))
-    now += c.usd - (t.appUsd ?? 0)
+    now += c.usd - (t.appUsd ?? 0) - (t.advisorUsd ?? 0)
     let main = { read: c.read, write: c.write, output: c.output, input: c.input }
     for (const d of t.details ?? []) {
       if (!d.agent || d.read === undefined || d.output === undefined) continue

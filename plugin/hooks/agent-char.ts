@@ -14,6 +14,12 @@ const PAL: Readonly<Record<string, string>> = {
   g: '#1f7a3a',
   G: '#aeb6c2',
   t: '#7ee0c3',
+  V: '#a58ff0',
+  v: '#7a66cc',
+  H: '#d6ccfa',
+  K: '#3a3866',
+  P: '#c9bcff',
+  L: '#f6f4ff',
 }
 
 const BOSS = ['.....oooooo', '....oaAAAAAo', '...oAAAAAAAAo', '..oNhNNNNNNNNo', '..oNNweNNweNNo', '..oNNeeNNeeNNo', '..oNkNNNNNNkNo', '..onNNNNNNNNno', '...onnnnnnnno', '....oooooooo', '....o.o..o.o']
@@ -30,6 +36,25 @@ const F7: Readonly<Record<string, readonly string[]>> = {
 }
 const DONE_ROWS = [0, 1, 2, 3, 4, 5, 6].map(r => ['D', 'O', 'N', 'E'].map(ch => F7[ch][r]).join('.'))
 const BANNER = ['.' + 'o'.repeat(24) + '.', ...DONE_ROWS.map(r => `oc${r.replace(/X/g, 'g').replace(/\./g, 'c')}co`), '.' + 'o'.repeat(24) + '.']
+
+const ADVISOR = [
+  '..oooooooooooo..',
+  '.oPPPPPPPPPPPPo.',
+  '..oooKKKKKKooo..',
+  '.P..oKKKKKKo....',
+  '.P..oKKKKKKo....',
+  'PP.oVVVVVVVVo...',
+  '..oVHVVVVVVVVo..',
+  '..oLLLLVVLLLLo..',
+  '..oLweLLLLweLo..',
+  '..oLeeLVVLeeLo..',
+  '..oLLLLVVLLLLo..',
+  '..oVkVVVVVVkVo..',
+  '..ovVVVVVVVVvo..',
+  '...ovvvvvvvvo...',
+  '....oooooooo....',
+  '....o.o..o.o....',
+]
 
 export const AGENT_STEP = 9
 const BABY_X = 17
@@ -105,6 +130,10 @@ export function agentCharSvg(px: number, pose: AgentPose, n = 1): string {
     vbW = BABY_X - 1 + AGENT_STEP * shown
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${agentCharWidth(px, pose, n)}" height="${px}" viewBox="0 0 ${vbW} 16" shape-rendering="crispEdges">${body}</svg>`
+}
+
+export function advisorCharSvg(px: number): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 16 16" shape-rendering="crispEdges">${paths(ADVISOR, 0, 0)}</svg>`
 }
 
 export type WorkPose = 'run' | 'still'

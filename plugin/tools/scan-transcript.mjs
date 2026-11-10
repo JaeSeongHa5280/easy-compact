@@ -2,9 +2,12 @@
 //
 // 쓰는 법: node scan-transcript.mjs <트랜스크립트.jsonl> [세션 id] [--costs] · node scan-transcript.mjs <트랜스크립트.jsonl> --ultra <시작 바이트>
 // 출력(공백 구분, 한 줄에 하나 — 규칙은 hooks/flow.ts 의 recordsFromTranscript 와 같다):
-//   p <시각ms> <input> <output> <cache_read> <cache_creation> <model> <5분 쓰기> <1시간 쓰기> <엔진 버전>
+//   p <시각ms> <input> <output> <cache_read> <cache_creation> <model> <5분 쓰기> <1시간 쓰기> <엔진 버전> [<컨텍스트>]
 //                       (5분 · 1시간 = usage.cache_creation 의 ephemeral_5m · 1h — 그 요청의 캐시 유지 시간,
-//                        엔진 버전 = 기록 줄의 version, 모르면 "-")
+//                        엔진 버전 = 기록 줄의 version, 모르면 "-",
+//                        컨텍스트 = 맨 위 usage 가 메인 반복 여럿의 합일 때(advisor 를 부른 요청)만 — usage.iterations 의 마지막 메인 반복 크기)
+//   a <시각ms> <model> <input> <output> <cache_read> <cache_creation> <엔진 버전>
+//                       (그 요청 안 advisor 호출 하나 — usage.iterations 의 advisor_message, p 줄 바로 뒤. 맨 위 usage 엔 이 몫이 없다)
 //   c <시각ms> <trigger> <preTokens> <postTokens>   (postTokens 모르면 0)
 //   q <시각ms> <질문 글 앞부분>       (질문 시작 — promptId 가 처음 나온 사용자 줄, 글은 hooks/flow.ts promptTextOf 와 같은 규칙)
 //   i                                 (물려받은 시작 — 첫 자기 줄 앞에 다른 세션 줄이 있음(포크): 첫 점이 부모 대화 크기를 담는다. 한 번만)
@@ -77,7 +80,34 @@ if (isCosts) {
 }
 
 const num = v => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+const sumOf = u => num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens)
+const ctxOf = u => {
+  const sum = sumOf(u)
+  if (sum === 0 || !Array.isArray(u.iterations)) return sum
+  let last
+  for (let i = u.iterations.length - 1; i >= 0; i--) {
+    const it = u.iterations[i]
+    const type = typeof it === 'object' && it !== null ? it.type : undefined
+    if (type === 'advisor_message' || type === 'compaction') continue
+    last = it
+    break
+  }
+  const x = typeof last === 'object' && last !== null ? last : {}
+  const isNum = v => typeof v === 'number' && Number.isFinite(v)
+  if (x.type !== 'message' && x.type !== 'fallback_message') return sum
+  if (!isNum(x.input_tokens) || !isNum(x.output_tokens) || !isNum(x.cache_creation_input_tokens) || !isNum(x.cache_read_input_tokens)) return sum
+  const ctx = sumOf(x)
+  return ctx > 0 ? ctx : sum
+}
 const seen = new Map()
+const advised = new Set()
+const pushAdvisor = (id, u, at, engine) => {
+  if (advised.has(id)) return
+  const list = (Array.isArray(u.iterations) ? u.iterations : []).filter(x => x && x.type === 'advisor_message')
+  if (list.length === 0) return
+  advised.add(id)
+  for (const a of list) out.push(`a ${at} ${typeof a.model === 'string' ? a.model : '?'} ${num(a.input_tokens)} ${num(a.output_tokens)} ${num(a.cache_read_input_tokens)} ${num(a.cache_creation_input_tokens)} ${engine}`)
+}
 const seenBoundary = new Set()
 const seenPrompt = new Set()
 const PROMPT_ID = /"promptId":"([^"]+)"/
@@ -133,13 +163,16 @@ for await (const line of lines) {
   }
   const m = r.message
   if (r.type !== 'assistant' || !m?.usage || !m.id) continue
+  const engine = typeof r.version === 'string' && /^\d+\.\d+\.\d+/.test(r.version) ? r.version : '-'
   const prev = seen.get(m.id)
+  const ctx = ctxOf(m.usage)
+  const isSplit = ctx !== sumOf(m.usage)
   if (prev) {
     const o = num(m.usage.output_tokens)
-    if (o > prev.parts[3]) {
-      prev.parts[3] = o
-      out[prev.at] = prev.parts.join(' ')
-    }
+    if (o > prev.parts[3]) prev.parts[3] = o
+    if (isSplit) prev.parts[10] = ctx
+    out[prev.at] = prev.parts.join(' ')
+    pushAdvisor(m.id, m.usage, at, engine)
     continue
   }
   if (carry !== undefined && !isOwnAsked) {
@@ -148,9 +181,9 @@ for await (const line of lines) {
   }
   const u = m.usage
   const cc = u.cache_creation ?? {}
-  const engine = typeof r.version === 'string' && /^\d+\.\d+\.\d+/.test(r.version) ? r.version : '-'
-  const parts = ['p', at, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens), m.model ?? '?', num(cc.ephemeral_5m_input_tokens), num(cc.ephemeral_1h_input_tokens), engine]
+  const parts = ['p', at, num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens), m.model ?? '?', num(cc.ephemeral_5m_input_tokens), num(cc.ephemeral_1h_input_tokens), engine, ...(isSplit ? [ctx] : [])]
   seen.set(m.id, { at: out.length, parts })
   out.push(parts.join(' '))
+  pushAdvisor(m.id, u, at, engine)
 }
 process.stdout.write(out.join('\n'))

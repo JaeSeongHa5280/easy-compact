@@ -2,7 +2,7 @@ import type { LiveTurn, TurnSummary, Usage } from '../types'
 import { fmtTokens, fmtUsd, LEVEL_TEXT, levelOf } from './cost'
 import { L, plural } from './i18n'
 import { iconOf } from './glyph'
-import { agentPart, agentSum, answerBreakdown, APP_MIN_USD, callsOf, fitCells, recentSteps } from './text'
+import { advisorOf, advisorText, agentPart, agentSum, answerBreakdown, APP_MIN_USD, callsOf, fitCells, recentSteps } from './text'
 import { rewriteNote } from './ui-band'
 import { ACCENT, agentMark, agentText, BRAND_HEX, hoverTip, LIVE_HEX, previewChip, previewFrame, pulseDot, questionScope, stepText, workMark } from './ui-common'
 import { autoTurnName, autoTurnOf } from './tidy'
@@ -14,8 +14,10 @@ const ANSWER_COLS = 72
 export function answerLine(ui: Ui, summary: TurnSummary, isFull: boolean, surface: string, isLive = false) {
   const { Text } = ui
   const compactUsd = (summary.details ?? []).reduce((sum, d) => sum + (d.compact ? d.usd : 0), 0)
+  const advisor = advisorOf(summary)
   const parts = [
     compactUsd >= APP_MIN_USD ? L(`컴팩트 ${fmtUsd(compactUsd)}`, `compact ${fmtUsd(compactUsd)}`) : '',
+    advisor ? advisorText(advisor.calls, advisor.usd) : '',
     (summary.appUsd ?? 0) >= APP_MIN_USD ? L(`앱 자체 요청 ${fmtUsd(summary.appUsd!)}`, `app's own requests ${fmtUsd(summary.appUsd!)}`) : '',
   ].filter(Boolean)
   const extra = parts.length > 0 && isFull && surface === 'terminal' ? L(` · ${parts.join(' · ')} 포함`, ` · incl. ${parts.join(' · ')}`) : ''
@@ -88,6 +90,7 @@ export function liveStrip(ui: Ui, now: LiveTurn, isFull: boolean, surface: strin
     contextTokens: now.contextTokens,
     details: now.details,
     ...(now.appUsd ? { appUsd: now.appUsd } : {}),
+    ...(now.advisorUsd ? { advisorUsd: now.advisorUsd, advisorCalls: now.advisorCalls ?? 1 } : {}),
     ...(now.rewriteUsd ? { rewriteUsd: now.rewriteUsd } : {}),
   }
   const auto = autoTurnOf(now.prompt)
@@ -126,6 +129,7 @@ export function liveSample(ui: Ui, last: TurnSummary, isFull: boolean, surface: 
     outputTokens: 0,
     details: last.details ?? [],
     ...(last.appUsd ? { appUsd: last.appUsd } : {}),
+    ...(last.advisorUsd ? { advisorUsd: last.advisorUsd, advisorCalls: last.advisorCalls ?? 1 } : {}),
     ...(last.rewriteUsd ? { rewriteUsd: last.rewriteUsd } : {}),
   }
   return liveStrip(ui, now, isFull, surface, { isAlone, isPreview: true })
@@ -133,7 +137,7 @@ export function liveSample(ui: Ui, last: TurnSummary, isFull: boolean, surface: 
 
 export function answerDetail(ui: Ui, summary: TurnSummary) {
   const { Box, Text } = ui
-  const bd = answerBreakdown(summary.cost, summary.appUsd, summary.details, summary.steps)
+  const bd = answerBreakdown(summary.cost, summary.appUsd, summary.details, summary.steps, advisorOf(summary))
   const { shown, rest, restUsd } = recentSteps(bd.mainSteps, ANSWER_STEPS)
   const SUB = '     '
   return (

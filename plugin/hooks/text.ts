@@ -194,7 +194,28 @@ export function agentSum(details: readonly StepDetail[] | undefined): AgentSum |
   }
 }
 
-export function modelCompareText(turns: readonly { cost: CostParts; appUsd?: number; model?: string; details?: readonly StepDetail[] }[], model: string, ttl?: number): string | null {
+export function advisorText(calls: number, usd?: number, models?: Readonly<Record<string, number>>): string {
+  const head = L(`advisor ${calls}번`, `advisor ×${calls}`)
+  const money = usd === undefined ? head : `${head} ${fmtUsd(usd)}`
+  const named = advisorModelText(calls, models)
+  return named ? `${money} · ${named}` : money
+}
+
+export function advisorModelText(calls: number, models?: Readonly<Record<string, number>>): string | null {
+  const list = Object.entries(models ?? {})
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1])
+  if (list.length === 0 || list.reduce((s, [, n]) => s + n, 0) !== calls) return null
+  return list.length === 1 ? modelName(list[0]![0]) : list.map(([m, n]) => L(`${modelName(m)} ${n}번`, `${modelName(m)} ×${n}`)).join(' · ')
+}
+
+export function advisorOf(t: { advisorUsd?: number; advisorCalls?: number; details?: readonly StepDetail[] }): { usd: number; calls: number; models?: Record<string, number> } | undefined {
+  if (t.advisorUsd === undefined || t.advisorUsd < APP_MIN_USD) return undefined
+  const models = t.details?.find(d => d.advisor)?.advisorModels
+  return { usd: t.advisorUsd, calls: Math.max(1, t.advisorCalls ?? 1), ...(models ? { models } : {}) }
+}
+
+export function modelCompareText(turns: readonly { cost: CostParts; appUsd?: number; advisorUsd?: number; model?: string; details?: readonly StepDetail[] }[], model: string, ttl?: number): string | null {
   const other = otherModelOf(model)
   const r = other ? repriceTurns(turns, other, ttl) : null
   if (!other || !r) return null
@@ -220,6 +241,7 @@ export function costBreakdown(
   steps?: number,
   byEffort?: readonly EffortOutput[],
   ultra?: boolean,
+  advisor?: { usd: number; calls: number; models?: Record<string, number> },
 ): string[] {
   const split = effortSplit(byEffort)
   const think = (isMain: boolean) => {
@@ -237,15 +259,16 @@ export function costBreakdown(
   const a = agentSum(details)
   const compactUsd = (details ?? []).reduce((s, d) => s + (d.compact ? d.usd : 0), 0)
   const compact = compactUsd >= APP_MIN_USD ? withIcon('🗜', L(`컴팩트 ${fmtUsd(compactUsd)}`, `Compact ${fmtUsd(compactUsd)}`)) : null
-  if (!a && !compact) return [`${steps === undefined ? '' : L(`요청 ${steps}회 · `, `${plural(steps, 'request')} · `)}${parts(cost.read, cost.write, cost.output, true)}${app ? ` · ${app}` : ''}`]
-  const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - compactUsd)
+  const adv = advisor && advisor.usd >= APP_MIN_USD ? withIcon('🎓', advisorText(advisor.calls, advisor.usd, advisor.models)) : null
+  if (!a && !compact && !adv) return [`${steps === undefined ? '' : L(`요청 ${steps}회 · `, `${plural(steps, 'request')} · `)}${parts(cost.read, cost.write, cost.output, true)}${app ? ` · ${app}` : ''}`]
+  const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - compactUsd - (adv ? advisor!.usd : 0))
   const main =
     (!a || a.hasParts) && !compact
       ? `${L('메인', 'Main')} ${reqs}${fmtUsd(mainUsd)} · ${parts(Math.max(0, cost.read - (a?.read ?? 0)), Math.max(0, cost.write - (a?.write ?? 0)), Math.max(0, cost.output - (a?.output ?? 0)), true)}`
       : `${L('메인', 'Main')} ${reqs}${fmtUsd(mainUsd)}`
   const agentHeadText = a ? withIcon('🤖', L(`에이전트 ${a.count}개 · 요청 ${a.steps}회 ${fmtUsd(a.usd)}`, `${plural(a.count, 'agent')} · ${plural(a.steps, 'request')} ${fmtUsd(a.usd)}`)) : ''
   const agents = !a ? null : a.hasParts ? `${agentHeadText} · ${parts(a.read, a.write, a.output)}` : agentHeadText
-  return [main, ...(agents ? [agents] : []), ...(compact ? [compact] : []), ...(app ? [app] : [])]
+  return [main, ...(agents ? [agents] : []), ...(compact ? [compact] : []), ...(adv ? [adv] : []), ...(app ? [app] : [])]
 }
 
 export function answerBreakdown(
@@ -253,14 +276,16 @@ export function answerBreakdown(
   appUsd: number | undefined,
   details: readonly StepDetail[] = [],
   steps?: number,
+  advisor?: { usd: number; calls: number; models?: Record<string, number> },
 ): { main: string; mainSteps: StepDetail[]; others: string[] } {
   const a = agentSum(details)
   const hasApp = appUsd !== undefined && appUsd >= APP_MIN_USD
   const compactUsd = details.reduce((s, d) => s + (d.compact ? d.usd : 0), 0)
   const hasCompact = compactUsd >= APP_MIN_USD
-  const alone = !a && !hasApp && !hasCompact
+  const hasAdvisor = advisor !== undefined && advisor.usd >= APP_MIN_USD
+  const alone = !a && !hasApp && !hasCompact && !hasAdvisor
   const reqs = steps === undefined ? '' : L(`요청 ${steps}회 `, `${plural(steps, 'request')} `)
-  const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - (hasCompact ? compactUsd : 0))
+  const mainUsd = Math.max(0, cost.usd - (a?.usd ?? 0) - (hasApp ? appUsd! : 0) - (hasCompact ? compactUsd : 0) - (hasAdvisor ? advisor!.usd : 0))
   const parts = alone
     ? L(
         ` (읽기 ${fmtUsd(cost.read)} · 쓰기 ${fmtUsd(cost.write)} · 출력 ${fmtUsd(cost.output)})`,
@@ -270,9 +295,10 @@ export function answerBreakdown(
   const others = [
     a ? withIcon('🤖', L(`에이전트 ${a.count}개 · 요청 ${a.steps}회 ${fmtUsd(a.usd)}`, `${plural(a.count, 'agent')} · ${plural(a.steps, 'request')} ${fmtUsd(a.usd)}`)) : null,
     hasCompact ? withIcon('🗜', L(`컴팩트 ${fmtUsd(compactUsd)}`, `Compact ${fmtUsd(compactUsd)}`)) : null,
+    hasAdvisor ? withIcon('🎓', advisorText(advisor!.calls, advisor!.usd, advisor!.models)) : null,
     hasApp ? withIcon('⚙', L(`앱 자체 요청 ${fmtUsd(appUsd!)}`, `app's own requests ${fmtUsd(appUsd!)}`)) : null,
   ].filter((x): x is string => x !== null)
-  return { main: `${L('메인 ', 'Main ')}${reqs}${fmtUsd(mainUsd)}${parts}`, mainSteps: details.filter(d => !d.agent && !d.app && !d.compact), others }
+  return { main: `${L('메인 ', 'Main ')}${reqs}${fmtUsd(mainUsd)}${parts}`, mainSteps: details.filter(d => !d.agent && !d.app && !d.advisor && !d.compact), others }
 }
 
 export function recentSteps(details: readonly StepDetail[], n: number): { shown: StepDetail[]; rest: number; restUsd: number } {
@@ -392,7 +418,7 @@ export function midSwitchText(switches: readonly StepSwitch[] | undefined, kind:
 export function switchTags(details: readonly StepDetail[], steps: number, switches: readonly StepSwitch[] | undefined): Map<StepDetail, string> {
   const tags = new Map<StepDetail, string>()
   if (!switches || switches.length === 0) return tags
-  const mains = details.filter(d => !d.agent && !d.app && !d.compact)
+  const mains = details.filter(d => !d.agent && !d.app && !d.advisor && !d.compact)
   const dropped = steps - mains.length
   for (const s of switches) {
     const d = mains[s.at - dropped - 1]

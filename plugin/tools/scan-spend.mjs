@@ -5,7 +5,8 @@
 // 출력(JSON 한 줄): { days: { "YYYY-MM-DD": { "<model>|<엔진 버전>": { S: [input, output, cacheRead, write5m, write1h], L: [...] } } }, extra: { "YYYY-MM-DD": 달러 },
 //   retro: { "YYYY-MM-DD": { "<model>": [개수, 컴팩트 전 크기 합] } }, calib: [[컴팩트 전 크기, 모델, 달러], …], files, scanned }
 //   모델 칸의 "|<엔진 버전>" = 그 요청을 보낸 Claude Code 버전(기록 줄의 version — 요율이 버전으로 갈린다). 버전이 없는 줄은 "<model>" 만
-//   extra = 대화 기록에 없는 요청(컴팩트 요청 · 앱 자체 요청) — mod 데이터 폴더를 주면 그 안 extra/ · turns/ 만 읽는다
+//   extra = 대화 기록에 없는 요청(컴팩트 요청 · 앱 자체 요청 · mod 가 잰 advisor) — mod 데이터 폴더를 주면 그 안 extra/ · turns/ 만 읽는다
+//   days 의 advisor 몫(usage.iterations 의 advisor_message — 맨 위 usage 엔 없다)은 mod 장부(extra/ · turns/)가 없는 세션만 — 있으면 장부가 이미 셌다
 //   retro = 기록의 컴팩트 경계 중 mod 가 잰 값이 없는 것 — 값은 mod 가 잰 컴팩트(calib)로 어림
 //   S = 프롬프트(입력 + 캐시 읽기 + 쓰기) 10만 이하 요청, L = 넘는 요청 — 긴 프롬프트 요율을 가른다
 // 캐시: 파일마다 크기 · 수정 시각이 같으면 다시 안 읽는다 — 처음 켤 때만 이번 달 기록을 다 읽는다(기록이 크면 수십 초).
@@ -62,6 +63,29 @@ async function scanFile(f) {
   const seenCompact = new Set()
   let lastModel = '?'
   const seen = new Map()
+  const adv = {}
+  const advised = new Set()
+  const addAdvisor = r => {
+    const list = (Array.isArray(r.message.usage.iterations) ? r.message.usage.iterations : []).filter(x => x && x.type === 'advisor_message')
+    if (list.length === 0) return
+    advised.add(r.message.id)
+    const at = Date.parse(String(r.timestamp ?? '')) || 0
+    if (at < since) return
+    const engine = typeof r.version === 'string' && /^\d+\.\d+\.\d+/.test(r.version) ? r.version : ''
+    for (const a of list) {
+      const input = num(a.input_tokens)
+      const read = num(a.cache_read_input_tokens)
+      const write = num(a.cache_creation_input_tokens)
+      const w1 = Math.min(write, num(a.cache_creation?.ephemeral_1h_input_tokens))
+      const model = typeof a.model === 'string' ? a.model : '?'
+      const t = slot(slot(slot(adv, dayOf(at), {}), engine ? `${model}|${engine}` : model, {}), input + read + write > LONG_OVER ? 'L' : 'S', [0, 0, 0, 0, 0])
+      t[0] += input
+      t[1] += num(a.output_tokens)
+      t[2] += read
+      t[3] += write - w1
+      t[4] += w1
+    }
+  }
   const lines = createInterface({ input: createReadStream(f.path, 'utf8'), crlfDelay: Infinity })
   for await (const line of lines) {
     const isCompact = line.includes('"compact_boundary"')
@@ -86,6 +110,7 @@ async function scanFile(f) {
     if (r.type !== 'assistant' || !m?.usage || !m.id) continue
     if (typeof m.model === 'string' && m.model !== '<synthetic>') lastModel = m.model
     if (own && typeof r.sessionId === 'string' && r.sessionId !== own) continue
+    if (!advised.has(m.id)) addAdvisor(r)
     const prev = seen.get(m.id)
     if (prev) {
       const more = num(m.usage.output_tokens) - prev.output
@@ -121,7 +146,7 @@ async function scanFile(f) {
     t[4] += w1
     seen.set(m.id, { t, output })
   }
-  return { days, compacts }
+  return { days, compacts, adv }
 }
 
 function slot(obj, key, empty) {
@@ -129,11 +154,12 @@ function slot(obj, key, empty) {
   return obj[key]
 }
 
-const CACHE_V = 5
+const CACHE_V = 6
 let cache = { v: CACHE_V, files: {} }
 try {
   const old = JSON.parse(readFileSync(cacheFile, 'utf8'))
   if (old && old.v === CACHE_V && old.files) cache = old
+  else if (old && old.v === 5 && old.files) cache = { v: CACHE_V, files: Object.fromEntries(Object.entries(old.files).filter(([, hit]) => hit?.gone)) }
 } catch {
 }
 const files = []
@@ -148,7 +174,7 @@ for (const f of files) {
   }
   try {
     const got = await scanFile(f)
-    next.files[f.path] = { size: f.size, mtimeMs: f.mtimeMs, days: got.days, compacts: got.compacts }
+    next.files[f.path] = { size: f.size, mtimeMs: f.mtimeMs, days: got.days, compacts: got.compacts, ...(Object.keys(got.adv).length > 0 ? { adv: got.adv } : {}) }
     scanned++
   } catch {
   }
@@ -169,8 +195,8 @@ try {
 } catch {
 }
 const out = {}
-for (const entry of Object.values(next.files)) {
-  for (const [day, byModel] of Object.entries(entry.days ?? {})) {
+const merge = days => {
+  for (const [day, byModel] of Object.entries(days ?? {})) {
     if (day < firstDay) continue
     for (const [model, tiers] of Object.entries(byModel)) {
       for (const [tier, t] of Object.entries(tiers)) {
@@ -179,6 +205,16 @@ for (const entry of Object.values(next.files)) {
       }
     }
   }
+}
+const ledgers = new Map()
+const hasLedger = sid => {
+  if (!dataArg || !sid) return false
+  if (!ledgers.has(sid)) ledgers.set(sid, existsSync(join(dataArg, 'extra', `${sid}.json`)) || existsSync(join(dataArg, 'turns', `${sid}.json`)))
+  return ledgers.get(sid)
+}
+for (const [path, entry] of Object.entries(next.files)) {
+  merge(entry.days)
+  if (entry.adv && !hasLedger(sessionOf(path))) merge(entry.adv)
 }
 const extra = {}
 const measured = new Map()
@@ -218,6 +254,7 @@ if (dataArg) {
           if (d?.compact && num(d.compact.before) > 0) addMeasured(n, num(d.compact.before), num(d.usd))
           if (!booked.has(n) && (d?.app || d?.compact)) addDay(dayOf(t.atMs), num(d.usd))
         }
+        if (!booked.has(n)) addDay(dayOf(t.atMs), num(t.advisorUsd))
       }
     } catch {
     }

@@ -4,6 +4,20 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.3.0] — 2026-11-11
+
+### Added
+- **An advisor cost line** — a question that called the advisor (the advising model) gets its own line, *advisor ×N $X · Opus 5.5*: in the opened question's split, the step lines, the answer chip and the session total's split, with an advisor bug drawn at the start of the line on desktop. That cost used to be mixed into *⚙ app's own requests* and was only added when the question ended. The model that answered is looked up in the session record after the question ends, and filled in for questions from before this version where it can be found.
+- **Fable 5.2 and Mythos 5.2 rates** — per million tokens: input $8, output $40, cache read $0.20, cache write $10 (5 minutes) / $16 (1 hour). Without their own row they were priced at the old Fable 5 rates ($10, $50, read $1), so reads showed 5× high. The formula optimum sits where Fable 5.1's does (reads are 2.5% of input on both). Fast mode rates aren't counted yet.
+- **Advisor numbers shared with Easy Session** — in a session that called the advisor, easy-compact writes the count and cost (numbers only) to `~/.claude/plugins/data/advisor-use/<session id>.json`, so the Easy Session plugin can show the same numbers next to the prompt. It's cleaned up with the session's records.
+
+### Fixed
+- **Context read double on requests that called the advisor** — on such a request the main model runs twice and Claude Code reports the sum. That sum was taken as the context size, so the flow bars, the peak and the growth per request were doubled (e.g. 302k and 684k), and Easy Auto could compact at half its range. It now uses the last main run's size. The cost still counts both runs.
+- **A subagent starting split the question's record** — the start of a subagent's turn replaced the running question with an empty one: the question's text and earlier steps were lost, and subagent and advisor costs landed on the previous question. Subagents now attach to the question that launched them. Questions already recorded that way aren't restored.
+- **The session record couldn't be read after the working folder changed** — while a shell `cd` had moved the folder, the record's path was built from the new one, and everything that reads the record failed quietly. It now keeps the path it first found, and otherwise looks in the session's root folder and the project folders.
+- **The card lost a blank line early on Claude Code 2.1.321** — from that version Claude Code always reports its own share of the space above the bar; it was counted as one line, so the *Compact now?* card dropped a blank line one step early. It's now counted as zero.
+- **The advisor line went out of step on long questions** — when a question passes 60 step lines and the oldest are dropped, the advisor line is kept.
+
 ## [1.2.0] — 2026-11-02
 
 ### Added

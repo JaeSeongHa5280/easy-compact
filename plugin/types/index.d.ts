@@ -190,6 +190,8 @@ export type StepDetail = {
   done?: boolean
   at?: number
   app?: boolean
+  advisor?: number
+  advisorModels?: Record<string, number>
   compact?: { before: number; after: number | null }
 }
 
@@ -210,6 +212,8 @@ export type LiveTurn = {
   outputTokens: number
   details: StepDetail[]
   appUsd?: number
+  advisorUsd?: number
+  advisorCalls?: number
   rewriteUsd?: number
   model?: string
   effort?: string
@@ -226,6 +230,8 @@ export type TurnSummary = {
   steps: number
   cost: CostParts
   appUsd?: number
+  advisorUsd?: number
+  advisorCalls?: number
   rewriteUsd?: number
   prompt: string
   atMs: number
@@ -240,7 +246,7 @@ export type TurnSummary = {
   turnId?: string
 }
 
-export type TurnsOlder = { count: number; usd: number; agentUsd: number; appUsd: number; rebuilt?: true }
+export type TurnsOlder = { count: number; usd: number; agentUsd: number; appUsd: number; advisorUsd?: number; advisorCalls?: number; advisorModels?: Record<string, number>; rebuilt?: true }
 
 export type CtxPoint = {
   atMs: number
@@ -320,6 +326,7 @@ declare module 'claude-code' {
       summaryCard: boolean
       flashTick: number
       auto: AutoState | null
+      advisorPending: { turnId: string; agentId?: string; ids: string[] }[]
     }
   }
 }
