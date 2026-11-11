@@ -2117,7 +2117,7 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
 }
 
 async function catchMissedCompact($: EngineInterface, engineTokens: number | undefined, startedAt: number): Promise<void> {
-  const phase = await read($, compactPhase)
+  const phase = await logicPhase($)
   const flow = await readFlow($)
   const last = flow.points[flow.points.length - 1]
   const r = judgeMeasure(
@@ -2357,18 +2357,38 @@ async function startCompacting($: EngineInterface, kind: string): Promise<void> 
   await update($, compactPhase, () => 'compacting')
 }
 
+let compactLive = 0
+let ownCompactKind: string | null = null
+
+async function logicPhase($: EngineInterface) {
+  const phase = await read($, compactPhase)
+  return phase === 'idle' && compactLive > 0 ? 'compacting' : phase
+}
+
+async function healCompacting($: EngineInterface, why: string, force = false): Promise<void> {
+  if ((await read($, compactPhase)) !== 'compacting') return
+  if (!force && compactLive > 0) return
+  await update($, compactPhase, () => 'idle')
+  await noteCompact($, `"compacting" was left with no compact running — cleared (${why})`)
+}
+
 async function compactNow($: EngineInterface, args = '', kind?: string): Promise<boolean> {
   await update($, isConfirmingCompact, () => false)
-  await startCompacting($, kind ?? (args === compactKeep(await currentSettings($)) ? kindTidy() : kindDirect()))
+  const ownKind = kind ?? (args === compactKeep(await currentSettings($)) ? kindTidy() : kindDirect())
+  await startCompacting($, ownKind)
   const startMs = await $.clock.now()
   const countBefore = (await read($, compactions)).length
   let isDone = true
+  compactLive++
+  ownCompactKind = ownKind
   try {
     await $.command.run(args ? { command: 'compact', args } : { command: 'compact' })
   } catch (err) {
     isDone = false
     $.ui.toast(L(`컴팩트 실패: ${String(err)}`, `Compact failed: ${String(err)}`))
   } finally {
+    compactLive--
+    if (ownCompactKind === ownKind) ownCompactKind = null
     await update($, compactPhase, () => 'idle')
   }
   await refreshUsage($, { categories: false, pushHistory: false }).catch(() => {})
@@ -2468,7 +2488,7 @@ async function autoFacts($: EngineInterface, a: AutoState): Promise<AutoFacts> {
     ctx: u ? u.contextTokens : null,
     autoStart: s.autoStart,
     autoEnd: s.autoEnd,
-    phase: await read($, compactPhase),
+    phase: await logicPhase($),
     loss: u ? autoLossOf(u, (await read($, optimal))?.inputs ?? null, await read($, turnSummaries), nowMs) : null,
     cold: est?.kind === 'cold' ? (est.reason === 'model' ? 'model' : 'cold') : null,
     isLive: (await read($, live)) !== null,
@@ -2852,7 +2872,7 @@ async function isBandTucked($: EngineInterface): Promise<boolean> {
   const mode = bandShowMode(await currentSettings($))
   if (mode === 'always') return false
   if (mode === 'never') return !(await read($, isConfirmingCompact))
-  const phase = await read($, compactPhase)
+  const phase = await logicPhase($)
   if (phase === 'tidying' || phase === 'compacting' || (await read($, isConfirmingCompact))) return false
   const urgency = await urgencyNow($)
   if (urgency === 'ok' || (urgency !== 'cold' && isAutoActive(await read($, auto)))) return true
@@ -3097,6 +3117,7 @@ async function flushTidyDrafts($: EngineInterface): Promise<boolean> {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await ensureLang($)
+    await healCompacting($, 'the plugin loaded').catch(() => {})
     await checkEngine($)
     gaugeNote = await prepareGaugeNote($).catch(() => false as const)
     await refreshUsage($, { categories: false, pushHistory: false })
@@ -3216,7 +3237,11 @@ export const register: Register = on => {
       if (verdict === 'go') {
         if (turnNow) await recordSaveTurn($, turnNow)
         await startCompacting($, kindTidy())
-        $.clock.after(300, () => void currentSettings($).then(s2 => compactNow($, compactKeep(s2))))
+        compactLive++
+        $.clock.after(300, () => {
+          compactLive--
+          void currentSettings($).then(s2 => compactNow($, compactKeep(s2)))
+        })
       } else {
         await update($, compactPhase, () => (verdict === 'hold' ? 'held' : 'idle'))
         $.ui.toast(
@@ -3240,6 +3265,7 @@ export const register: Register = on => {
     if (e.agentId === undefined && (await read($, summaryCard))) await update($, summaryCard, () => false)
     if (gaugeNote && (e as { agentId?: string }).agentId === undefined) void showGaugeNote($).catch(() => {})
     if (e.agentId === undefined && (await read($, compactPhase)) === 'held') await update($, compactPhase, () => 'idle')
+    if (e.agentId === undefined) await healCompacting($, 'a main turn started', true)
     const appCarry = await appCarryAtStart($)
     if ((e as { agentId?: string }).agentId === undefined) await writeFlow($, withQuestion(await readFlow($), await $.clock.now()))
     const submitAt = await $.clock.now()
@@ -3421,7 +3447,8 @@ export const register: Register = on => {
     hookCompact = mark
     await ensureLang($)
     const isMine = e.agentId === undefined && e.trigger !== 'precompute'
-    if (isMine && (await read($, compactPhase)) !== 'compacting') await startCompacting($, compactKindOf(e.trigger))
+    if (isMine && (await read($, compactPhase)) !== 'compacting') await startCompacting($, ownCompactKind ?? compactKindOf(e.trigger))
+    if (isMine) compactLive++
     try {
       const isIdlePre = e.agentId === undefined && e.trigger === 'precompute' && !e.instructions && mainTurn === null
       const result = await next(isIdlePre ? { ...e, instructions: directKeep(await currentSettings($)) } : e)
@@ -3439,7 +3466,11 @@ export const register: Register = on => {
       await refreshUsage($, { categories: false, pushHistory: false })
       return result
     } finally {
-      if (isMine) await update($, compactPhase, () => 'idle')
+      if (isMine) {
+        compactLive--
+        ownCompactKind = null
+        await update($, compactPhase, () => 'idle')
+      }
     }
   }).catch(async (_$, e, next) => {
     const mark = hookCompact

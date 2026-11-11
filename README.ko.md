@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.0-4c9be8" alt="버전 1.3.0">
+  <img src="https://img.shields.io/badge/version-1.3.1-4c9be8" alt="버전 1.3.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code 플러그인">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Claude Code 2.1.295 이상 필요">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스">
@@ -19,7 +19,7 @@
 <p align="center">
   <a href="README.md">English</a> · <b>한국어</b>
   &nbsp;|&nbsp;
-  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#130-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
+  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#131-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,10 @@ claude plugin uninstall easy-compact@easy-compact
 `~/.claude` 에 clone 하거나 `settings.json` 을 고친 것이 없어 이것으로 끝입니다. 잠깐 쉬고 싶을 뿐이면 지우는 대신 [바를 끄세요](#숨기기--접기--다시-켜기).
 
 </details>
+
+## 1.3.1 에서 바뀐 것
+
+- **「저장 끝 → 컴팩트 중…」이 남지 않음** — 컴팩트가 시작되지 않았거나 도중에 끊겨도, 다음 질문을 보내거나 세션이 시작될 때 그 글이 풀립니다.
 
 ## 1.3.0 에서 바뀐 것
 

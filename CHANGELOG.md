@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.3.1] — 2026-11-11
+
+### Fixed
+- **"Saved → compacting in progress…" stayed when nothing was compacting** — if the compact never started or was cut off after an Easy Compact save finished, that text stayed on the bar and the pane until the next compact. It now clears when you send the next question, and also when a session starts or the plugin reloads with no compact running. If the compact runs late after all, the same text shows again.
+
 ## [1.3.0] — 2026-11-11
 
 ### Added
