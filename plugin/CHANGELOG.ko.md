@@ -4,6 +4,11 @@ easy-compact 의 버전마다 바뀐 것입니다. 버전 번호는 [유의적 �
 
 **업데이트 받기:** Claude 에게 `이 플러그인 업데이트해줘: easy-compact (claude plugin marketplace update easy-compact 후 claude plugin update easy-compact@easy-compact)` 를 보내거나, 셸에서 그 두 줄 → Claude 다시 켜기 — [업데이트 받기](README.ko.md#업데이트-받기) 참고.
 
+## [1.3.2] — 2026-11-12
+
+### 바뀜
+- **Ultracode 를 켠 질문은 늘 생각 깊이를 함께** — Claude Code 2.1.284 부터 Ultracode 는 따로 켜고 끄는 스위치입니다. 켜도 엑스트라로 바뀌지 않고 어느 단계에서든 돕니다. 그래서 Ultracode 로 돈 질문은 늘 *Ultracode(단계)* 로 보입니다 — 전에 그냥 *Ultracode* 로만 보이던 엑스트라도 *Ultracode(엑스트라)*. 최대에 둔 채 켜면 *최대 → Ultracode(최대)* 로 보입니다. 출력 나눔과 패널 맨 아래 참고 줄도 같은 이름입니다.
+
 ## [1.3.1] — 2026-11-11
 
 ### 고침

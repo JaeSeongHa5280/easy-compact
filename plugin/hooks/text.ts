@@ -390,12 +390,12 @@ function changeText(kind: StepSwitch['kind'], from: string, to: string, at: stri
 
 export function effortLabel(effort: string | undefined, ultra: boolean | undefined): string {
   if (!ultra) return effort ? effortName(effort) : ''
-  return effort && effort !== 'xhigh' ? `Ultracode(${effortName(effort)})` : 'Ultracode'
+  return effort ? `Ultracode(${effortName(effort)})` : 'Ultracode'
 }
 
 export function effortKey(effort: string | undefined, ultra: boolean | undefined): string | null {
   if (!ultra) return effort ?? null
-  return effort && effort !== 'xhigh' ? `ultracode:${effort}` : 'ultracode'
+  return effort ? `ultracode:${effort}` : 'ultracode'
 }
 
 export function stepSwitchText(s: StepSwitch): string {

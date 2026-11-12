@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.3.2] — 2026-11-12
+
+### Changed
+- **Ultracode always shows its effort level** — Claude Code 2.1.284 made Ultracode its own switch: turning it on no longer moves you to Extra, so it can run at any level. A question that ran with Ultracode now always reads *Ultracode(level)* — *Ultracode(Extra)* too, which used to show as a bare *Ultracode* — and turning it on while you stay at Max reads *Max → Ultracode(Max)*. The same names appear in the output split and the note at the bottom of the pane.
+
 ## [1.3.1] — 2026-11-11
 
 ### Fixed
