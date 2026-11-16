@@ -72,6 +72,8 @@ import { ARRIVE_SETTLE_MS, clearArrival, drawingBar, endFlash, FLASH_STEP_MS, ma
 import { autoRangeOf, BAND_PARTS, isSlim, parseSlim, slimCustom, spendOf, PARTS, setPart, parsePartKey, parsePartLevel, partName, levelName, slimViewOf, bandModeName, bandPartName, bandShowMode, bandShowOf, bandStateText, chooseScreen, editView, hiddenNote, isViewPart, HIDDEN_NOTE_MS, parseScreen, screenName, setFolded, viewOf, paneAutoUse, paneSyncUse, revealLabel, revealName, setBandShow, chooseTidy, isAutoWord, parseOnOff, DEFAULT_SETTINGS, normalizeSettings, NEW_INSTALL_SCREEN, UPDATE_SCREEN, paneModeName, paneModeOf, parseBandMode, parseBandPart, parseMinutes, parseTokens, setBandPart, setCompactAt, setFollow, setRange, setTidyCustom, thresholdsOf, tidyStyles, tidyBody, usesCustom, setCompactCustom, setContextWindow, setEngineAuto } from './settings'
 import {
   baseOfCategories,
+  fitsBelow,
+  isFreshFirst,
   GROWTH_GUESS,
   growthPerStep,
   keepOptimal,
@@ -1402,11 +1404,14 @@ async function loadSettings($: EngineInterface): Promise<void> {
 
 async function baseLoad($: EngineInterface, flow: Flow, model: string): Promise<number | null> {
   const head = (await read($, flowNote)) === null && flow.points.length < MAX_POINTS && !flow.compactions.some(c => c.index === 0) ? (flow.points[0] ?? null) : null
-  const first = head && (!head.model || !model || modelKey(head.model) === modelKey(model)) ? head.ctx : null
   const categories = baseOfCategories((await read($, usage))?.categories ?? [])
-  if (flow.inherited === false) return first ?? categories ?? head?.ctx ?? null
-  if (flow.inherited === true) return categories
-  return categories ?? head?.ctx ?? null
+  const fixed = fixedHintOf(flow, model, await storedFixed($))
+  const ref = categories ?? fixed
+  const fresh = head && isFreshFirst(head.ctx, ref) ? head.ctx : null
+  const first = head && (!head.model || !model || modelKey(head.model) === modelKey(model)) ? fresh : null
+  if (flow.inherited === false) return first ?? categories ?? fixed ?? fresh
+  if (flow.inherited === true) return categories ?? fixed
+  return categories ?? fresh ?? fixed
 }
 
 async function measureOptimal($: EngineInterface, model: string): Promise<Optimal> {
@@ -1430,11 +1435,14 @@ async function measureOptimal($: EngineInterface, model: string): Promise<Optima
     after = afterInNowTokens(flow, last.after)
     afterSrc = 'session'
   } else if (base !== null) {
-    const pcKept = await storedCount($, KEPT_KEY)
+    const ctxNow = flow.points[flow.points.length - 1]?.ctx ?? null
+    const stored = await storedCount($, KEPT_KEY)
+    const pcKept = stored !== null && fitsBelow(base + stored, ctxNow) ? stored : null
     after = base + (pcKept ?? summary)
     afterSrc = pcKept !== null ? 'pc' : summarySrc === 'session' ? 'session' : summarySrc
   } else {
-    after = await storedCount($, AFTER_KEY)
+    const stored = await storedCount($, AFTER_KEY)
+    after = stored !== null && fitsBelow(stored, flow.points[flow.points.length - 1]?.ctx ?? null) ? stored : null
     afterSrc = 'pc'
   }
   const pcOutput = await storedCount($, OUTPUT_KEY)
@@ -2094,7 +2102,7 @@ async function recordCompaction($: EngineInterface, trigger: string, result: Com
   const measured = parts?.usd ?? null
   const before = result.tokensBefore ?? before0?.contextTokens ?? flow.points[flow.points.length - 1]?.ctx ?? 0
   const kept = typeof result.tokensAfter === 'number' && result.tokensAfter > 0 ? result.tokensAfter : null
-  if (kept !== null) await $.store.set(KEPT_KEY, kept)
+  if (kept !== null && fitsBelow(kept, before)) await $.store.set(KEPT_KEY, kept)
   const event: CompactEvent = { atMs: atMs ?? (await $.clock.now()), trigger, before, after: null, costUsd: measured, index: flow.points.length, ...(kept !== null ? { kept } : {}), via }
   const withEvent: Flow = { points: flow.points, compactions: [...flow.compactions, event] }
   const after = afterGuess(withEvent, event, before0?.model ?? '', await baseLoad($, flow, before0?.model ?? ''))

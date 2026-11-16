@@ -94,3 +94,13 @@ export function baseOfCategories(categories: Usage['categories']): number | null
   const sum = categories.filter(c => c.kind === 'used' && !/message|summary|compact/i.test(c.name)).reduce((s, c) => s + c.tokens, 0)
   return sum > 0 ? sum : null
 }
+
+export const FIRST_BASE_MAX = 2
+
+export function isFreshFirst(first: number, ref: number | null): boolean {
+  return ref === null || ref <= 0 || first <= ref * FIRST_BASE_MAX
+}
+
+export function fitsBelow(after: number, ctxNow: number | null): boolean {
+  return ctxNow === null || ctxNow <= 0 || after < ctxNow
+}

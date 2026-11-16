@@ -4,6 +4,12 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.3.3] — 2026-11-16
+
+### Fixed
+- **"Compacting now is a loss" blocked compacting in sessions started from a copied conversation** — when the app copies a conversation into a new session, the first request already holds the whole conversation, and easy-compact counted it as the base load (system prompt, tools, memory). What stays after compacting (resident) then looked as large as the context, so even past the compact point the bar, pane and confirm card said there was little to save and hid the compact buttons. Now a first request more than twice the base load is replaced by the /context categories or the base load measured on this PC.
+- **Values measured in other sessions no longer push the after-compact size above the current context** — if this PC's last compact (kept conversation, size right after) would put the estimate at or above the current context, it is skipped. The kept size is saved only when it is smaller than the size before compacting.
+
 ## [1.3.2] — 2026-11-12
 
 ### Changed
