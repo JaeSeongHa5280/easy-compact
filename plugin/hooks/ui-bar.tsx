@@ -7,7 +7,7 @@ import { isSlim, revealLabel, slimViewOf, viewOf } from './settings'
 import { cellsOf, ctxNumText, paneTitle, rangeNumText, textCh, widthOf } from './text'
 import { directKeep, isAutoSaveKind, kindAuto } from './tidy'
 import { cardCalc, clearDescEl, clearLeadEl, coldLineEl, costLineEl, easyParts, keepEl, plainParts, tidyPickerEl } from './ui-ask'
-import { afterCells, bandGrid, costGroups, drawLimitsLine, fitEstimateLine, fitLastTurnLine, fitLine, lastTurnCells, minShowOf, setCtxUnit, SLIM_BUTTON_PARTS, slimButtonText, slimParts, slimSummaryCells, bandShowNow } from './ui-band'
+import { afterCells, bandGrid, costGroups, drawLimitsLine, limitsLineW, fitEstimateLine, fitLastTurnLine, fitLine, lastTurnCells, minShowOf, setCtxUnit, SLIM_BUTTON_PARTS, slimButtonText, slimParts, slimSummaryCells, bandShowNow } from './ui-band'
 import type { SpendShown } from './ui-band'
 import { ACCENT, CH_PX, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, nameColW, phaseLook, pulseDot, stageText } from './ui-common'
 import { gaugeWidth } from './gauge'
@@ -36,6 +36,7 @@ export type BarData = {
   clearAsk: { questions: number | null } | null
   auto?: { isOn: boolean; label: string; tip: string } | null
   aboveRows?: number
+  inPane?: boolean
 }
 
 export type BarActions = {
@@ -139,6 +140,8 @@ export function deskRows(n: unknown, cols: number): number {
 export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const { Box, Button, Text } = ui
   const { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, tidyDraft, compactDraft, clearAsk } = d
+  const inPane = d.inPane === true
+  const isSlimBar = isSlim(sNow) && !inPane
   const compactCore = L('컴팩트', 'Compact')
   const isLean = viewOf(sNow).layout === 'one'
   const fullShow = bandShowNow(slimViewOf(sNow), u, nowMs, sNow.sessionColors)
@@ -227,7 +230,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           : L('곧 컴팩트할 때', 'Compact soon')
         : compactCore
   const autoOn = d.auto?.isOn === true
-  const compactLabel = isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : compactText
+  const compactLabel = e.surface === 'terminal' ? (isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : compactText) : compactCore
   const canBlink = !isConfirming && phase !== 'tidying' && phase !== 'compacting' && !isNotNow && !isLittle && level === 'cut' && !autoOn
   const motion = sNow.motion !== 'reduce'
   const isBusy = phase === 'compacting' || phase === 'tidying'
@@ -256,7 +259,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   }
   const brandIcon = gaugeBox(canBlink)
   const offIcon = gaugeBox(false)
-  const slimIcon = isSlim(sNow) ? gaugeBox(canBlink, false) : null
+  const slimIcon = isSlimBar ? gaugeBox(canBlink, false) : null
   const coldWinTip =
     isColdWin && cold
       ? L(
@@ -270,6 +273,12 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const txtW = (text: string) => widthOf(text, isTerm)
   const gaugePx = gaugeWidth(gaugeShapeNow(), 16)
   const ICON_W = isTerm ? 0 : Math.ceil(gaugePx / CH_PX) + 1
+  const stateWord = shownLevel === 'cut' ? (isRange ? L('늦어짐', 'Overdue') : L('컴팩트 권장', 'Compact advised')) : shownLevel === 'warn' ? (isRange ? L('컴팩트할 때', 'Time to compact') : L('곧 컴팩트할 때', 'Compact soon')) : ''
+  const STATE_W = isTerm || !stateWord || mode === 'min' ? 0 : txtW(stateWord) + 1
+  const paneName = L('컴팩트 패널', 'Compact pane')
+  const winRestW = (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
+  const isPaneLabel = !isTerm && !isOneRow && mode !== 'min' && (hasLimitsRow && u ? W - (txtW(paneName) + 6 + winRestW) - 2 >= limitsLineW(ui, e.surface, u, nowMs, show) : W >= 120)
+  const PANE_W = isPaneLabel ? txtW(paneName) + 5 : 4
   const shortLabel = L('컴팩트', 'Compact')
   const dotW = ICON_W > 0 ? 0 : 2
   const isAutoBusy = isBusy && (isAutoSaveKind(kind) || kind === kindAuto())
@@ -283,12 +292,14 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         ? ICON_W + dotW + txtW(look.text) + 1 + btnW(L('취소', 'Cancel')) + autoCtlW
         : autoCtlW +
           (e.props.isWorking
-            ? ICON_W + txtW(isTerm ? `[ ${label} ]` : label)
+            ? ICON_W + STATE_W + txtW(isTerm ? `[ ${label} ]` : label)
             : isConfirming
-              ? ICON_W + btnW(`${label} ▾`)
-              : (phase === 'held' ? txtW(withIcon('⏸', L('보류됨', 'On hold'))) + 1 : 0) + ICON_W + btnW(label))
-  const hasGaugeDoor = !isTerm && offIcon !== null
-  const controlsW = (isTerm ? btnW(view === 'usage' ? L('패널 ▾', 'Pane ▾') : L('패널 ▸', 'Pane ▸')) + 1 : hasGaugeDoor ? 0 : btnW('◔') + 1) + (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
+              ? ICON_W + STATE_W + btnW(`${label} ▾`)
+              : (phase === 'held' ? txtW(withIcon('⏸', L('보류됨', 'On hold'))) + 1 : 0) + ICON_W + STATE_W + btnW(label))
+  const hasGaugeDoor = !isTerm && offIcon !== null && !inPane
+  const controlsW = inPane
+    ? isOneRow ? 0 : btnW('—')
+    : (isTerm ? btnW(view === 'usage' ? L('패널 ▾', 'Pane ▾') : L('패널 ▸', 'Pane ▸')) + 1 : hasGaugeDoor ? PANE_W + 1 : btnW('◔') + 1) + (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
   const hasLimitsLine = hasLimitsRow && u !== null
   const onCost = !show.lastTurn && (!hasLimitsLine || u === null || fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', null, spendNow).el !== null)
   const lastSum = sums.length > 0 ? sums[sums.length - 1]! : null
@@ -320,20 +331,35 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const tipRight = (nameW: number) => nameW + 1
   const isPaneOpen = view === 'usage'
   const doorTip = isPaneOpen ? L('누르면 패널이 닫힙니다', 'Click to close the pane') : L('누르면 패널이 열리고, 다시 누르면 닫힙니다', 'Click to open the pane, again to close')
-  const gaugeDoor = (icon: unknown) =>
-    icon === null || e.surface === 'terminal'
+  const gaugeDoor = (icon: unknown, hasWord = true) =>
+    icon === null || e.surface === 'terminal' || inPane
       ? icon
       : withTip(
-          `band-gauge-${isPaneOpen ? 'open' : 'closed'}`,
-          <Box key="gauge-door">
+          `band-gauge-${shownLevel}`,
+          <Box key="gauge-mark" columnGap={0.5} alignItems="center">
             {icon}
-            <Box position="absolute" top={0} left={0}>
-              <Button key="usage" label={gaugePx > 18 ? '\u2800\u2800' : '\u2800'} plain dimColor onPress={async () => void (await act.toggleView('usage'))} />
-            </Box>
+            {hasWord && stateWord ? stageText(ui, 'ctx', shownLevel === 'cut' ? 'error' : LEVEL_HEX.warn, stateWord) : null}
           </Box>,
-          [ctxTip ?? L('컨텍스트 아직 모름', 'Context not known yet'), doorTip],
+          [ctxTip ?? L('컨텍스트 아직 모름', 'Context not known yet')],
           ICON_W,
         )
+  const paneIcon = (isOpen: boolean) => {
+    const Svg = (ui as unknown as { Svg?: (p: Record<string, unknown>) => unknown }).Svg
+    const fill = isOpen ? '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-3z" fill="currentColor" stroke="none"/>' : ''
+    return Svg ? <Svg key="pane-ico" source={`<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z"/><path d="M15 4l0 16"/>${fill}</svg>`} alt={paneName} width={16} height={16} /> : null
+  }
+  const paneBtn = (key: string, hasLabel: boolean) =>
+    withTip(
+      `${key}-${isPaneOpen ? 'open' : 'closed'}`,
+      <Box key={key} borderStyle="single" borderColor="subtle" columnGap={0.5} alignItems="center" paddingX={0.5} paddingY={0} {...(isPaneOpen ? { backgroundColor: 'promptBorder' } : {})}>
+        {paneIcon(isPaneOpen)}
+        {hasLabel ? <Text>{paneName}</Text> : null}
+        <Box position="absolute" top={0} left={0}>
+          <Button key="usage" label={'\u2800'.repeat(hasLabel ? txtW(paneName) + 2 : 2)} plain dimColor onPress={async () => void (await act.toggleView('usage'))} />
+        </Box>
+      </Box>,
+      isPaneOpen ? L(`${paneTitle()} 패널 닫기`, `Close the ${paneTitle()} pane`) : L(`${paneTitle()} 패널 열기`, `Open the ${paneTitle()} pane`),
+    )
   const busyName = (name: string, icon: unknown) =>
     e.surface === 'terminal' ? (
       <Box columnGap={1} alignItems="center">
@@ -358,14 +384,14 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const compactRow =
     phase === 'compacting' && look ? (
       <Box columnGap={1} alignItems="center" flexShrink={0}>
-        {gaugeDoor(brandIcon)}
+        {gaugeDoor(brandIcon, false)}
         {brandIcon ? null : pulse(look.hex, L('컴팩트 중', 'Compacting'))}
         <Text color={look.color}>{look.text}</Text>
         {autoCtl()}
       </Box>
     ) : phase === 'tidying' && look ? (
       <Box columnGap={1} alignItems="center" flexShrink={0}>
-        {gaugeDoor(brandIcon)}
+        {gaugeDoor(brandIcon, false)}
         {brandIcon ? null : pulse(look.hex, L('저장 중', 'Saving'))}
         <Text color={look.color}>{look.text}</Text>
         <Button key="compact-cancel" label={L('취소', 'Cancel')} variant="secondary" onPress={() => act.cancelTidy()} />
@@ -378,7 +404,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       </Box>
     ) : isConfirming ? (
       <Box columnGap={1} alignItems="center" flexShrink={0}>
-        {gaugeDoor(isNotNow ? offIcon : brandIcon)}
+        {gaugeDoor(isNotNow ? offIcon : brandIcon, mode !== 'min')}
         {withTip(
           'band-compact-box-open',
           <Button key="compact-close" label={`${barLabel} ▾`} {...(autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const })} onPress={() => act.closeConfirm()} />,
@@ -395,7 +421,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             <Text color="warning">{L('보류됨', 'On hold')}</Text>
           </Box>
         ) : null}
-        {gaugeDoor(isNotNow ? offIcon : brandIcon)}
+        {gaugeDoor(isNotNow ? offIcon : brandIcon, mode !== 'min')}
         {withTip(
           `band-compact-tip-${isNotNow ? 'not-now' : shownLevel}`,
           <Button
@@ -407,7 +433,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           tipLines(
             isNotNow
               ? notNowTip
-              : (coldWinTip ?? (isShortLabel ? `${compactLabel} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}` : L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
+              : (coldWinTip ?? (compactText !== compactCore ? `${compactText} · ${L('누르면 컴팩트할지 묻습니다', 'press to open Compact now?')}` : L('누르면 컴팩트할지 묻습니다', 'Press to open Compact now?'))),
           ),
           tipRight(btnW(barLabel)),
         )}
@@ -625,7 +651,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       {!isPanelIcon
         ? panelButton('usage', L('패널', 'Pane'))
         : hasGaugeDoor
-          ? null
+          ? paneBtn('pane-btn', isPaneLabel)
           : withTip(
             `band-panel-box-${view === 'usage' ? 'open' : 'closed'}`,
             <Button key="usage" label="◔" {...(view === 'usage' ? { variant: 'secondary' as const } : { plain: true, dimColor: true })} onPress={async () => void (await act.toggleView('usage'))} />,
@@ -633,7 +659,13 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           )}
     </Box>
   )
-  const controls = (
+  const controls = inPane ? (
+    isOneRow ? null : (
+      <Box key="b-r1-right" columnGap={1} alignItems="center" flexShrink={0}>
+        {modeButton}
+      </Box>
+    )
+  ) : (
     <Box key="b-r1-right" columnGap={1} alignItems="center" flexShrink={0}>
       {isPanelIcon ? null : panels}
       <Box key="b-window" columnGap={1} alignItems="center">
@@ -652,7 +684,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       {rightEl}
     </Box>
   )
-  if (isSlim(sNow)) {
+  if (isSlimBar) {
     const sv = slimViewOf(sNow)
     const parts = u ? slimParts(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : []
     const over = parts.slice(SLIM_BUTTON_PARTS)
@@ -695,7 +727,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         {roomWhy}
       </Text>
     ) : null
-    const btnLabel = isColdWin ? L('기본 컴팩트 권장', 'Plain compact advised') : L('이지 컴팩트', 'Easy Compact')
+    const btnLabel = L('컴팩트', 'Compact')
     const btnLook = autoOn ? { variant: 'secondary' as const } : isNotNow ? { variant: 'secondary' as const, dimColor: true } : { variant: 'primary' as const }
     const right = isBusyPhase ? (
       <Box key="b-slim-right" columnGap={1} alignItems="center" flexShrink={0}>
@@ -703,7 +735,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       </Box>
     ) : (
       <Box key="b-slim-right" columnGap={1} alignItems="center" flexShrink={0}>
-        {gaugeDoor(slimIcon)}
+        {gaugeDoor(slimIcon, false)}
         {isConfirming ? (
           withTip(
             'band-compact-box-open',
@@ -722,12 +754,13 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           )
         ) : null}
         {showBtn || isConfirming ? autoCtl() : null}
+        {paneBtn('slim-pane-btn', false)}
         {isSum
           ? withTip('sc-close-tip', <Button key="sc-close" label="✕" plain dimColor onPress={() => void act.toggleSummary()} />, [L('닫습니다. 아래 버튼으로 다시 열 수 있습니다', 'Closes it. Reopen it with the button below')], 4)
           : withTip('slim-dismiss-tip', <Button key="slim-dismiss" label="✕" plain dimColor onPress={() => act.dismissSlim()} />, [L('닫습니다. 늦어지거나 캐시가 만료되면 다시 알려 드립니다', 'Closes it. It shows again if it runs late or the cache expires')], 4)}
       </Box>
     )
-    const rightW = isBusyPhase ? 0 : ICON_W + (showBtn || isConfirming ? btnW(`${btnLabel} ▾`) + 1 + autoCtlW : 0) + btnW('✕')
+    const rightW = isBusyPhase ? 0 : ICON_W + (showBtn || isConfirming ? btnW(`${btnLabel} ▾`) + 1 + autoCtlW : 0) + 5 + btnW('✕')
     const lineCells = isSum && u ? slimSummaryCells(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : over
     const sideW = availOf(rightW + 2) - (whyText ? txtW(`${whyText} · `) + 1 : 0) - 3
     const side = lineCells.length > 0 ? fitLine(ui, lineCells, Math.max(0, sideW), null) : null
@@ -782,7 +815,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         </Box>
       ) : isConfirming ? (
         <Box columnGap={1} alignItems="center">
-          {gaugeDoor(isNotNow ? offIcon : brandIcon)}
+          {gaugeDoor(isNotNow ? offIcon : brandIcon, mode !== 'min')}
           {withTip(
             'band-compact-box-open',
             <Button key="compact-close" label={`${miniName} ▾`} {...miniLook} onPress={() => act.closeConfirm()} />,
@@ -794,7 +827,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       ) : (
         <Box columnGap={1} alignItems="center">
           {phase === 'held' ? (decoIcon(ui, 'held', LEVEL_HEX.warn, L('보류됨', 'On hold'), 'held-icon', { color: 'warning' }) ?? <Text color="warning">{L('보류', 'Held')}</Text>) : null}
-          {gaugeDoor(isNotNow ? offIcon : brandIcon)}
+          {gaugeDoor(isNotNow ? offIcon : brandIcon, mode !== 'min')}
           {withTip(
             `band-compact-box-${shownLevel}${isColdWin ? '-cold' : ''}`,
             <Button

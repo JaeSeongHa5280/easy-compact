@@ -4,6 +4,16 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.4.0] — 2026-11-17
+
+### Changed
+- **The pane opens from the ▯ button at the bar's top right** — a framed **▯ Compact pane** button now sits before — and ✕ at the bar's top right, just the ▯ icon when space is tight. While the pane is open the icon's right column fills and the button gets a light background. The Slim alert and summary lines have the same icon button before their ✕. You get a one-time note the first time you send a question.
+- **The gauge only shows status** — it is no longer something to click. *Time to compact* · *Overdue* now sit next to it (nothing when there is room left), and hovering it shows the context and your compact range.
+- **The compact button is always named Compact** — it always opens the confirm card, and the card says what happens (Easy Compact · plain compact · keep working). So the name no longer changes with the state (*Time to compact* · *Compact overdue* · *Plain compact advised*), and the button stays in place. The state is next to the gauge and at the start of the button's tooltip. The Slim line uses the same name (it was *Easy Compact*). The terminal keeps the state names, as it has no gauge.
+
+### Added
+- **VS Code extension chat panel** — the Claude Code chat panel in VS Code doesn't draw the bar above the input, so the same bar (compact button · confirm card · Easy Auto switch) sits at the top of the pane. In a narrow panel only the bar shows, and **[Details ▸]** opens Overview and Settings.
+
 ## [1.3.3] — 2026-11-16
 
 ### Fixed

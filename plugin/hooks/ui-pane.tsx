@@ -28,6 +28,15 @@ export type PaneHeadData = {
 
 export type PaneHeadActions = { openTab: (which: 'main' | 'settings') => void; setMode: (mode: PaneMode) => void; toggleDrawer: () => void }
 
+export function drawBodyToggle(ui: Ui, isOpen: boolean, onToggle: () => void) {
+  const { Box, Button } = ui
+  return (
+    <Box key="pane-body-row" justifyContent="flex-end" marginTop={1}>
+      <Button key="pane-body" label={isOpen ? L('자세히 접기 ▾', 'Hide details ▾') : L('자세히 ▸', 'Details ▸')} variant="secondary" onPress={onToggle} />
+    </Box>
+  )
+}
+
 export function drawPaneHead(ui: Ui, surface: string, d: PaneHeadData, act: PaneHeadActions) {
   const { Box } = ui
   const tab = (key: string, label: string, isOn: boolean, onPress: () => void) => segButton(ui, `pane-${key}`, label, isOn, onPress)

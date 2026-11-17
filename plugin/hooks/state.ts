@@ -47,13 +47,15 @@ export const PANE_AUTO_KEY = 'paneAutoOpened'
 
 export const PANE_AUTO_KEEP = 200
 
+export const PANE_BAR_ROWS = 40
+
 export type PaneEvent = { view: PaneView | null; at: number; from: string }
 
 export const paneLog: string[] = []
 
 export const OLD_DEFAULT_RANGE = { rangeStart: 250_000, rangeEnd: 300_000 }
 
-export const GAUGE_NOTE_KEY = 'gaugeDoorNoted'
+export const GAUGE_NOTE_KEY = 'paneButtonNoted'
 
 export const GAUGE_NOTE_MS = 12_000
 

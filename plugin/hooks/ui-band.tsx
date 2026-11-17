@@ -47,6 +47,13 @@ export function drawLimitsLine(ui: Ui, surface: string, u: Usage, nowMs: number,
   )
 }
 
+export function limitsLineW(ui: Ui, surface: string, u: Usage, nowMs: number, show: BandShow): number {
+  const isTerm = surface === 'terminal'
+  const lim = limitCells(ui, surface, u, nowMs, show)
+  const isReset = (c: LineCell) => c.key.endsWith('-r')
+  return lim.reduce((s, c) => s + widthOf(c.text, isTerm) + (isTerm ? 0 : 2) + (isReset(c) ? 3 : 0), 0) + 3 * Math.max(0, lim.filter(c => !isReset(c)).length - 1)
+}
+
 export type LineCell = { key: string; text: string; el: (isFirst: boolean) => unknown; drop?: number; short?: LineCell }
 
 export type LineFit = { el: unknown; width: number; over: boolean }
@@ -473,14 +480,15 @@ export function drawBandPreview(
   const isOneRow = isLean || (!limits && !show.lastTurn)
   const isMin = extra.band === 'min' && !isOneRow
   const isTerm = !onDesktop()
-  const winText = !isTerm ? (isOneRow ? '✕' : isMin ? '□  ✕' : '—  ✕') : isOneRow ? L('[패널 ▸] [✕]', '[Pane ▸] [✕]') : isMin ? L('[패널 ▸] [□] [✕]', '[Pane ▸] [□] [✕]') : L('[패널 ▸] [—] [✕]', '[Pane ▸] [—] [✕]')
+  const winText = !isTerm ? (isOneRow ? '▯  ✕' : isMin ? '▯  □  ✕' : '▯  —  ✕') : isOneRow ? L('[패널 ▸] [✕]', '[Pane ▸] [✕]') : isMin ? L('[패널 ▸] [□] [✕]', '[Pane ▸] [□] [✕]') : L('[패널 ▸] [—] [✕]', '[Pane ▸] [—] [✕]')
   const ctx = u && u.contextTokens > 0 ? u.contextTokens : 0
   const lv = ctx > 0 ? levelOf(ctx) : 'ok'
   const isRange = thresholds().isRange === true
-  const compactText =
-    isMin && !isTerm
-      ? L('컴팩트', 'Compact')
-      : lv === 'cut'
+  const stateText = lv === 'cut' ? (isRange ? L('늦어짐', 'Overdue') : L('컴팩트 권장', 'Compact advised')) : lv === 'warn' ? (isRange ? L('컴팩트할 때', 'Time to compact') : L('곧 컴팩트할 때', 'Compact soon')) : ''
+  const word = !isTerm && !isMin ? stateText : ''
+  const compactText = !isTerm
+    ? L('컴팩트', 'Compact')
+    : lv === 'cut'
         ? isRange
           ? L('컴팩트 늦어짐', 'Compact overdue')
           : L('컴팩트 권장', 'Compact advised')
@@ -499,12 +507,12 @@ export function drawBandPreview(
   const win = fake('pv-win', winText)
   const compact = (
     <Box key="pv-compact" columnGap={1} alignItems="center">
-      {gauge ? <Box key="pv-gauge">{gauge}</Box> : null}
+      {gauge ? <Box key="pv-gauge" columnGap={0.5} alignItems="center">{gauge}{word ? stageText(ui, 'ctx', lv === 'cut' ? 'error' : LEVEL_HEX.warn, word, { noFlash: true }) : null}</Box> : null}
       {fake('pv-compact-name', compactText)}
     </Box>
   )
   const hasTurnRow = show.lastTurn
-  const compactW = gaugeCols + widthOf(compactText, isTerm)
+  const compactW = gaugeCols + (word ? widthOf(word, isTerm) + 1 : 0) + widthOf(compactText, isTerm)
   const estRight = isMin ? compactW + 2 + widthOf(winText, isTerm) : limits ? (hasTurnRow ? 0 : compactW) : hasTurnRow ? widthOf(winText, isTerm) : compactW + 2 + widthOf(winText, isTerm)
   const stageW = extra.stage && !isTerm ? 4 : 0
   const estW = boxW === null ? null : Math.max(12, boxW - stageW - (estRight > 0 ? estRight + 2 : 0))

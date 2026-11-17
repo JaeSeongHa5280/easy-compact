@@ -45,15 +45,15 @@ const SWITCH_W = Math.ceil(28 / CH_PX)
 
 export function autoBarChip(ui: Ui, surface: string, label: string, onPress: (() => void) | null, isOn = true) {
   const { Box, Button, Text } = ui
-  if (surface === 'terminal') {
-    const text = isOn ? `✓ ${label}` : label
-    return onPress ? <Button key="auto-bar" label={text} variant="secondary" {...(isOn ? {} : { dimColor: true })} onPress={onPress} /> : <Text dimColor>{`[ ${text} ]`}</Text>
-  }
   const Svg = svgOf(ui, surface)
+  if (surface === 'terminal' || !Svg) {
+    const text = isOn ? `✓ ${label}` : label
+    return onPress ? <Button key="auto-bar" label={text} variant="secondary" {...(isOn ? {} : { dimColor: true })} onPress={onPress} /> : <Text dimColor>{surface === 'terminal' ? `[ ${text} ]` : text}</Text>
+  }
   return (
     <Box key={isOn ? 'auto-bar-chip' : 'auto-bar-off'} columnGap={1} alignItems="center" flexShrink={0}>
       {label ? <Text dimColor>{label}</Text> : null}
-      {Svg ? <Svg source={switchSvg(isOn)} alt={isOn ? L('이지 오토 켜짐', 'Easy Auto on') : L('이지 오토 꺼짐', 'Easy Auto off')} width={28} height={16} /> : null}
+      <Svg source={switchSvg(isOn)} alt={isOn ? L('이지 오토 켜짐', 'Easy Auto on') : L('이지 오토 꺼짐', 'Easy Auto off')} width={28} height={16} />
       {onPress ? (
         <Box key="auto-bar-press" position="absolute" top={0} left={0}>
           <Button key="auto-bar" label={'⠀'.repeat(autoBarChipW(label, false))} plain dimColor onPress={onPress} />

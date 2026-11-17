@@ -103,7 +103,7 @@ import { drawSettingsView, drawUpdateDrawer } from './ui-settings'
 import { cellMark, drawAnswerChip, liveStrip, sampleTurn, sampleUsage, spinnerCost } from './ui-answer'
 import { deskRows, drawBar } from './ui-bar'
 import type { BarActions, BarData } from './ui-bar'
-import { drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
+import { drawBodyToggle, drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
 import type { PaneMainActions } from './ui-pane'
 import { statusLineText } from './status-line'
 import { diagHead, dumpText, nativePath, redactDump, revealArgv } from './diag'
@@ -114,7 +114,7 @@ import type { Lang } from './i18n'
 import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
 import { advisorCallsOf, advisorModelSum, agentRunFromText, cellScopeOf, fillAdvisorModels, foldOlder, nextEffortOutput, nextQuestionCells, nextSwitches, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, trimDetails, turnsFromRecords, withAdvisorModelsUpTo, withAdvisorStep, withAgentStep, withAppStep, withCellScopes } from './turns'
-import { AFTER_KEY, FIXED_KEY, SHARED_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
+import { AFTER_KEY, FIXED_KEY, SHARED_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_BAR_ROWS, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
 import type { PaneEvent, Urgency } from './state'
 
 
@@ -656,6 +656,8 @@ const summaryCard = atom({ plugin: 'easy-compact', key: 'summaryCard' } as const
 
 const auto = atom({ plugin: 'easy-compact', key: 'auto' } as const, null)
 
+const vsBodyOpen = atom({ plugin: 'easy-compact', key: 'vsBodyOpen' } as const, false)
+
 function log($: EngineInterface, text: string): void {
   try {
     $.ui.log(`easy-compact: ${text}`, { to: 'debug' })
@@ -1192,8 +1194,16 @@ async function isTerminalSession($: EngineInterface): Promise<boolean> {
   }
 }
 
+async function isVscodeSession($: EngineInterface): Promise<boolean> {
+  try {
+    return (await $.session.surfaces()).includes('vscode')
+  } catch {
+    return false
+  }
+}
+
 async function isPaneShared($: EngineInterface): Promise<boolean> {
-  if (await isTerminalSession($)) return false
+  if ((await isTerminalSession($)) || (await isVscodeSession($))) return false
   return (await currentSettings($)).paneShared
 }
 
@@ -1253,6 +1263,15 @@ async function checkEngine($: EngineInterface): Promise<void> {
     oldEngine = null
     engineNow = null
   }
+}
+
+async function openVscodePane($: EngineInterface): Promise<void> {
+  if (oldEngine) return
+  if ((await read($, localPane)) !== 'usage') {
+    await update($, localPane, () => 'usage')
+    await notePane($, 'vscode open')
+  }
+  await syncPane($)
 }
 
 async function autoOpenPane($: EngineInterface): Promise<void> {
@@ -1359,8 +1378,8 @@ async function showGaugeNote($: EngineInterface): Promise<void> {
   await $.store.set(GAUGE_NOTE_KEY, true)
   $.ui.toast(
     note.isUpdate
-      ? L('◔ 버튼이 없어졌습니다. 바의 동그라미(게이지)를 누르면 이지 컴팩트 패널이 열립니다', 'The ◔ button is gone. Click the ring (gauge) on the bar to open the Easy Compact pane')
-      : L('바의 동그라미(게이지)를 누르면 이지 컴팩트 패널이 열립니다', 'Click the ring (gauge) on the bar to open the Easy Compact pane'),
+      ? L('패널 여는 자리가 바뀌었습니다. 바 오른쪽 ▯ 단추를 누르면 이지 컴팩트 패널이 열립니다 — 게이지는 이제 상태만 보입니다', 'The pane button moved. Click ▯ on the right of the bar to open the Easy Compact pane — the gauge now only shows status')
+      : L('바 오른쪽 ▯ 단추를 누르면 이지 컴팩트 패널이 열립니다', 'Click ▯ on the right of the bar to open the Easy Compact pane'),
     { timeoutMs: GAUGE_NOTE_MS },
   )
 }
@@ -2988,6 +3007,57 @@ async function autoBarOf($: EngineInterface, s: Settings, u: Usage | null): Prom
   return { isOn: isAutoActive(a), label: autoChipText(a, s, u?.contextTokens ?? null, u?.window), tip: L(`이지 오토 구간 ${range}`, `Easy Auto range ${range}`) }
 }
 
+async function barDataOf($: EngineInterface, sNow: Settings, isWorking: boolean, surface: string): Promise<BarData> {
+  const u = await read($, usage)
+  const view = await read($, paneView)
+  const isConfirming = !isWorking && (await read($, isConfirmingCompact))
+  const nowMs = u ? await $.clock.now() : 0
+  const autoBar = await autoBarOf($, sNow, u)
+  if (u) {
+    const isMotion = sNow.motion !== 'reduce'
+    const ranks = {
+      ctx: autoBar.isOn ? 0 : CTX_RANK[levelOf(u.contextTokens)],
+      sess: u.costUsd !== null ? sessRankOf(sessionColorOf(u.costUsd, sNow.sessionColors)) : 0,
+      cache: cacheRankOf(u, nowMs),
+    }
+    const isCtxUp = noteRank('ctx', ranks.ctx, isMotion)
+    const isSessUp = u.costUsd !== null && noteRank('sess', ranks.sess, isMotion)
+    const isCacheUp = noteRank('cache', ranks.cache, isMotion)
+    const isArrive = takeArrival(nowMs, ranks, isMotion)
+    if (isCtxUp || isSessUp || isCacheUp || isArrive) startFlashTicker($)
+  }
+  await read($, flashTick)
+  const sums = await read($, turnSummaries)
+  const inputs = (await read($, optimal))?.inputs ?? null
+  const phase = await read($, compactPhase)
+  const kind = await read($, compactKind)
+  const just = u?.isAfterCompact ? ((await read($, compactions)).at(-1) ?? null) : null
+  const shrink = await shrinkNow($)
+  const spendNow = await spendShownOf($, sNow)
+  const isBusy = phase === 'compacting' || phase === 'tidying'
+  const isSumOpen = surface !== 'terminal' && !isBusy && (await read($, summaryCard))
+  const isSlimSummary = isSumOpen && isSlim(sNow)
+  const isSlimDismissed = isSlim(sNow) ? await isSlimDismissedNow($) : false
+  const drafts = { tidyDraft: await read($, tidyDraft), compactDraft: await read($, compactDraft) }
+  const older = isConfirming && (await read($, isAskingClear)) ? await read($, turnsOlder) : undefined
+  const clearAsk = older === undefined ? null : { questions: older === null ? null : sums.length + older.count }
+  return { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, ...drafts, clearAsk, auto: autoBar }
+}
+
+async function paneBarOf($: EngineInterface, ui: Ui, sNow: Settings, surface: string, cols: number) {
+  setBandOrder(sNow.bandOrder)
+  const isWorking = (await read($, live)) !== null
+  const d = await barDataOf($, sNow, isWorking, surface)
+  const noteEl = await autoNoteOf($, ui, sNow)
+  const bar = drawingBar(d.nowMs, () => drawBar(ui, { surface, props: { isWorking, bodyColumns: cols, maxRows: PANE_BAR_ROWS } }, { ...d, inPane: true }, barActs($)))
+  return (
+    <ui.Box key="ec-pane-bar" flexDirection="column" marginBottom={1}>
+      {noteEl}
+      {bar}
+    </ui.Box>
+  )
+}
+
 async function autoNoteOf($: EngineInterface, ui: Ui, s: Settings) {
   const note = (await read($, auto))?.note ?? null
   if (note === null) return null
@@ -3134,6 +3204,7 @@ export const register: Register = on => {
     await syncStatusLine($).catch(() => {})
     paneStartAt = await $.clock.now()
     await autoOpenPane($).catch(() => {})
+    if (await isVscodeSession($)) await openVscodePane($).catch(() => {})
     void loadTurns($)
       .catch(() => {})
       .then(() => loadCostBase($))
@@ -3181,6 +3252,7 @@ export const register: Register = on => {
           if (JSON.stringify(rateLimits) !== JSON.stringify(u0.rateLimits)) await update($, usage, prev => (prev ? { ...prev, rateLimits } : prev))
         }
       }
+      if (e.surface === 'vscode') await openVscodePane($)
     } catch {
     }
     return r
@@ -3573,6 +3645,18 @@ export const register: Register = on => {
     const isTerminal = e.surface === 'terminal'
     const pad = isTerminal ? 1 : 2
     const cols = Math.max(24, e.props.bodyColumns - pad)
+    const vsBar = e.surface === 'vscode' ? await paneBarOf($, ui, sNowPane, e.surface, cols) : null
+    const isVsFold = vsBar !== null && e.props.placement === 'inline'
+    const isVsBody = !isVsFold || (await read($, vsBodyOpen))
+    const vsToggle = isVsFold ? drawBodyToggle(ui, isVsBody, () => void update($, vsBodyOpen, isOpen => !isOpen)) : null
+    if (!isVsBody) {
+      return (
+        <Box flexDirection="column" width={cols}>
+          {vsBar}
+          {vsToggle}
+        </Box>
+      )
+    }
     const widthPx = isTerminal ? Math.max(120, (cols - CARD_INSET) * 6) : Math.max(120, Math.min(SVG_MAX_PX, Math.floor((cols - CARD_INSET) * CH_PX)))
     const u = await read($, usage)
     const allSums = await read($, turnSummaries)
@@ -3666,6 +3750,8 @@ export const register: Register = on => {
     const headPhase = await read($, compactPhase)
     return (
       <Box flexDirection="column" width={cols}>
+        {vsBar}
+        {vsToggle}
         {drawPaneHead(
           ui,
           e.surface,
@@ -3739,45 +3825,13 @@ export const register: Register = on => {
     if (oldEngine) return oldEngineNote($.ui.resolve(e), oldEngine)
 
     const ui = $.ui.resolve(e)
-    const u = await read($, usage)
-    const view = await read($, paneView)
-    const isConfirming = !e.props.isWorking && (await read($, isConfirmingCompact))
-    const nowMs = u ? await $.clock.now() : 0
-    const autoBar = await autoBarOf($, sNow, u)
-    if (u) {
-      const isMotion = sNow.motion !== 'reduce'
-      const ranks = {
-        ctx: autoBar.isOn ? 0 : CTX_RANK[levelOf(u.contextTokens)],
-        sess: u.costUsd !== null ? sessRankOf(sessionColorOf(u.costUsd, sNow.sessionColors)) : 0,
-        cache: cacheRankOf(u, nowMs),
-      }
-      const isCtxUp = noteRank('ctx', ranks.ctx, isMotion)
-      const isSessUp = u.costUsd !== null && noteRank('sess', ranks.sess, isMotion)
-      const isCacheUp = noteRank('cache', ranks.cache, isMotion)
-      const isArrive = takeArrival(nowMs, ranks, isMotion)
-      if (isCtxUp || isSessUp || isCacheUp || isArrive) startFlashTicker($)
-    }
-    await read($, flashTick)
-    const sums = await read($, turnSummaries)
+    const d = await barDataOf($, sNow, e.props.isWorking, e.surface)
     const now = e.props.isWorking ? await read($, live) : null
-    const inputs = (await read($, optimal))?.inputs ?? null
-    const phase = await read($, compactPhase)
-    const kind = await read($, compactKind)
-    const just = u?.isAfterCompact ? ((await read($, compactions)).at(-1) ?? null) : null
-    const shrink = await shrinkNow($)
-    const spendNow = await spendShownOf($, sNow)
-    const isBusy = phase === 'compacting' || phase === 'tidying'
-    const isSumOpen = e.surface !== 'terminal' && !isBusy && (await read($, summaryCard))
-    const isSlimSummary = isSumOpen && isSlim(sNow)
-    const isSlimDismissed = isSlim(sNow) ? await isSlimDismissedNow($) : false
-    const drafts = { tidyDraft: await read($, tidyDraft), compactDraft: await read($, compactDraft) }
-    const older = isConfirming && (await read($, isAskingClear)) ? await read($, turnsOlder) : undefined
-    const clearAsk = older === undefined ? null : { questions: older === null ? null : sums.length + older.count }
     const isStrip = e.surface !== 'terminal' && slimViewOf(sNow).spin !== 'off'
     const noteEl = await autoNoteOf($, ui, sNow)
     const others = await next(e).catch(() => null)
-    const aboveRows = isConfirming && e.surface !== 'terminal' ? deskRows([others, noteEl], e.props.bodyColumns) : 0
-    const bar = drawingBar(nowMs, () => drawBar(ui, e, { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, ...drafts, clearAsk, auto: autoBar, aboveRows }, barActs($)))
+    const aboveRows = d.isConfirming && e.surface !== 'terminal' ? deskRows([others, noteEl], e.props.bodyColumns) : 0
+    const bar = drawingBar(d.nowMs, () => drawBar(ui, e, { ...d, aboveRows }, barActs($)))
     if (e.surface === 'terminal') {
       return bar || noteEl ? (
         <ui.Box key="ec-band-t" flexDirection="column">

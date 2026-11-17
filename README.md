@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.3-4c9be8" alt="Version 1.3.3">
+  <img src="https://img.shields.io/badge/version-1.4.0-4c9be8" alt="Version 1.4.0">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-133">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-140">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -82,7 +82,7 @@ No `claude` command (usual if you only use the desktop app)? Send the one line a
 
 ## Update
 
-**From 0.5.0, inside the app:** the bar's **gauge** — the steps before **Compact** (a horizontal bar on 0.9.0, a ring on 0.8.x, **◔** on 0.6–0.7, **📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *Update N* (*New N* up to 0.9.0; on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
+**From 0.5.0, inside the app:** the **▯ Compact pane** button at the bar's top right (up to 1.3.x, the gauge before **Compact** — a horizontal bar on 0.9.0, a ring on 0.8.x, **◔** on 0.6–0.7, **📊** on 0.5.x) → the version button at the pane's top right (on 0.6.x, the update row at the top of the **⚙ Settings** tab; on 0.5.x, the **easy-compact** section at the bottom of Settings) → **[Check for updates]** → **[Update]** if there is a new version → restart Claude. Only when you press it does Claude Code fetch the marketplace from GitHub. When a new version is already downloaded, the button reads *Update N* (*New N* up to 0.9.0; on 0.6.x, a *New version N* card at the top of **Overview** and a dot (•) on the Settings tab).
 
 **On 0.4.1 or earlier, or to do it yourself, send this one line to Claude**, then restart Claude:
 
@@ -112,6 +112,12 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.4.0
+
+- **The pane opens from the ▯ button at the bar's top right** — a framed **▯ Compact pane** button now sits before — and ✕ (just **▯** when space is tight; the Slim line has **▯** before its ✕). The gauge now only shows status.
+- **State next to the gauge, and the button is always Compact** — *Time to compact* · *Overdue* show next to the gauge, and the button reads **Compact** whatever the state. It always opens the confirm card, which says what happens, and it no longer moves.
+- **VS Code extension chat panel** — the VS Code chat panel has no bar above the input, so the same bar sits at the top of the pane.
 
 ## What's new in 1.3.3
 
@@ -385,14 +391,14 @@ https://github.com/user-attachments/assets/e1364a29-d278-429e-9be9-c9ac30af9b5f
 
 ### 1. Live cost, right above the input
 
-<img src="docs/img/band.png" width="900" alt="The Easy Compact bar in three rows: plan usage; session, today and this month; per-request cost, context, cache and the last question, with the running question's cost on a line right above the input">
+<img src="docs/img/band.png" width="900" alt="The Easy Compact bar in three rows: plan usage with the ▯ Compact pane button at the top right; session, today and this month; per-request cost, context, cache and the last question, with the gauge, Time to compact and the Compact button">
 
 **Context, next-request cost and the last question's cost — updated after every request.**
 Also on the bar: this session's cost so far (yellow · orange · red at $10 · $50 · $100 — change them in Settings), your 5-hour and 7-day plan usage, minutes left on the prompt cache (`cache expires in 42m`, or `Cache 42m left` when the cells line up), the context gauge (click it for the Easy Compact pane) and the **Compact** button, and the window buttons (top right). What shows is set by the **Screen preset** at the top of Settings — **Slim** (once you know your way around · alerts only when needed), **Simple** (for starting out · essentials only — the default, one line), **Detailed** (everything — three rows) and **Custom** (pick each part). The **Detailed** bar has three rows — plan usage, the money so far (Session · Today · This month), and the values right now (Per request · Context · Compact range · Cache) with the last question; on a wide bar the cells line up in columns. The question that's running shows separately in the **Running question strip** right above the input ([2](#2-cost-per-question-step-by-step)). When a value climbs to the next color, its text background flashes three times. On **Custom**, the Settings **Bar** tab picks the bar layout (Button below · One row · Three rows) and [Off | When needed | Always] for each row of **Shown at the input** — *When needed* appears only when it needs attention, and on a set preset the same rows show dimmed. Color thresholds for Session · Today · This month, **Cost order** and **Context numbers** (size, % or both) are in the **Numbers · colors** card; the gauge's look is **Gauge shape** in the **Bar** card (Steps (default) · Bar · Ring · Vertical bar · Vertical steps). Still too much? Shrink the bar to one line or fold it — see [Hide, fold, bring it back](#hide-fold-bring-it-back). Subagent spending shows up as `1 agent $X included`.
 
 <img src="docs/img/slim.png" width="900" alt="The Slim screen: one button below the input (🟧 218k) and, only when it's time to compact, one alert line above it with the gauge, Easy Compact and ✕">
 
-**The Slim screen — normally just one button below the input (🟦 120k), and one alert line above the input only at Time to compact, when Overdue, or when a cold cache makes a plain compact cheaper.** Press the button for a one-line summary; that line's gauge opens the pane. The ✕ on the alert line closes it until things get more urgent.
+**The Slim screen — normally just one button below the input (🟦 120k), and one alert line above the input only at Time to compact, when Overdue, or when a cold cache makes a plain compact cheaper.** Press the button for a one-line summary; the **▯** before that line's ✕ opens the pane. The ✕ on the alert line closes it until things get more urgent.
 
 <img src="docs/img/screen.png" width="520" alt="Settings: the screen preset (Slim · Simple · Detailed · Custom) above the detailed settings tabs Bar · Answer chip · Pane · Compact · General; the Bar card with its preview, Bar shape, Bar size, Gauge shape and the fold switches">
 
@@ -421,11 +427,11 @@ Also on the bar: this session's cost so far (yellow · orange · red at $10 · $
 | Gauge and button | Means |
 |---|---|
 | Dim gauge · plain **Compact** | Not now — before your range, right after a compact, or compacting would cost more. Hover for the reason |
-| 🟠 Orange gauge · *Time to compact* | Inside your range |
-| 🔴 Red gauge (pulsing) · *Compact overdue* | Past your range — the deeper, the faster it pulses |
+| 🟠 Orange gauge *Time to compact* · white **Compact** | Inside your range |
+| 🔴 Red gauge (pulsing) *Overdue* · white **Compact** | Past your range — the deeper, the faster it pulses |
 | 🔴 *Cache expired* · **Plain compact advised** | The cache went cold, and compacting now is cheaper than re-sending everything |
 
-Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**); click it to open the Easy Compact pane. Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring), a vertical bar or vertical steps. Steps and Vertical steps sit in a battery frame: the stage sets how many steps are lit (Room left 1–2 · Time to compact 3 · Overdue 4) and they all take its color — orange at Time to compact, red and pulsing when Overdue. Colors, pulsing and the post-compact shrink mean the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light up from the far end).
+Hover the gauge for the context and your compact range (as size, % or both — **Context numbers**). The gauge only shows status; the pane opens from **▯ Compact pane** at the bar's top right (just **▯** when space is tight). **Compact** keeps the same name: it opens the confirm card, which shows what happens (Easy Compact · plain compact · keep working). Hover the button for the state and what to do. The gauge starts as steps — **Gauge shape** in the Settings **Bar** tab switches it to a horizontal bar, a ring (like the app's context ring), a vertical bar or vertical steps. Steps and Vertical steps sit in a battery frame: the stage sets how many steps are lit (Room left 1–2 · Time to compact 3 · Overdue 4) and they all take its color — orange at Time to compact, red and pulsing when Overdue. Colors, pulsing and the post-compact shrink mean the same in every shape; while compacting or saving it moves in progress blue (bars breathe · the ring spins an arc · steps light up from the far end).
 
 ### 4. Easy Compact — one click
 
@@ -469,7 +475,7 @@ While it runs, the bar and the strip show the current step (*Easy Auto · saving
 
 <img src="docs/img/simple.png" width="900" alt="The Simple screen: a one-line bar and the Simple Easy Compact pane with This session and cost per question">
 
-Open it by clicking the bar's **gauge** (in a terminal, **[Pane ▸]**). The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested range · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen preset in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in the Settings **Pane** tab. In the Detailed view, **Cost by size** tags rows in its last column with *Now 73%* · *Chosen* · *Auto*.
+Open it with **▯ Compact pane** at the bar's top right (in a terminal, **[Pane ▸]**). The first tab is **Overview** — **Simple** (the Simple screen's first view): **This session** — running total, questions, main / 🤖 / ⚙, one *now* line (state · one number · what to do) and the compact range dropdown — plus cost per question. **Detailed** (the Detailed screen's first view): also what another model would have cost, the context bar, compact timing (suggested range · cost by size), context flow and what each compact saved. The Detailed pane starts with an **All sessions** line (today · this month for every session on this PC) whatever the option says; the Simple pane shows only what you turned on. **View [Simple][Detailed]** at the right of the tab row switches the view and remembers it (changing the screen preset in Settings resets it to that screen's view). Cost per question starts folded. By default it opens and closes together across your open desktop sessions, and doesn't open by itself in new sessions — both are in the Settings **Pane** tab. In the Detailed view, **Cost by size** tags rows in its last column with *Now 73%* · *Chosen* · *Auto*.
 
 ### 7. Terminal too
 
@@ -485,7 +491,7 @@ The window buttons sit at the top right of the bar. Every choice applies to all 
 |---|---|---|
 | **—** / **□** | One line / full | Press it again |
 | **✕** fold | Folds the bar below the input in every session | By itself when it's time to compact (orange · cache expired) — or press **🟦 140k** below the input (the square shows the current size step: 🟦 room · 🟧 time to compact · 🟥 late; the number is the context now). In a terminal, the **[⇱ Easy Compact]** line in the bar's place (ctrl+x tab → Enter) |
-| **Gauge** (the steps before **Compact**) | Opens or closes the Easy Compact pane (in a terminal, **[Pane ▸]**) | Press it again |
+| **▯ Compact pane** (the bar's top right) | Opens or closes the Easy Compact pane (in a terminal, **[Pane ▸]**) | Press it again |
 
 Whether a folded bar opens by itself is **Open the bar when compacting** in the Settings **Bar** tab (on by default). Turn it off and the bar stays folded — the folded-bar button turns grey (*closed*) — until you press it: a pause before you decide to uninstall. Folding an opened-by-itself bar again keeps it folded until things get more urgent (red · cache expired). The **Slim** screen is always folded — press the button below the input for a one-line summary (▴); the ✕ on the alert line above closes it until things get more urgent.
 
@@ -509,7 +515,7 @@ Still stuck? See [Something wrong?](#something-wrong--report-it) below.
 
 ## Something wrong? — report it
 
-1. **Show diagnostics** — the Easy Compact pane (the bar's gauge; in a terminal, **[Pane ▸]**) → the version button at the right of the tab row (`v1.0.0 ▸`) → **[Show diagnostics]** under **Report a problem** in the drawer (also in the Settings **General** tab). You see what's inside and the first lines — your questions, answer endings, step names and custom texts are left out from the start (turn the switch off to include them; your own text going out then shows in yellow). Then **[Copy]** (clipboard) or **[Save as file]** (the path shows in the card and a notice — nothing goes into the conversation), exactly what you saw. After saving, **[Open folder]** (your file manager with the file selected; Finder on macOS) and **[Copy path]** appear under the path (from 1.0.2). **[Open an issue ↗]** opens a new issue.
+1. **Show diagnostics** — the Easy Compact pane (**▯** at the bar's top right; in a terminal, **[Pane ▸]**) → the version button at the right of the tab row (`v1.0.0 ▸`) → **[Show diagnostics]** under **Report a problem** in the drawer (also in the Settings **General** tab). You see what's inside and the first lines — your questions, answer endings, step names and custom texts are left out from the start (turn the switch off to include them; your own text going out then shows in yellow). Then **[Copy]** (clipboard) or **[Save as file]** (the path shows in the card and a notice — nothing goes into the conversation), exactly what you saw. After saving, **[Open folder]** (your file manager with the file selected; Finder on macOS) and **[Copy path]** appear under the path (from 1.0.2). **[Open an issue ↗]** opens a new issue.
 2. **What's in it** — every setting, the pane's state (open tab, open cards), usage numbers · the running question · compact phase, the question history (question text · cost per question · the end of each answer), the cost cross-check (the engine's total · what easy-compact measured), counts of unpaired surrogates and control characters (candidates for a pane that doesn't draw at all), and how compacts were caught (for each compact in this session, which way it was detected · this run's decision lines — from 1.0.2).
 3. **Where** — `~/.claude/plugins/data/easy-compact-easy-compact/debug-<session id>.json` (`plugins/data/easy-compact-synced/` if you installed from Anthropic's directory). The same session overwrites it.
 4. **It stays on your computer** — easy-compact never sends it. Attach it yourself; it contains your questions and costs, so look it over and remove anything private before you post it.
