@@ -595,6 +595,7 @@ export function drawFlow(
       nowMs,
       gridOf(surface),
       ef => keptOf(flow, ef.event, first),
+      opt?.perQuestion?.steps ?? null,
     ),
   ]
   return {
@@ -653,6 +654,7 @@ export function effectsBlock(
   nowMs: number,
   g: Grid,
   summaryOf: (ef: CompactEffect) => number | null = () => null,
+  perQ: number | null = null,
 ): unknown[] {
   const { Box, Button, Text } = ui
   const latest = effects[effects.length - 1]
@@ -685,7 +687,7 @@ export function effectsBlock(
     </Box>,
     ...(effects.length === 0
       ? [emptyLine(ui, 'f-none', L('아직 컴팩트한 적이 없습니다.', 'No compacts yet.'))]
-      : shown.map((ef, i) => effectRow(ui, ef, `ef-${i}`, ef === latest ? nowCtx : null, u, nowMs, g, summaryOf(ef), ef === latest))),
+      : shown.map((ef, i) => effectRow(ui, ef, `ef-${i}`, ef === latest ? nowCtx : null, u, nowMs, g, summaryOf(ef), ef === latest, perQ))),
     ...(olderEffects > 0
       ? [
           <Text key="ef-older" dimColor wrap="wrap">
@@ -709,6 +711,7 @@ export function effectRow(
   g: Grid,
   summary: number | null = null,
   isLatest = false,
+  perQ: number | null = null,
 ) {
   const { Box, Text } = ui
   const r = u ? ratesFor(u.model, nowCtx ?? ef.event.before) : null
@@ -750,7 +753,7 @@ export function effectRow(
                 <Text>
                   {ef.breakEvenLeft === null
                     ? L(' · 본전 시점 모름', ' · break-even unknown')
-                    : L(` · 본전까지 요청 ${ef.breakEvenLeft}회`, ` · ${plural(ef.breakEvenLeft, 'request')} to break even`)}
+                    : ` · ${breakEvenText(ef.breakEvenLeft, perQ)}`}
                 </Text>
               ) : null}
             </Text>
@@ -767,6 +770,13 @@ export function effectRow(
       </Box>
     </Box>
   )
+}
+
+function breakEvenText(calls: number, perQ: number | null): string {
+  const isPerQ = perQ !== null && perQ > 0
+  const q = isPerQ ? Math.ceil(calls / perQ) : calls
+  if (q <= 1) return L('다음 질문 하나로 본전', 'breaks even with the next question')
+  return isPerQ ? L(`질문 ${q}개면 본전`, `breaks even after ${q} questions`) : L(`질문 ${q}개 안에 본전`, `breaks even within ${q} questions`)
 }
 
 export function promptText(t: TurnSummary): string {
@@ -865,7 +875,7 @@ export function drawEfficiency(ui: Ui, u: Usage, sums: readonly TurnSummary[], n
             ? L('다음 질문 하나로 본전', 'breaks even with the next question')
             : L(`질문 ${pay.breakEvenQuestions}개면 본전`, `breaks even after ${pay.breakEvenQuestions} questions`)
           : pay.breakEvenCalls !== null
-            ? L(`요청 ${pay.breakEvenCalls}회면 본전`, `breaks even after ${plural(pay.breakEvenCalls, 'request')}`)
+            ? breakEvenText(pay.breakEvenCalls, null)
             : L('본전 시점 모름', 'break-even unknown')
       const save =
         pay.saveQuestionUsd !== null

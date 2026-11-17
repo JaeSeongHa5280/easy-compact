@@ -103,7 +103,7 @@ import { drawSettingsView, drawUpdateDrawer } from './ui-settings'
 import { cellMark, drawAnswerChip, liveStrip, sampleTurn, sampleUsage, spinnerCost } from './ui-answer'
 import { deskRows, drawBar } from './ui-bar'
 import type { BarActions, BarData } from './ui-bar'
-import { drawBodyToggle, drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
+import { drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
 import type { PaneMainActions } from './ui-pane'
 import { statusLineText } from './status-line'
 import { diagHead, dumpText, nativePath, redactDump, revealArgv } from './diag'
@@ -114,7 +114,7 @@ import type { Lang } from './i18n'
 import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
 import { advisorCallsOf, advisorModelSum, agentRunFromText, cellScopeOf, fillAdvisorModels, foldOlder, nextEffortOutput, nextQuestionCells, nextSwitches, NO_OLDER, olderFromRebuilt, olderOf, parseTurnsFile, parseTurnsOlder, serializeTurns, TURNS_KEEP, trimDetails, turnsFromRecords, withAdvisorModelsUpTo, withAdvisorStep, withAgentStep, withAppStep, withCellScopes } from './turns'
-import { AFTER_KEY, FIXED_KEY, SHARED_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_BAR_ROWS, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
+import { AFTER_KEY, FIXED_KEY, SHARED_KEY, AGENT_LIST_TRIES, AGENT_QUIET_MS, APPLY_TOTAL_MS, APP_FIX_MS, CARDS_OPEN_DEFAULT, CHECK_TOTAL_MS, CTX_RANK, DIAG_CLOSED, GAUGE_NOTE_KEY, GAUGE_NOTE_MS, GAUGE_SHRINK_MS, KEPT_KEY, LEDGER_COMPACTS_MAX, LIMITS_FILE, MIX_KEY, OLD_DEFAULT_RANGE, OUTPUT_KEY, PANE, PANE_AUTO_KEEP, PANE_AUTO_KEY, PANE_EVENT_KEY, PANE_MODE_KEY, PER_Q_MIN, PER_Q_WINDOW, READ_LIMIT, SAVE_KEEP, SEEN_VERSION_KEY, SETTINGS_OPEN_DEFAULT, SPEND_RETRY_MS, SUMMARY_KEY, UPDATE_GRACE_MS, UPDATE_IDLE, URGENCY_RANK, agentInfo, freshestLimits, listedAgents, paneLog, parseSharedLimits, sessRankOf, spendColors } from './state'
 import type { PaneEvent, Urgency } from './state'
 
 
@@ -656,7 +656,6 @@ const summaryCard = atom({ plugin: 'easy-compact', key: 'summaryCard' } as const
 
 const auto = atom({ plugin: 'easy-compact', key: 'auto' } as const, null)
 
-const vsBodyOpen = atom({ plugin: 'easy-compact', key: 'vsBodyOpen' } as const, false)
 
 function log($: EngineInterface, text: string): void {
   try {
@@ -1194,16 +1193,9 @@ async function isTerminalSession($: EngineInterface): Promise<boolean> {
   }
 }
 
-async function isVscodeSession($: EngineInterface): Promise<boolean> {
-  try {
-    return (await $.session.surfaces()).includes('vscode')
-  } catch {
-    return false
-  }
-}
 
 async function isPaneShared($: EngineInterface): Promise<boolean> {
-  if ((await isTerminalSession($)) || (await isVscodeSession($))) return false
+  if (await isTerminalSession($)) return false
   return (await currentSettings($)).paneShared
 }
 
@@ -1265,14 +1257,6 @@ async function checkEngine($: EngineInterface): Promise<void> {
   }
 }
 
-async function openVscodePane($: EngineInterface): Promise<void> {
-  if (oldEngine) return
-  if ((await read($, localPane)) !== 'usage') {
-    await update($, localPane, () => 'usage')
-    await notePane($, 'vscode open')
-  }
-  await syncPane($)
-}
 
 async function autoOpenPane($: EngineInterface): Promise<void> {
   if (oldEngine) return
@@ -3044,19 +3028,6 @@ async function barDataOf($: EngineInterface, sNow: Settings, isWorking: boolean,
   return { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, ...drafts, clearAsk, auto: autoBar }
 }
 
-async function paneBarOf($: EngineInterface, ui: Ui, sNow: Settings, surface: string, cols: number) {
-  setBandOrder(sNow.bandOrder)
-  const isWorking = (await read($, live)) !== null
-  const d = await barDataOf($, sNow, isWorking, surface)
-  const noteEl = await autoNoteOf($, ui, sNow)
-  const bar = drawingBar(d.nowMs, () => drawBar(ui, { surface, props: { isWorking, bodyColumns: cols, maxRows: PANE_BAR_ROWS } }, { ...d, inPane: true }, barActs($)))
-  return (
-    <ui.Box key="ec-pane-bar" flexDirection="column" marginBottom={1}>
-      {noteEl}
-      {bar}
-    </ui.Box>
-  )
-}
 
 async function autoNoteOf($: EngineInterface, ui: Ui, s: Settings) {
   const note = (await read($, auto))?.note ?? null
@@ -3204,7 +3175,6 @@ export const register: Register = on => {
     await syncStatusLine($).catch(() => {})
     paneStartAt = await $.clock.now()
     await autoOpenPane($).catch(() => {})
-    if (await isVscodeSession($)) await openVscodePane($).catch(() => {})
     void loadTurns($)
       .catch(() => {})
       .then(() => loadCostBase($))
@@ -3252,7 +3222,6 @@ export const register: Register = on => {
           if (JSON.stringify(rateLimits) !== JSON.stringify(u0.rateLimits)) await update($, usage, prev => (prev ? { ...prev, rateLimits } : prev))
         }
       }
-      if (e.surface === 'vscode') await openVscodePane($)
     } catch {
     }
     return r
@@ -3645,18 +3614,8 @@ export const register: Register = on => {
     const isTerminal = e.surface === 'terminal'
     const pad = isTerminal ? 1 : 2
     const cols = Math.max(24, e.props.bodyColumns - pad)
-    const vsBar = e.surface === 'vscode' ? await paneBarOf($, ui, sNowPane, e.surface, cols) : null
-    const isVsFold = vsBar !== null && e.props.placement === 'inline'
-    const isVsBody = !isVsFold || (await read($, vsBodyOpen))
-    const vsToggle = isVsFold ? drawBodyToggle(ui, isVsBody, () => void update($, vsBodyOpen, isOpen => !isOpen)) : null
-    if (!isVsBody) {
-      return (
-        <Box flexDirection="column" width={cols}>
-          {vsBar}
-          {vsToggle}
-        </Box>
-      )
-    }
+    let vsBar: unknown = null
+    let vsToggle: unknown = null
     const widthPx = isTerminal ? Math.max(120, (cols - CARD_INSET) * 6) : Math.max(120, Math.min(SVG_MAX_PX, Math.floor((cols - CARD_INSET) * CH_PX)))
     const u = await read($, usage)
     const allSums = await read($, turnSummaries)

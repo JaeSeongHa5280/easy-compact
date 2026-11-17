@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.0-4c9be8" alt="Version 1.4.0">
+  <img src="https://img.shields.io/badge/version-1.4.1-4c9be8" alt="Version 1.4.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-140">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-141">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -113,11 +113,15 @@ No cloning into `~/.claude` and no `settings.json` edits are involved. Just want
 
 </details>
 
+## What's new in 1.4.1
+
+- **Break-even is counted in questions** — the pane's compact results now say *breaks even after N questions* (it was *N requests to break even*). With only a few questions so far, when it isn't known how many requests a question makes, it says *breaks even within N questions*.
+- **The VS Code chat panel bar is out** — it shipped in 1.4.0 before it was checked in VS Code itself. It comes back in its own version once checked.
+
 ## What's new in 1.4.0
 
 - **The pane opens from the ▯ button at the bar's top right** — a framed **▯ Compact pane** button now sits before — and ✕ (just **▯** when space is tight; the Slim line has **▯** before its ✕). The gauge now only shows status.
 - **State next to the gauge, and the button is always Compact** — *Time to compact* · *Overdue* show next to the gauge, and the button reads **Compact** whatever the state. It always opens the confirm card, which says what happens, and it no longer moves.
-- **VS Code extension chat panel** — the VS Code chat panel has no bar above the input, so the same bar sits at the top of the pane.
 
 ## What's new in 1.3.3
 

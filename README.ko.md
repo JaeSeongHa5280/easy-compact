@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.0-4c9be8" alt="버전 1.4.0">
+  <img src="https://img.shields.io/badge/version-1.4.1-4c9be8" alt="버전 1.4.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code 플러그인">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Claude Code 2.1.295 이상 필요">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스">
@@ -19,7 +19,7 @@
 <p align="center">
   <a href="README.md">English</a> · <b>한국어</b>
   &nbsp;|&nbsp;
-  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#140-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
+  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#141-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
 </p>
 
 <p align="center">
@@ -113,11 +113,15 @@ claude plugin uninstall easy-compact@easy-compact
 
 </details>
 
+## 1.4.1 에서 바뀐 것
+
+- **본전은 질문 수로** — 패널 컴팩트 효과의 본전을 *질문 N개면 본전* 으로 말합니다(전엔 *본전까지 요청 N회*). 질문이 적어 질문 하나에 요청이 몇 번 가는지 모르면 *질문 N개 안에 본전* 입니다.
+- **VS Code 채팅 패널 바는 뺐습니다** — 1.4.0 에 실제로 확인하기 전에 실렸습니다. 확인한 뒤 따로 판으로 냅니다.
+
 ## 1.4.0 에서 바뀐 것
 
 - **패널은 바 오른쪽 위 ▯ 단추로** — 이지 컴팩트 패널을 여닫는 테두리 단추 **▯ 컴팩트 패널** 이 바 오른쪽 위 — · ✕ 앞에 생겼습니다(자리가 좁으면 **▯** 만, 슬림 줄은 ✕ 앞 **▯**). 게이지는 이제 상태만 보입니다.
 - **게이지 옆에 상태, 버튼 이름은 늘 「컴팩트」** — *컴팩트할 때* · *늦어짐* 은 게이지 옆에 보입니다. 버튼은 상태와 상관없이 **컴팩트** 입니다. 누르면 늘 확인 카드가 열립니다. 무엇을 할지는 카드가 말합니다. 버튼 자리도 더는 움직이지 않습니다.
-- **VS Code 확장 채팅 패널** — 입력창 위 바가 없는 VS Code 채팅 패널에선 패널 맨 위에 같은 바를 둡니다.
 
 ## 1.3.3 에서 바뀐 것
 

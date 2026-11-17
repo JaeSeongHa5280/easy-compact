@@ -4,6 +4,14 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.4.1] — 2026-11-17
+
+### Changed
+- **Break-even is counted in questions** — the pane's compact results said *N requests to break even*; they now say *breaks even after N questions*. While it isn't known yet how many requests a question makes (only a few questions so far), the request count is used as is: *breaks even within N questions*. Every question makes at least one request, so it breaks even within that many. The efficiency line's *breaks even after N requests* now reads the same way.
+
+### Removed
+- **VS Code extension chat panel bar** — it shipped in 1.4.0 before it was checked in VS Code itself. It is out of this version and will come back in its own version once checked. The VS Code chat panel is as in 1.3.x (no bar above the input).
+
 ## [1.4.0] — 2026-11-17
 
 ### Changed
