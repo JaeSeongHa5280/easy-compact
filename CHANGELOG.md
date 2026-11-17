@@ -4,6 +4,16 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.5.0] — 2026-11-18
+
+### Added
+- **VS Code too** — the bar above the input, the Easy Compact pane, the confirm card and the question chip under answers now show in the Claude Code extension's chat panel in VS Code (tested with extension 2.1.326). If you installed from the desktop app or a terminal, just restart VS Code. The desktop app and terminal look the same as before.
+- **Narrow panel: buttons on top** — when the VS Code panel is narrow (about 300 px, docked in a side bar), the button row goes on top and session, context and cache go on the line below. On the confirm and warning cards the buttons come right under the title. The Slim summary line does the same.
+- **Folding, Slim and the pane button in VS Code** — there's no toolbar below the input, so ✕ leaves a **🟦 140k** chip and Easy Auto in the bar's place, and the Slim button sits on the line right above the input too. The pane opens with a **◔** text button.
+
+### Changed
+- **Fewer toasts in VS Code** — no toast for folding or for turning Easy Auto on and off (VS Code kept them stacked until they pushed the bar away — the chip and the switch change right away). A pane placed above the input keeps only its header while the confirm card is open. A VS Code session doesn't open or close the pane together with desktop app sessions.
+
 ## [1.4.1] — 2026-11-17
 
 ### Changed

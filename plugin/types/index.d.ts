@@ -327,7 +327,6 @@ declare module 'claude-code' {
       flashTick: number
       auto: AutoState | null
       advisorPending: { turnId: string; agentId?: string; ids: string[] }[]
-      vsBodyOpen: boolean
     }
   }
 }

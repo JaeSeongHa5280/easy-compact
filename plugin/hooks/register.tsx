@@ -110,6 +110,7 @@ import { diagHead, dumpText, nativePath, redactDump, revealArgv } from './diag'
 import type { DiagCounts, DiagView } from './diag'
 import { isKorean, L, lang, plural, setLang } from './i18n'
 import { setSurface } from './glyph'
+import { foldsInBand, isVscodeSession, paneYieldsToCard, slimInBand, vscodeBarLook } from './vscode'
 import type { Lang } from './i18n'
 import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
@@ -656,7 +657,6 @@ const summaryCard = atom({ plugin: 'easy-compact', key: 'summaryCard' } as const
 
 const auto = atom({ plugin: 'easy-compact', key: 'auto' } as const, null)
 
-
 function log($: EngineInterface, text: string): void {
   try {
     $.ui.log(`easy-compact: ${text}`, { to: 'debug' })
@@ -1193,9 +1193,9 @@ async function isTerminalSession($: EngineInterface): Promise<boolean> {
   }
 }
 
-
 async function isPaneShared($: EngineInterface): Promise<boolean> {
   if (await isTerminalSession($)) return false
+  if (await isVscodeSession($)) return false
   return (await currentSettings($)).paneShared
 }
 
@@ -1256,7 +1256,6 @@ async function checkEngine($: EngineInterface): Promise<void> {
     engineNow = null
   }
 }
-
 
 async function autoOpenPane($: EngineInterface): Promise<void> {
   if (oldEngine) return
@@ -2530,6 +2529,7 @@ async function runAuto($: EngineInterface, actions: readonly AutoAction[], turnN
         autoSaveTurn = x.turnId
         break
       case 'toast':
+        if (x.note === 'toggle' && (await isVscodeSession($))) break
         $.ui.toast(x.note === 'toggle' ? autoToggleNote(x.isOn === true, await currentSettings($), (await read($, usage))?.window) : autoDraftNote(x.note))
         break
       case 'after': {
@@ -2925,6 +2925,7 @@ async function foldBand($: EngineInterface): Promise<void> {
   }
   const folded = setFolded(s, true)
   await saveSettings($, folded)
+  if (await isVscodeSession($)) return
   $.ui.toast(hiddenNote(folded, await revealLabelOf($, folded)), { timeoutMs: HIDDEN_NOTE_MS })
 }
 
@@ -3027,7 +3028,6 @@ async function barDataOf($: EngineInterface, sNow: Settings, isWorking: boolean,
   const clearAsk = older === undefined ? null : { questions: older === null ? null : sums.length + older.count }
   return { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, ...drafts, clearAsk, auto: autoBar }
 }
-
 
 async function autoNoteOf($: EngineInterface, ui: Ui, s: Settings) {
   const note = (await read($, auto))?.note ?? null
@@ -3614,8 +3614,6 @@ export const register: Register = on => {
     const isTerminal = e.surface === 'terminal'
     const pad = isTerminal ? 1 : 2
     const cols = Math.max(24, e.props.bodyColumns - pad)
-    let vsBar: unknown = null
-    let vsToggle: unknown = null
     const widthPx = isTerminal ? Math.max(120, (cols - CARD_INSET) * 6) : Math.max(120, Math.min(SVG_MAX_PX, Math.floor((cols - CARD_INSET) * CH_PX)))
     const u = await read($, usage)
     const allSums = await read($, turnSummaries)
@@ -3707,10 +3705,26 @@ export const register: Register = on => {
     const isDrawerOpen = await read($, updDrawer)
     const paneShrink = await shrinkNow($)
     const headPhase = await read($, compactPhase)
+    const isYield = paneYieldsToCard(e.surface, e.props.placement) && (await read($, isConfirmingCompact))
+    if (isYield) {
+      return (
+        <Box flexDirection="column" width={cols}>
+          {drawPaneHead(
+            ui,
+            e.surface,
+            { u, isSettings, paneMode, upd, isDrawerOpen: false, motion: sNowPane.motion !== 'reduce', shrink: paneShrink, phase: headPhase },
+            { openTab: which => void openUsageTab($, which), setMode: mode => void setPaneMode($, mode), toggleDrawer: () => void toggleUpdateDrawer($) },
+          )}
+          <Box key="pane-yield" marginTop={1}>
+            <ui.Text dimColor wrap="wrap">
+              {L('확인 카드를 닫으면 패널 내용이 돌아옵니다', 'The pane comes back when the card closes')}
+            </ui.Text>
+          </Box>
+        </Box>
+      )
+    }
     return (
       <Box flexDirection="column" width={cols}>
-        {vsBar}
-        {vsToggle}
         {drawPaneHead(
           ui,
           e.surface,
@@ -3758,6 +3772,19 @@ export const register: Register = on => {
     const sNow = await currentSettings($)
     setBandOrder(sNow.bandOrder)
     if (e.props.hasSurvey || (!isSlim(sNow) && (await isBandTucked($)))) {
+      if (!e.props.hasSurvey && foldsInBand(e.surface)) {
+        const ui = $.ui.resolve(e)
+        return (
+          <ui.Box key="ec-band-folded" flexDirection="column">
+            {await next(e)}
+            {await autoNoteOf($, ui, sNow)}
+            <ui.Box key="band-folded" justifyContent="flex-end" columnGap={1}>
+              {await autoChip($, ui, sNow, e.surface)}
+              {await revealButton($, ui)}
+            </ui.Box>
+          </ui.Box>
+        )
+      }
       if (e.surface !== 'terminal') {
         const ui = $.ui.resolve(e)
         const live0 = !e.props.hasSurvey && e.props.isWorking && slimViewOf(sNow).spin !== 'off' ? await read($, live) : null
@@ -3785,12 +3812,21 @@ export const register: Register = on => {
 
     const ui = $.ui.resolve(e)
     const d = await barDataOf($, sNow, e.props.isWorking, e.surface)
+    Object.assign(d, vscodeBarLook(e.surface, e.props.bodyColumns))
     const now = e.props.isWorking ? await read($, live) : null
     const isStrip = e.surface !== 'terminal' && slimViewOf(sNow).spin !== 'off'
     const noteEl = await autoNoteOf($, ui, sNow)
     const others = await next(e).catch(() => null)
     const aboveRows = d.isConfirming && e.surface !== 'terminal' ? deskRows([others, noteEl], e.props.bodyColumns) : 0
     const bar = drawingBar(d.nowMs, () => drawBar(ui, e, { ...d, aboveRows }, barActs($)))
+    let slimRow: Awaited<ReturnType<typeof slimButton>> | null = null
+    if (isSlim(sNow) && slimInBand(e.surface))
+      slimRow = (
+        <ui.Box key="band-slim" justifyContent="flex-end" columnGap={1}>
+          {await autoChip($, ui, sNow, e.surface)}
+          {await slimButton($, ui, sNow)}
+        </ui.Box>
+      )
     if (e.surface === 'terminal') {
       return bar || noteEl ? (
         <ui.Box key="ec-band-t" flexDirection="column">
@@ -3808,6 +3844,7 @@ export const register: Register = on => {
         {noteEl}
         {bar}
         {isStrip && now ? liveStrip(ui, now, viewOf(sNow).info === 'full', e.surface, { isAlone: !bar }) : null}
+        {slimRow}
       </ui.Box>
     )
   })

@@ -10,7 +10,7 @@ easy-compact shows what your Claude Code session costs while you work, and tells
 
 Costs are estimates from Anthropic's published API prices, worked out on your computer.
 
-easy-compact is a Claude Code mod (`modules` in `hooks/hooks.json`), so it runs only in Claude Code: the desktop app's Code tab and the terminal. It needs Claude Code 2.1.295 or later.
+easy-compact is a Claude Code mod (`modules` in `hooks/hooks.json`), so it runs only in Claude Code: the desktop app's Code tab, the terminal and the Claude Code extension's chat panel in VS Code. It needs Claude Code 2.1.295 or later.
 
 ## What it reads
 

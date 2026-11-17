@@ -6,11 +6,11 @@
 
 <p align="center">
   <b>See what every request costs. Know when to compact. Compact in one click — without losing your place.</b><br>
-  Claude Code plugin · desktop app and terminal · Claude Code 2.1.295+
+  Claude Code plugin · desktop app · terminal · VS Code · Claude Code 2.1.295+
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.1-4c9be8" alt="Version 1.4.1">
+  <img src="https://img.shields.io/badge/version-1.5.0-4c9be8" alt="Version 1.5.0">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-141">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-150">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -35,13 +35,13 @@
 | **Claude Code** | **2.1.295 or later.** Desktop app: in a Code tab session type `/status` and read the **Claude Code** row (not the app version in About). Terminal: `claude --version`. An older engine may not draw the bar at all; where easy-compact can still start, it shows a one-line update notice instead. |
 | **To update** | Desktop app: **Claude → Check for Updates** (macOS) or **Help → Check for Updates** (Windows), then start a new session. Terminal: `claude update`. Homebrew's `claude-code` follows the slower stable channel and is still too old — use `brew install --cask claude-code@latest`. |
 | **git** | Needed to add the marketplace from GitHub — `git --version` should print a version. macOS: if a developer-tools prompt opens, install them. Windows: [Git for Windows](https://git-scm.com/downloads/win). |
-| **Where it shows** | The Claude desktop app (Code tab) and `claude` in a terminal. Not in the VS Code extension's chat panel, `claude -p`, cloud sessions or WSL sessions. |
+| **Where it shows** | The Claude desktop app (Code tab), `claude` in a terminal, and the Claude Code extension's chat panel in VS Code (from 1.5.0 — see [VS Code too](#8-vs-code-too)). Not in `claude -p`, cloud sessions or WSL sessions. |
 | **Optional** | Node.js 14.8+ — draws the early part of very long sessions (records over 4 MB) that began before you installed, and counts today · this month (the pane's All sessions line and the bar option). |
-| **Tested on** | Windows 11, desktop app and terminal. Nothing in the code is OS-specific, but macOS and Linux haven't been tried on real machines yet — reports welcome. |
+| **Tested on** | Windows 11 — desktop app, terminal, VS Code (Claude Code extension 2.1.326). Nothing in the code is OS-specific, but macOS and Linux haven't been tried on real machines yet — reports welcome. |
 
 ## Install
 
-**First time only.** The desktop app and the terminal share the same settings, so installing once works in both.
+**First time only.** The desktop app, the terminal and the Claude Code extension in VS Code share the same settings, so installing once from the desktop app or a terminal works in all three (restart VS Code after installing).
 
 **Easiest — send this one line to Claude** (in the desktop app's Code tab or a terminal session):
 
@@ -112,6 +112,10 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.5.0
+
+- **VS Code too** — the same bar, pane and confirm card now show in the Claude Code extension's chat panel in VS Code. In a narrow panel the button row moves to the top, and the folded bar and the Slim button stay on the line right above the input. How it differs: [VS Code too](#8-vs-code-too).
 
 ## What's new in 1.4.1
 
@@ -487,6 +491,20 @@ Open it with **▯ Compact pane** at the bar's top right (in a terminal, **[Pane
 
 **The same bar and pane in the CLI.** To press the bar's buttons, press ctrl+x tab to move into the bar (or click, in fullscreen mode). A folded bar leaves one **[⇱ Easy Compact]** line in its place — reach it the same way and press Enter to open the bar again. Slim is one line in the bar's place (**[120k]** — press it for the pane, plus the compact button and **[ Easy Auto ]** when it's time).
 
+### 8. VS Code too
+
+<img src="docs/img/vscode.png" width="424" alt="The Claude Code chat panel in VS Code, about 300 px wide: the Easy Compact bar above the input — the button row on top, session, context and cache below">
+
+**The same bar and pane in the Claude Code extension's chat panel.** If you installed from the desktop app or a terminal, just restart VS Code. How it differs from the desktop app:
+
+- **Narrow panel: buttons on top** — in a narrow panel (about 300 px, docked in a side bar) the **[Compact]** · **[Easy Auto]** · **◔** · **□** · **✕** row sits on top, with session, context and cache on the line below. On the confirm card the buttons come right under the title.
+- **The pane opens with ◔** — a **◔** text button opens the Easy Compact pane instead of the gauge picture. A pane placed above the input keeps only its header while the confirm card is open.
+- **✕ leaves a chip in the bar's place** — there's no toolbar below the input, so a folded bar stays as a **🟦 140k** chip (with Easy Auto) in the bar's place. Press it to open the bar again. No toast for folding or for turning Easy Auto on and off — the chip and the switch change right away.
+- **The Slim button sits above the input too** — on the Slim screen, **🟦 120k** and Easy Auto are on the line right above the input. Press it for the one-line summary; its **◔** opens the pane.
+- **The pane opens and closes on its own** — a VS Code session doesn't open or close the pane together with desktop app sessions. ✕ fold, bar mode and settings use the same settings file, so they apply to every session.
+
+**For a wide pane,** open Claude in the editor area instead of a side bar (Command Palette **Claude Code: Open in Primary Editor**). When the Claude tab is 800 px or wider, the extension opens the pane wide beside the chat; narrower, it puts it above the input in a 12-line box that scrolls. The extension decides where and how tall — easy-compact can't change that.
+
 ## Hide, fold, bring it back
 
 The window buttons sit at the top right of the bar. Every choice applies to all sessions and stays after a restart.
@@ -494,8 +512,8 @@ The window buttons sit at the top right of the bar. Every choice applies to all 
 | Button | What it does | How it comes back |
 |---|---|---|
 | **—** / **□** | One line / full | Press it again |
-| **✕** fold | Folds the bar below the input in every session | By itself when it's time to compact (orange · cache expired) — or press **🟦 140k** below the input (the square shows the current size step: 🟦 room · 🟧 time to compact · 🟥 late; the number is the context now). In a terminal, the **[⇱ Easy Compact]** line in the bar's place (ctrl+x tab → Enter) |
-| **▯ Compact pane** (the bar's top right) | Opens or closes the Easy Compact pane (in a terminal, **[Pane ▸]**) | Press it again |
+| **✕** fold | Folds the bar below the input in every session | By itself when it's time to compact (orange · cache expired) — or press **🟦 140k** below the input (the square shows the current size step: 🟦 room · 🟧 time to compact · 🟥 late; the number is the context now). In a terminal, the **[⇱ Easy Compact]** line in the bar's place (ctrl+x tab → Enter); in VS Code, the **🟦 140k** chip in the bar's place |
+| **▯ Compact pane** (the bar's top right) | Opens or closes the Easy Compact pane (in a terminal, **[Pane ▸]**; in VS Code, **◔**) | Press it again |
 
 Whether a folded bar opens by itself is **Open the bar when compacting** in the Settings **Bar** tab (on by default). Turn it off and the bar stays folded — the folded-bar button turns grey (*closed*) — until you press it: a pause before you decide to uninstall. Folding an opened-by-itself bar again keeps it folded until things get more urgent (red · cache expired). The **Slim** screen is always folded — press the button below the input for a one-line summary (▴); the ✕ on the alert line above closes it until things get more urgent.
 
@@ -511,7 +529,7 @@ Whether a folded bar opens by itself is **Open the bar when compacting** in the 
 
 1. **Version** — easy-compact needs 2.1.295 or later. An older engine shows a one-line update notice where it can, or nothing at all — check and update the version as in [Requirements](#requirements).
 2. **Installed?** — in a terminal, `claude plugin list` should show `easy-compact@easy-compact` enabled. If adding the marketplace failed, `git` is usually missing.
-3. **Restart** — quit the desktop app completely (not just the window), open it and start a new session. In a terminal, start a new `claude` session.
+3. **Restart** — quit the desktop app completely (not just the window), open it and start a new session. In a terminal, start a new `claude` session. In VS Code, restart VS Code — it was tested with Claude Code extension 2.1.326; an older extension may not show the bar, so update the extension.
 4. **Managed work machines** — if an administrator has blocked plugins or mods, it won't show.
 5. **The end-of-turn "next step" box** — the app takes the bar away while it is up (close it and the bar comes back). [Line below the input](#hide-fold-bring-it-back) keeps the gist meanwhile.
 
@@ -523,7 +541,7 @@ Still stuck? See [Something wrong?](#something-wrong--report-it) below.
 2. **What's in it** — every setting, the pane's state (open tab, open cards), usage numbers · the running question · compact phase, the question history (question text · cost per question · the end of each answer), the cost cross-check (the engine's total · what easy-compact measured), counts of unpaired surrogates and control characters (candidates for a pane that doesn't draw at all), and how compacts were caught (for each compact in this session, which way it was detected · this run's decision lines — from 1.0.2).
 3. **Where** — `~/.claude/plugins/data/easy-compact-easy-compact/debug-<session id>.json` (`plugins/data/easy-compact-synced/` if you installed from Anthropic's directory). The same session overwrites it.
 4. **It stays on your computer** — easy-compact never sends it. Attach it yourself; it contains your questions and costs, so look it over and remove anything private before you post it.
-5. **Open an [issue](https://github.com/JaeSeongHa5280/easy-compact/issues) with** — what happened, how to reproduce it, which screen (desktop app / terminal), the version (the version button · Claude Code's from `/status`), your OS, and the diagnostics file.
+5. **Open an [issue](https://github.com/JaeSeongHa5280/easy-compact/issues) with** — what happened, how to reproduce it, which screen (desktop app / terminal / VS Code), the version (the version button · Claude Code's from `/status`), your OS, and the diagnostics file.
 
 ## Good to know
 

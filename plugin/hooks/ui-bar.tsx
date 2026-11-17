@@ -36,7 +36,9 @@ export type BarData = {
   clearAsk: { questions: number | null } | null
   auto?: { isOn: boolean; label: string; tip: string } | null
   aboveRows?: number
-  inPane?: boolean
+  stackButtons?: boolean
+  actionsFirst?: boolean
+  revealAbove?: boolean
 }
 
 export type BarActions = {
@@ -140,8 +142,6 @@ export function deskRows(n: unknown, cols: number): number {
 export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const { Box, Button, Text } = ui
   const { sNow, u, view, isConfirming, nowMs, sums, inputs, phase, kind, just, shrink, spendNow, isSlimDismissed, isSlimSummary, tidyDraft, compactDraft, clearAsk } = d
-  const inPane = d.inPane === true
-  const isSlimBar = isSlim(sNow) && !inPane
   const compactCore = L('컴팩트', 'Compact')
   const isLean = viewOf(sNow).layout === 'one'
   const fullShow = bandShowNow(slimViewOf(sNow), u, nowMs, sNow.sessionColors)
@@ -259,7 +259,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   }
   const brandIcon = gaugeBox(canBlink)
   const offIcon = gaugeBox(false)
-  const slimIcon = isSlimBar ? gaugeBox(canBlink, false) : null
+  const slimIcon = isSlim(sNow) ? gaugeBox(canBlink, false) : null
   const coldWinTip =
     isColdWin && cold
       ? L(
@@ -296,10 +296,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             : isConfirming
               ? ICON_W + STATE_W + btnW(`${label} ▾`)
               : (phase === 'held' ? txtW(withIcon('⏸', L('보류됨', 'On hold'))) + 1 : 0) + ICON_W + STATE_W + btnW(label))
-  const hasGaugeDoor = !isTerm && offIcon !== null && !inPane
-  const controlsW = inPane
-    ? isOneRow ? 0 : btnW('—')
-    : (isTerm ? btnW(view === 'usage' ? L('패널 ▾', 'Pane ▾') : L('패널 ▸', 'Pane ▸')) + 1 : hasGaugeDoor ? PANE_W + 1 : btnW('◔') + 1) + (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
+  const hasGaugeDoor = !isTerm && offIcon !== null
+  const controlsW = (isTerm ?btnW(view === 'usage' ? L('패널 ▾', 'Pane ▾') : L('패널 ▸', 'Pane ▸')) + 1 : hasGaugeDoor ? PANE_W + 1 : btnW('◔') + 1) + (isOneRow ? 0 : btnW('—') + 1) + btnW('✕')
   const hasLimitsLine = hasLimitsRow && u !== null
   const onCost = !show.lastTurn && (!hasLimitsLine || u === null || fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', null, spendNow).el !== null)
   const lastSum = sums.length > 0 ? sums[sums.length - 1]! : null
@@ -313,9 +311,9 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       const last = fitLine(ui, [...g.now, ...q], availOf(cw))
       return { cost: fitLine(ui, g.money, availOf(0)), last, isOver: last.over }
     }
-    const costRight = mode === 'min' ? cw + 2 + controlsW : hasLimitsLine ? (onCost ? cw : 0) : onCost ? cw + 2 + controlsW : controlsW
+    const costRight = d.stackButtons ? 0 : mode === 'min' ? cw + 2 + controlsW : hasLimitsLine ? (onCost ? cw : 0) : onCost ? cw + 2 + controlsW : controlsW
     const cost = u ? fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', availOf(costRight), spendNow) : null
-    const last = showLastLine ? fitLastTurnLine(ui, lastSum, availOf(onCost ? 0 : cw)) : null
+    const last = showLastLine ? fitLastTurnLine(ui, lastSum, availOf(onCost || d.stackButtons ? 0 : cw)) : null
     const isOver = onCost || mode === 'min' ? (cost?.over ?? false) : (last?.over ?? false)
     return { cost, last, isOver }
   }
@@ -332,7 +330,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const isPaneOpen = view === 'usage'
   const doorTip = isPaneOpen ? L('누르면 패널이 닫힙니다', 'Click to close the pane') : L('누르면 패널이 열리고, 다시 누르면 닫힙니다', 'Click to open the pane, again to close')
   const gaugeDoor = (icon: unknown, hasWord = true) =>
-    icon === null || e.surface === 'terminal' || inPane
+    icon === null || e.surface === 'terminal'
       ? icon
       : withTip(
           `band-gauge-${shownLevel}`,
@@ -465,7 +463,8 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     const spare = isTerm ? e.props.maxRows - baseRows : Math.floor(2 * (e.props.maxRows - barRows - deskRows([summary, ...rows], W - 5) - 2 - CARD_FRAME_ROWS))
     const gapBelowSummary = spare >= 1 ? 1 : 0
     const gapAboveSummary = spare >= 2 ? 1 : 0
-    const gapAboveActions = spare >= 3 ? 1 : isTerm ? 0 : 0.5
+    const gapAboveActions = d.actionsFirst ? 0.5 : spare >= 3 ? 1 : isTerm ? 0 : 0.5
+    const actEl = acts ? acts(gapAboveActions) : actions(isColdFirst, gapAboveActions)
     return (
       <Box key={key} flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1}>
         <Box key={`${key}-head`} columnGap={1} justifyContent="space-between" alignItems="center">
@@ -480,20 +479,22 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           <Text bold>{title}</Text>
         </Box>
         </Box>
+        {d.actionsFirst ? actEl : null}
         <Box paddingLeft={2} marginTop={gapAboveSummary} marginBottom={gapBelowSummary}>
           {summary}
         </Box>
         <Box flexDirection="column" paddingLeft={2}>
           {rows}
         </Box>
-        {acts ? acts(gapAboveActions) : actions(isColdFirst, gapAboveActions)}
+        {d.actionsFirst ? null : actEl}
       </Box>
     )
   }
   const pad = (text: string) => `\u00a0\u00a0${text}\u00a0\u00a0`
   const wide = (text: string) => <Text bold>{pad(text)}</Text>
+  const actLook = d.actionsFirst ? ({ justifyContent: 'flex-start', flexWrap: 'wrap' } as const) : ({ justifyContent: 'flex-end' } as const)
   const actions = (isColdFirst: boolean, gapTop: number) => (
-    <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapTop}>
+    <Box key="actions" {...actLook} alignItems="center" columnGap={2} marginTop={gapTop}>
       {isLoss ? (
         <Button key="compact-no" label={pad(numbered('1', L('✓ 확인 · 이어 가기', '✓ OK · keep working')))} variant="primary" {...keyOf('1')} onPress={() => act.closeConfirm()}>
           {wide(numbered('1', L('✓ 확인 · 이어 가기', '✓ OK · keep working')))}
@@ -586,7 +587,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           [],
           false,
           gapTop => (
-            <Box key="actions" justifyContent="flex-end" alignItems="center" columnGap={2} marginTop={gapTop}>
+            <Box key="actions" {...actLook} alignItems="center" columnGap={2} marginTop={gapTop}>
               {isTermCard ? [clearYes, clearBack] : [clearBack, clearYes]}
             </Box>
           ),
@@ -644,28 +645,22 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     <Button key="band-close" label="✕" variant="secondary" dimColor {...(e.surface === 'terminal' ? {} : { role: 'dismiss' as const })} onPress={async () => act.foldBand()} />
   ), isAutoShown
     ? L('접습니다. 늦어지거나 캐시가 만료되면 다시 펼칩니다', 'Folds it. It opens again if it runs late or the cache expires')
-    : L(`접기 · 다시 펴기: 입력창 아래 [${foldedLabel}]`, `Fold · reopen: [${foldedLabel}] below the input`))
+    : d.revealAbove
+      ? L(`접기 · 다시 펴기: 이 자리 [${foldedLabel}]`, `Fold · reopen: [${foldedLabel}] in this spot`)
+      : L(`접기 · 다시 펴기: 입력창 아래 [${foldedLabel}]`, `Fold · reopen: [${foldedLabel}] below the input`))
   const isPanelIcon = e.surface !== 'terminal'
+  const circleDoor = (boxKey: string) =>
+    withTip(
+      `${boxKey}-${view === 'usage' ? 'open' : 'closed'}`,
+      <Button key="usage" label="◔" {...(view === 'usage' ? { variant: 'secondary' as const } : { plain: true, dimColor: true })} onPress={async () => void (await act.toggleView('usage'))} />,
+      view === 'usage' ? L(`${paneTitle()} 패널 닫기`, `Close the ${paneTitle()} pane`) : L(`${paneTitle()} 패널 열기`, `Open the ${paneTitle()} pane`),
+    )
   const panels = (
     <Box key="b-panels" columnGap={1} alignItems="center" flexShrink={0}>
-      {!isPanelIcon
-        ? panelButton('usage', L('패널', 'Pane'))
-        : hasGaugeDoor
-          ? paneBtn('pane-btn', isPaneLabel)
-          : withTip(
-            `band-panel-box-${view === 'usage' ? 'open' : 'closed'}`,
-            <Button key="usage" label="◔" {...(view === 'usage' ? { variant: 'secondary' as const } : { plain: true, dimColor: true })} onPress={async () => void (await act.toggleView('usage'))} />,
-            view === 'usage' ? L(`${paneTitle()} 패널 닫기`, `Close the ${paneTitle()} pane`) : L(`${paneTitle()} 패널 열기`, `Open the ${paneTitle()} pane`),
-          )}
+      {!isPanelIcon ? panelButton('usage', L('패널', 'Pane')) : hasGaugeDoor ? paneBtn('pane-btn', isPaneLabel) : circleDoor('band-panel-box')}
     </Box>
   )
-  const controls = inPane ? (
-    isOneRow ? null : (
-      <Box key="b-r1-right" columnGap={1} alignItems="center" flexShrink={0}>
-        {modeButton}
-      </Box>
-    )
-  ) : (
+  const controls = (
     <Box key="b-r1-right" columnGap={1} alignItems="center" flexShrink={0}>
       {isPanelIcon ? null : panels}
       <Box key="b-window" columnGap={1} alignItems="center">
@@ -676,6 +671,26 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     </Box>
   )
 
+  const stacked = (buttons: unknown, lines: unknown[]) => {
+    const top = (
+      <Box key="b-stack-top" justifyContent="space-between" alignItems="center" columnGap={1} flexWrap="wrap">
+        {buttons}
+        {controls}
+      </Box>
+    )
+    const under = lines.filter(Boolean).map((line, i) => (
+      <Box key={`b-stack-${i}`} minWidth={0}>
+        {line}
+      </Box>
+    ))
+    return (
+      <Box flexDirection="column">
+        {top}
+        {under}
+        {confirmUnder([top, ...under])}
+      </Box>
+    )
+  }
   const row = (key: string, left: unknown, rightEl: unknown, align: 'center' | 'flex-start', isUnderWindow = false) => (
     <Box key={key} flexWrap="nowrap" alignItems={align} columnGap={2} {...(isUnderWindow && !isTerm ? { marginTop: 1 } : {})}>
       <Box flexGrow={1} flexShrink={1} minWidth={0}>
@@ -684,7 +699,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       {rightEl}
     </Box>
   )
-  if (isSlimBar) {
+  if (isSlim(sNow)) {
     const sv = slimViewOf(sNow)
     const parts = u ? slimParts(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : []
     const over = parts.slice(SLIM_BUTTON_PARTS)
@@ -754,7 +769,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           )
         ) : null}
         {showBtn || isConfirming ? autoCtl() : null}
-        {paneBtn('slim-pane-btn', false)}
+        {isTerm || hasGaugeDoor ? paneBtn('slim-pane-btn', false) : circleDoor('slim-pane-box')}
         {isSum
           ? withTip('sc-close-tip', <Button key="sc-close" label="✕" plain dimColor onPress={() => void act.toggleSummary()} />, [L('닫습니다. 아래 버튼으로 다시 열 수 있습니다', 'Closes it. Reopen it with the button below')], 4)
           : withTip('slim-dismiss-tip', <Button key="slim-dismiss" label="✕" plain dimColor onPress={() => act.dismissSlim()} />, [L('닫습니다. 늦어지거나 캐시가 만료되면 다시 알려 드립니다', 'Closes it. It shows again if it runs late or the cache expires')], 4)}
@@ -762,6 +777,22 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     )
     const rightW = isBusyPhase ? 0 : ICON_W + (showBtn || isConfirming ? btnW(`${btnLabel} ▾`) + 1 + autoCtlW : 0) + 5 + btnW('✕')
     const lineCells = isSum && u ? slimSummaryCells(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : over
+    if (d.stackButtons && !isBusyPhase) {
+      const full = lineCells.length > 0 ? fitLine(ui, lineCells, W - 2).el : null
+      const stackRow = (
+        <Box key={isSum ? 'b-slim-sum' : 'b-slim'} flexDirection="column">
+          <Box key="b-slim-top" justifyContent="flex-end">{right}</Box>
+          {why ? <Box key="b-slim-left">{why}</Box> : null}
+          {full ? <Box key="b-slim-cells">{full}</Box> : null}
+        </Box>
+      )
+      return (
+        <Box flexDirection="column">
+          {stackRow}
+          {confirmUnder([stackRow])}
+        </Box>
+      )
+    }
     const sideW = availOf(rightW + 2) - (whyText ? txtW(`${whyText} · `) + 1 : 0) - 3
     const side = lineCells.length > 0 ? fitLine(ui, lineCells, Math.max(0, sideW), null) : null
     const isBelow = side !== null && side.over
@@ -842,6 +873,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
           {autoCtl()}
         </Box>
       )
+    if (d.stackButtons) return stacked(compactMini, [estimateLine])
     const miniRow = row(
       'b-r1',
       estimateLine,
@@ -859,6 +891,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     )
   }
   const compactOnCost = onCost
+  if (d.stackButtons) return stacked(compactRow, [limitsLine, estimateLine, compactOnCost ? null : lastLine])
   const grid =
     isRegroup && limitsLine && !isNarrowTerminal && u
       ? bandGrid(ui, e.surface, u, nowMs, show, sNow.sessionColors, spendNow, showLastLine ? lastSum : null, availOf(Math.max(controlsW, compactW(barLabel))))

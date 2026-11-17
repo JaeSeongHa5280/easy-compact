@@ -47,8 +47,6 @@ export const PANE_AUTO_KEY = 'paneAutoOpened'
 
 export const PANE_AUTO_KEEP = 200
 
-export const PANE_BAR_ROWS = 40
-
 export type PaneEvent = { view: PaneView | null; at: number; from: string }
 
 export const paneLog: string[] = []
