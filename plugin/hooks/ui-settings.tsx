@@ -1364,7 +1364,7 @@ export function updateButton(ui: Ui, upd: UpdateState, isOpen: boolean, onPress:
               ? L('업데이트 확인 못 함', 'Update check failed')
               : upd.updatedTo
                 ? L(`${upd.updatedTo} 바뀐 것`, `What's new in ${upd.updatedTo}`)
-                : upd.phase === 'dev' && upd.own && !upd.devOff
+                : upd.phase === 'dev' && upd.own && upd.devBuild && !upd.devOff
                   ? L(`v${upd.own} 개발자 모드`, `v${upd.own} dev mode`)
                   : upd.own
                     ? `v${upd.own}`
@@ -1526,9 +1526,11 @@ export function drawUpdateDrawer(act: SettingsActions, ui: Ui, upd: UpdateState,
     case 'dev':
       state = [
         <Text key="upd-state" dimColor wrap="wrap">
-          {upd.devOff
-            ? L('개발자 모드가 꺼져 공개 버전처럼 보이는 중입니다. 폴더에서 불러온 버전이라 업데이트 버튼은 없습니다.', 'Dev mode is off, so it looks like the public build. Loaded from a folder, so there is no Update button.')
-            : L('개발자 모드입니다. 폴더에서 불러온 버전이라 업데이트 버튼이 없으니 저장소에서 받으세요.', 'Dev mode. Loaded from a folder, so there is no Update button. Pull it from the repository.')}
+          {!upd.devBuild
+            ? L('폴더에서 불러온 설치라 여기엔 업데이트 버튼이 없습니다.', "Loaded from a folder, so there's no Update button here.")
+            : upd.devOff
+              ? L('개발자 모드가 꺼져 공개 버전처럼 보이는 중입니다. 폴더에서 불러온 버전이라 업데이트 버튼은 없습니다.', 'Dev mode is off, so it looks like the public build. Loaded from a folder, so there is no Update button.')
+              : L('개발자 모드입니다. 폴더에서 불러온 버전이라 업데이트 버튼이 없으니 저장소에서 받으세요.', 'Dev mode. Loaded from a folder, so there is no Update button. Pull it from the repository.')}
         </Text>,
       ]
       break

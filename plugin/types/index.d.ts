@@ -79,6 +79,7 @@ export type SpendTotals = { atMs: number; today: number; month: number; retroMon
 export type UpdateState = {
   phase: 'idle' | 'checking' | 'latest' | 'newer' | 'updating' | 'done' | 'failed' | 'synced' | 'dev'
   devOff?: boolean
+  devBuild?: boolean
   own: string | null
   market: string | null
   marketAt: string | null

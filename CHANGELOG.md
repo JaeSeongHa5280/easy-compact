@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.5.2] — 2026-11-18
+
+### Fixed
+- A public build installed from a local folder marketplace showed *v… dev mode* on the version button and dev-mode text in the version drawer — now the button shows just the version and the drawer says *Loaded from a folder, so there's no Update button here*. Nothing else behaved differently.
+
 ## [1.5.1] — 2026-11-18
 
 ### Changed

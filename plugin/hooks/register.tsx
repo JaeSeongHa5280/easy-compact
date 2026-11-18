@@ -228,7 +228,8 @@ async function refreshUpdateInfo($: EngineInterface): Promise<void> {
   if (!inst) {
     const got = await readChanges($, null, null, own)
     let devOff = false
-    await update($, updateInfo, prev => ({ ...prev, own, updatedTo: null, ...got, phase: 'dev', devOff }))
+    let devBuild = false
+    await update($, updateInfo, prev => ({ ...prev, own, updatedTo: null, ...got, phase: 'dev', devOff, devBuild }))
     $.ui.invalidate('ui.render')
     return
   }
@@ -2626,7 +2627,7 @@ async function dumpObject($: EngineInterface): Promise<Record<string, unknown>> 
   return {
     at: new Date(await $.clock.now()).toISOString(),
     version: await ownVersion($),
-    install: inst ? inst.marketplace : 'dev',
+    install: inst ? inst.marketplace : (await read($, updateInfo)).devBuild ? 'dev' : 'folder',
     settings: await currentSettings($),
     usageTab: await read($, usageTab),
     paneModeLocal: await read($, paneModeLocal),

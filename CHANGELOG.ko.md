@@ -4,6 +4,11 @@ easy-compact 의 버전마다 바뀐 것입니다. 버전 번호는 [유의적 �
 
 **업데이트 받기:** Claude 에게 `이 플러그인 업데이트해줘: easy-compact (claude plugin marketplace update easy-compact 후 claude plugin update easy-compact@easy-compact)` 를 보내거나, 셸에서 그 두 줄 → Claude 다시 켜기 — [업데이트 받기](README.ko.md#업데이트-받기) 참고.
 
+## [1.5.2] — 2026-11-18
+
+### 고침
+- 로컬 폴더 마켓으로 설치한 공개판의 판 단추에 「v… 개발자 모드」가, 판 서랍에 개발자 글이 나오던 것 — 이제 판 단추는 판 번호만, 판 서랍은 「폴더에서 불러온 설치라 여기엔 업데이트 버튼이 없습니다」입니다. 다른 동작은 원래 같았습니다.
+
 ## [1.5.1] — 2026-11-18
 
 ### 바뀜
