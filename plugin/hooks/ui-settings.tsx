@@ -5,7 +5,7 @@ import type { MoneyColorKey } from './settings'
 import { COMPACT_MIN, penaltyAt, rangeThresholdsFor, thresholdsFor, WARN_RATIO } from './optimal'
 import { L } from './i18n'
 import type { Lang } from './i18n'
-import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, lockedSeg, section, segButton, segGroup, rowLine, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW, plainCard, gaugeEl } from './ui-common'
+import { ACCENT, STAR_COLOR, SEG_ON_EDGE, hoverTip, tipRow, PEN_WARN_PCT, PEN_BAD_PCT, penColorOf, isNotRecommended, penVerdict, phaseLook, pickButton, pulseDot, CARD, CARD_INSET, decoIcon, LIVE_HEX, nameColW, isStackedFor, lockedSeg, section, segButton, segGroup, rowLine, appSection, settingRow, onOffControl, onOffW, buttonW, selectW, choiceControl, choiceW, plainCard, gaugeEl, narrowOf } from './ui-common'
 import type { Fold } from './ui-common'
 import { fitLine } from './ui-band'
 import { onTerminal } from './glyph'
@@ -119,6 +119,22 @@ export function drawSettings(
       onToggle: () => act.toggleFold(`desc-${key}`),
     })
   }
+  const isNarrow = narrowOf(ui) !== null
+  const noteTip = (key: string, title: string, notes: unknown[]) => {
+    const shown = notes.filter(n => n !== null && n !== undefined && n !== false)
+    const head = <Text bold>{title}</Text>
+    return shown.length === 0
+      ? head
+      : hoverTip(
+          ui,
+          key,
+          head,
+          <Box key={`${key}-notes`} flexDirection="column">
+            {shown}
+          </Box>,
+          { isOpen: open[`desc-${key}`] === true, onToggle: () => act.toggleFold(`desc-${key}`) },
+        )
+  }
   const segW = (labels: readonly string[]) => labels.reduce((sum, l) => sum + buttonW(l), 0) + 1
   const chipsW = (labels: readonly string[]) => labels.reduce((sum, l) => sum + buttonW(l) + 1, 0)
 
@@ -160,10 +176,7 @@ export function drawSettings(
           `이 대화는 ${ttlName(ttl)} 동안 캐시에 남습니다. 그 안에 보내면 싸고, 넘기면 다시 써서 비쌉니다.`,
           `This conversation stays cached for ${ttlName(ttl)}. Within it requests are cheap; after it, a rewrite costs more.`,
         )
-  const ttlRow = settingRow(
-    ui,
-    'cache-ttl',
-    L('유지 시간', 'Lifetime'),
+  const ttlDesc = (
     <Box key="cache-ttl-desc" flexDirection="column">
       <Text dimColor wrap="wrap">
         {L(
@@ -177,9 +190,9 @@ export function drawSettings(
           '1-hour cache writes cost 2×, 5-minute ones 1.25×. A longer break rewrites it.',
         )}
       </Text>
-    </Box>,
-    null,
+    </Box>
   )
+  const ttlRow = settingRow(ui, 'cache-ttl', L('유지 시간', 'Lifetime'), ttlDesc, null)
   const warnRow = (key: string, forTtl: number) => {
     const v = forTtl < 60 ? s.cacheWarnMin5m : s.cacheWarnMin
     const isNow = forTtl === (ttl < 60 ? 5 : 60)
@@ -222,19 +235,26 @@ export function drawSettings(
       ) : null}
     </Box>
   )
-  const cacheSection = plainCard(ui, 'set-cache', L('캐시', 'Cache'), [stateLine, ttlRow, warnRow('cache', 60), warnRow('cache5', 5), whyLine])
+  const cacheSection = isNarrow
+    ? plainCard(ui, 'set-cache', noteTip('set-cache-tip', L('캐시', 'Cache'), [ttlDesc, whyLine]), [stateLine, warnRow('cache', 60), warnRow('cache5', 5)])
+    : plainCard(ui, 'set-cache', L('캐시', 'Cache'), [stateLine, ttlRow, warnRow('cache', 60), warnRow('cache5', 5), whyLine])
 
+  const tidyName = L('컴팩트 문구', 'Compact text')
+  const tidyText = (
+    <Text key="tidy-note-text" dimColor wrap="wrap">
+      {L(`[이지 컴팩트]를 누르면 고를 수 있습니다. 고른 것은 다음에도 그대로입니다.`, `Pick one when you press [Easy Compact]. Your pick stays for next time.`)}
+    </Text>
+  )
   const tidyNote = (
     <Box key="tidy-note" flexDirection="column">
-      <Text key="tidy-note-head" bold>
-        {L('컴팩트 문구', 'Compact text')}
-      </Text>
-      <Text key="tidy-note-text" dimColor wrap="wrap">
-        {L(
-          `[이지 컴팩트]를 누르면 고를 수 있습니다. 고른 것은 다음에도 그대로입니다.`,
-          `Pick one when you press [Easy Compact]. Your pick stays for next time.`,
-        )}
-      </Text>
+      {isNarrow ? (
+        noteTip('tidy-note-tip', tidyName, [tidyText])
+      ) : (
+        <Text key="tidy-note-head" bold>
+          {tidyName}
+        </Text>
+      )}
+      {isNarrow ? null : tidyText}
     </Box>
   )
 
@@ -356,10 +376,13 @@ export function drawSettings(
     segW(units.map(x => x.name)),
   )
   const isButton = view.layout === 'button'
-  const screenBlock = (
+  const screenSeg = <Box key="screen-row-seg">{segGroup(ui, 'screen-seg', SCREEN_PRESETS.map(p => one(`screen-${p}`, screenName(p), s.screen === p, () => save(chooseScreen(s, p)))))}</Box>
+  const screenBlock = isNarrow ? (
+    row('screen-row', L('화면 프리셋', 'Screen preset'), screenUse(s.screen), screenSeg, segW(SCREEN_PRESETS.map(screenName)))
+  ) : (
     <Box key="screen-row" flexDirection="column" marginTop={1}>
       <Text bold>{L('화면 프리셋 설정', 'Screen preset')}</Text>
-      <Box key="screen-row-seg">{segGroup(ui, 'screen-seg', SCREEN_PRESETS.map(p => one(`screen-${p}`, screenName(p), s.screen === p, () => save(chooseScreen(s, p)))))}</Box>
+      {screenSeg}
       <Box key="screen-use">
         <Text dimColor wrap="wrap">
           {screenUse(s.screen)}
@@ -380,12 +403,19 @@ export function drawSettings(
       : null,
   ]
   const tabRow = (
-    <Box key="set-tabs-row" flexDirection="column" marginBottom={1}>
+    <Box key="set-tabs-row" flexDirection="column" marginBottom={isNarrow ? 0 : 1}>
       {rowLine(ui, 'set-tabs-line')}
-      <Box key="set-tabs-head" columnGap={1} alignItems="center" flexWrap="wrap">
-        <Text bold>{L('세부 설정', 'Detailed settings')}</Text>
-        <Text dimColor>{L(`(${screenName(s.screen)} 화면)`, `(${screenName(s.screen)} screen)`)}</Text>
-      </Box>
+      {isNarrow ? (
+        hoverTip(ui, 'set-tabs-tip', <Text bold>{L('세부 설정', 'Detailed settings')}</Text>, L('바꾸면 모든 세션에 바로 적용됩니다.', 'Changes apply to all sessions right away.'), {
+          isOpen: open['desc-set-tabs-tip'] === true,
+          onToggle: () => act.toggleFold('desc-set-tabs-tip'),
+        })
+      ) : (
+        <Box key="set-tabs-head" columnGap={1} alignItems="center" flexWrap="wrap">
+          <Text bold>{L('세부 설정', 'Detailed settings')}</Text>
+          <Text dimColor>{L(`(${screenName(s.screen)} 화면)`, `(${screenName(s.screen)} screen)`)}</Text>
+        </Box>
+      )}
       <Box key="set-tabs" columnGap={1} alignItems="center" flexWrap="wrap">
         {SETTINGS_TABS.map(t => one(`set-tab-${t}`, settingsTabName(t), tab === t, () => act.setTab(t)))}
       </Box>
@@ -461,19 +491,20 @@ export function drawSettings(
     isButton ? null : row('status-line-row', L('입력창 아래 한 줄', 'Line below the input'), statusLineUse(), onOffControl(ui, 'statusLine', s.statusLine, on => save({ ...s, statusLine: on })), onOffW()),
   ])
   const barParts = PARTS.filter(p => p.group === 'bar' && p.layouts.includes(view.layout) && !(hasLimits === false && (p.key === 'lim5' || p.key === 'lim7' || p.key === 'resets')))
-  const partsCard = plainCard(ui, 'set-bar-parts', L('입력창에 보일 것', 'Shown at the input'), [
-    unit('parts-unit', [
-      <Text key="parts-head" dimColor wrap="wrap">
-        {isButton
-          ? L(
-              "입력창 아래 버튼에는 컨텍스트와 두 칸까지 들어가고, 나머지는 위 알림에 나옵니다. '필요할 때'로 두면 주의가 필요할 때만 나타납니다.",
-              "The button below the input holds the context and two parts; the rest show in the alert above. 'When needed' shows a value only when it needs attention.",
-            )
-          : L("'필요할 때'로 두면 주의가 필요할 때만 나타납니다.", "'When needed' shows a value only when it needs attention.")}
-      </Text>,
-      lockNote('parts-locked'),
-      ...barParts.map(partRow),
-    ]),
+  const partsName = L('입력창에 보일 것', 'Shown at the input')
+  const partsNotes = [
+    <Text key="parts-head" dimColor wrap="wrap">
+      {isButton
+        ? L(
+            "입력창 아래 버튼에는 컨텍스트와 두 칸까지 들어가고, 나머지는 위 알림에 나옵니다. '필요할 때'로 두면 주의가 필요할 때만 나타납니다.",
+            "The button below the input holds the context and two parts; the rest show in the alert above. 'When needed' shows a value only when it needs attention.",
+          )
+        : L("'필요할 때'로 두면 주의가 필요할 때만 나타납니다.", "'When needed' shows a value only when it needs attention.")}
+    </Text>,
+    lockNote('parts-locked'),
+  ]
+  const partsCard = plainCard(ui, 'set-bar-parts', isNarrow ? noteTip('set-bar-parts-tip', partsName, partsNotes) : partsName, [
+    unit('parts-unit', [...(isNarrow ? [] : partsNotes), ...barParts.map(partRow)]),
     row(
       'spend-row',
       L('모든 세션', 'All sessions'),
@@ -501,10 +532,10 @@ export function drawSettings(
   const barTab = [wholeBar, partsCard, looksCard]
 
   const chipTab = [
-    plainCard(ui, 'set-chip', L('답변 끝 칩', 'Answer chip'), [
+    plainCard(ui, 'set-chip', isNarrow ? noteTip('set-chip-tip', L('답변 끝 칩', 'Answer chip'), [lockNote('chip-locked')]) : L('답변 끝 칩', 'Answer chip'), [
       previews?.chip ?? null,
       unit('chip-unit', [
-        lockNote('chip-locked'),
+        isNarrow ? null : lockNote('chip-locked'),
         ...PARTS.filter(p => p.group === 'chat').map(partRow),
         row(
           'info-row',
@@ -1282,12 +1313,12 @@ export function drawSettingsView(
             )}
           </Text>
         </Box>
-      ) : (
+      ) : narrowOf(ui) ? null : (
         <Text dimColor wrap="wrap">
           {L('바꾸면 모든 세션에 바로 적용됩니다.', 'Changes apply to all sessions right away.')}
         </Text>
       )}
-      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface), langRow, currencyRow, ...(rateRow ? [rateRow] : [])], sizeErr)}
+      {drawSettings(act, ui, s, opt, draft, rawOpen, act.toggleRaw, ctxNow, surface, cols, open, cache, previews, hasLimits, compactDraft, tab, [diagRow(act, ui, 'gen', diag, surface, { isOpen: open['desc-diag-tip-gen'] === true, onToggle: () => act.toggleFold('desc-diag-tip-gen') }), langRow, currencyRow, ...(rateRow ? [rateRow] : [])], sizeErr)}
     </Box>
   )
 }
@@ -1347,20 +1378,27 @@ const DRAWER_VERSIONS = 6
 
 const DIAG_HEAD_TERMINAL = 20
 
-export function diagRow(act: SettingsActions, ui: Ui, where: 'drawer' | 'gen', view: DiagView | null, surface: string) {
+export function diagRow(act: SettingsActions, ui: Ui, where: 'drawer' | 'gen', view: DiagView | null, surface: string, tip?: { isOpen: boolean; onToggle: () => void }) {
   const { Box, Button, Text } = ui
   const isOpen = view !== null
+  const nameEl = (
+    <Text key="diag-name" bold>
+      {L('문제 제보', 'Report a problem')}
+    </Text>
+  )
+  const useEl = (
+    <Text key="diag-use" dimColor wrap="wrap">
+      {L('보내기 전에 진단 내용을 먼저 보여 드립니다', 'Shows you the diagnostics before anything leaves')}
+    </Text>
+  )
+  const isTip = tip !== undefined && narrowOf(ui) !== null
   return (
     <Box key={`diag-${where}`} flexDirection="column">
       {settingRow(
         ui,
         `diag-row-${where}`,
-        <Text key="diag-name" bold>
-          {L('문제 제보', 'Report a problem')}
-        </Text>,
-        <Text key="diag-use" dimColor wrap="wrap">
-          {L('보내기 전에 진단 내용을 먼저 보여 드립니다', 'Shows you the diagnostics before anything leaves')}
-        </Text>,
+        isTip ? hoverTip(ui, `diag-tip-${where}`, nameEl, useEl, tip) : nameEl,
+        isTip ? null : useEl,
         [<Button key={`diag-btn-${where}`} label={isOpen ? L('접기', 'Hide') : L('진단 내용 보기', 'Show diagnostics')} variant="secondary" onPress={() => (isOpen ? act.diagClose() : act.diagOpen(where))} />],
       )}
       {view ? drawDiagCard(act, ui, view, surface) : null}

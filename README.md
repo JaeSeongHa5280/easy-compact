@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.5.0-4c9be8" alt="Version 1.5.0">
+  <img src="https://img.shields.io/badge/version-1.5.1-4c9be8" alt="Version 1.5.1">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-150">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-151">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,12 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.5.1
+
+- **A folded pane in VS Code's narrow box** — when the Claude window is narrow (under 800 px) and the pane sits above the input in its 12-line box, the overview cards (in Detailed view: this session, cost per question, compact, reference, all sessions) open folded, showing only their names and a one-line summary. The settings tab shows each row's name and current value. Press one to open just that. The wide pane, the desktop app's pane and the terminal look the same as before.
+- **The desktop app's small pane: a three-line summary** — when the desktop app shows the pane in its small form (a widget), it shows three lines with nothing to press: context and total, question total and today, cache time left.
+- **Fixed** — before the first question, an empty session's pane said the model's rates were unknown even when they're known.
 
 ## What's new in 1.5.0
 
@@ -493,17 +499,18 @@ Open it with **▯ Compact pane** at the bar's top right (in a terminal, **[Pane
 
 ### 8. VS Code too
 
-<img src="docs/img/vscode.png" width="424" alt="The Claude Code chat panel in VS Code, about 300 px wide: the Easy Compact bar above the input — the button row on top, session, context and cache below">
+<img src="docs/img/vscode.png" width="424" alt="The Claude Code chat panel in VS Code, about 300 px wide: the Easy Compact bar above the input — the button row on top, session, context and cache below"> <img src="docs/img/vscode-fold.png" width="424" alt="The same panel after ✕: the bar folded into two chips above the input — 🔄 Auto 400k (Easy Auto is on) and 🟦 50k(5%), which opens the bar again">
 
 **The same bar and pane in the Claude Code extension's chat panel.** If you installed from the desktop app or a terminal, just restart VS Code. How it differs from the desktop app:
 
 - **Narrow panel: buttons on top** — in a narrow panel (about 300 px, docked in a side bar) the **[Compact]** · **[Easy Auto]** · **◔** · **□** · **✕** row sits on top, with session, context and cache on the line below. On the confirm card the buttons come right under the title.
 - **The pane opens with ◔** — a **◔** text button opens the Easy Compact pane instead of the gauge picture. A pane placed above the input keeps only its header while the confirm card is open.
+- **Narrow box: a folded pane** — a pane placed in the 12-line box above the input opens with its cards and setting rows folded. Cards show their name and a one-line summary (total, today's cost and so on); setting rows show their name and current value. Press one to open just that; what you open is remembered for that session only. The version button is in the settings tab, and the bar preview starts folded too — the real bar right below shows the change.
 - **✕ leaves a chip in the bar's place** — there's no toolbar below the input, so a folded bar stays as a **🟦 140k** chip (with Easy Auto) in the bar's place. Press it to open the bar again. No toast for folding or for turning Easy Auto on and off — the chip and the switch change right away.
 - **The Slim button sits above the input too** — on the Slim screen, **🟦 120k** and Easy Auto are on the line right above the input. Press it for the one-line summary; its **◔** opens the pane.
 - **The pane opens and closes on its own** — a VS Code session doesn't open or close the pane together with desktop app sessions. ✕ fold, bar mode and settings use the same settings file, so they apply to every session.
 
-**For a wide pane,** open Claude in the editor area instead of a side bar (Command Palette **Claude Code: Open in Primary Editor**). When the Claude tab is 800 px or wider, the extension opens the pane wide beside the chat; narrower, it puts it above the input in a 12-line box that scrolls. The extension decides where and how tall — easy-compact can't change that.
+**For a wide pane,** open Claude in the editor area instead of a side bar (Command Palette **Claude Code: Open in Primary Editor**). When the Claude tab is 800 px or wider, the extension opens the pane wide beside the chat; narrower, it puts it above the input in a 12-line box that scrolls, and easy-compact opens its cards and setting rows folded there. The extension decides where and how tall — easy-compact can't change that.
 
 ## Hide, fold, bring it back
 

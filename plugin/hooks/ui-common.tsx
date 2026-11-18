@@ -616,6 +616,94 @@ export function compactMarkCells(ui: Ui): number {
 
 export type Fold = { isOpen: boolean; onToggle: () => void }
 
+export type Narrow = { isOpen: (key: string) => boolean; toggle: (key: string) => void }
+
+export function narrowOf(ui: Ui): Narrow | null {
+  return (ui as unknown as { narrow?: Narrow }).narrow ?? null
+}
+
+export function withNarrow(ui: Ui, narrow: Narrow): Ui {
+  return { ...ui, narrow } as Ui
+}
+
+export function narrowFold(ui: Ui, key: string): Fold | null {
+  const n = narrowOf(ui)
+  return n ? { isOpen: n.isOpen(key), onToggle: () => n.toggle(key) } : null
+}
+
+export function pickedText(node: unknown): string | null {
+  const all: string[] = []
+  collectPicked(node, all)
+  return all.length > 0 ? all.join(' · ') : null
+}
+
+function collectPicked(node: unknown, out: string[]): void {
+  if (node === null || node === undefined || typeof node !== 'object') return
+  if (Array.isArray(node)) {
+    for (const n of node) collectPicked(n, out)
+    return
+  }
+  const el = node as { type?: unknown; props?: Record<string, unknown>; children?: unknown }
+  const p = el.props ?? {}
+  const push = (t: string | null | undefined) => {
+    if (t) out.push(t)
+  }
+  if (el.type === 'Select') return push((p.options as { value: string; label: string }[] | undefined)?.find(o => o.value === p.value)?.label)
+  if (el.type === 'Client') {
+    const on = (p.props as { on?: unknown } | undefined)?.on
+    return push(on === true ? L('켬', 'On') : on === false ? L('끄기', 'Off') : null)
+  }
+  if (el.type === 'Input') return push(typeof p.value === 'string' ? p.value : null)
+  if (el.type === 'Button') {
+    const label = typeof p.label === 'string' ? p.label : ''
+    return push(label.startsWith('✓ ') ? label.slice(2) : null)
+  }
+  const kids = (el.children ?? p.children) as unknown
+  if (el.type === 'Box' && typeof p.key === 'string' && p.key.endsWith('-on')) {
+    const btn = (Array.isArray(kids) ? kids : [kids]).find(k => (k as { type?: unknown } | null)?.type === 'Button') as { props?: { label?: unknown } } | undefined
+    if (typeof btn?.props?.label === 'string') return push(btn.props.label)
+  }
+  if (el.type === 'Box' && typeof p.key === 'string' && p.key.endsWith('-locked') && p.borderStyle) return push(plainText(kids))
+  if (el.type === 'Text') {
+    const t = plainText(kids)
+    return push(t.startsWith('✓ ') ? t.slice(2) : null)
+  }
+  collectPicked(kids, out)
+}
+
+function plainText(node: unknown): string {
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(plainText).join('')
+  if (node && typeof node === 'object') {
+    const el = node as { props?: Record<string, unknown>; children?: unknown }
+    return plainText(el.children ?? el.props?.children)
+  }
+  return ''
+}
+
+function narrowRow(ui: Ui, nr: Narrow, key: string, name: string, mark: unknown, control: unknown, below: unknown[]) {
+  const { Box, Text } = ui
+  const fk = `row-${key}`
+  const isOpen = nr.isOpen(fk)
+  const picked = isOpen ? null : pickedText(control)
+  return (
+    <Box key={key} flexDirection="column">
+      <Box key={`${key}-nhead`} columnGap={1} alignItems="center" flexWrap="wrap">
+        {foldHead(ui, fk, name, { isOpen, onToggle: () => nr.toggle(fk) })}
+        {isOpen ? mark : picked ? <Text dimColor>{picked}</Text> : null}
+      </Box>
+      {isOpen ? (
+        <Box key={`${key}-nbody`} flexDirection="column" paddingBottom={0.4}>
+          <Box key={`${key}-nctl`} columnGap={1} rowGap={1} alignItems="center" flexWrap="wrap">
+            {control}
+          </Box>
+          {below}
+        </Box>
+      ) : null}
+    </Box>
+  )
+}
+
 export function foldHead(ui: Ui, key: string, title: string, fold: Fold) {
   const { Button } = ui
   const mark = onTerminal() ? (fold.isOpen ? '▾' : '▸') : fold.isOpen ? '⌄' : '›'
@@ -625,7 +713,7 @@ export function foldHead(ui: Ui, key: string, title: string, fold: Fold) {
 export function foldCard(ui: Ui, key: string, title: string, fold: Fold, children: unknown[], hint?: unknown) {
   const { Box, Text } = ui
   return (
-    <Box key={key} flexDirection="column" marginTop={1}>
+    <Box key={key} flexDirection="column" marginTop={narrowOf(ui) ? 0 : 1}>
       <Box key={`${key}-head`} columnGap={1} alignItems="center" flexWrap="wrap">
         {foldHead(ui, key, title, fold)}
         {hint === undefined || hint === null || hint === '' ? null : <Box key={`${key}-hint`}>{typeof hint === 'string' ? <Text dimColor>{hint}</Text> : hint}</Box>}
@@ -648,7 +736,7 @@ export function plainCard(ui: Ui, key: string, title: unknown, rows: unknown[], 
     body.push(r)
   })
   return (
-    <Box key={key} flexDirection="column" marginTop={1}>
+    <Box key={key} flexDirection="column" marginTop={narrowOf(ui) ? 0 : 1}>
       <Box key={`${key}-head`} columnGap={1} alignItems="center" flexWrap="wrap">
         {typeof title === 'string' ? <Text bold>{title}</Text> : title}
         {hint === undefined || hint === null || hint === '' ? null : <Box key={`${key}-hint`}>{typeof hint === 'string' ? <Text dimColor>{hint}</Text> : hint}</Box>}
@@ -719,6 +807,8 @@ export function settingRow(ui: Ui, key: string, name: unknown, desc: unknown, co
       desc
     )
   const hasControl = control !== null && control !== undefined
+  const nr = narrowOf(ui)
+  if (nr && hasControl && typeof name === 'string') return narrowRow(ui, nr, key, name, null, control, [descEl, ...extra])
   return (
     <Box key={key} flexDirection="column">
       <Box key={`${key}-main`} flexDirection={stack ? 'column' : 'row'} columnGap={2} rowGap={0} alignItems={stack ? 'stretch' : 'center'} paddingY={onTerminal() ? 0 : 0.6}>
@@ -794,6 +884,24 @@ export function tipRow(
 ) {
   const has = desc !== null && desc !== undefined && desc !== ''
   const nm = nameEl ?? name
+  const nr = narrowOf(ui)
+  if (nr && control !== null && control !== undefined) {
+    const { Box, Text } = ui
+    const tipN = has ? helpTip(ui, key, desc, 2, toggle?.onToggle) : null
+    const descN =
+      has && toggle?.isOpen ? (
+        <Box key={`${key}-desc`} paddingBottom={0.4}>
+          {typeof desc === 'string' ? (
+            <Text dimColor wrap="wrap">
+              {desc}
+            </Text>
+          ) : (
+            desc
+          )}
+        </Box>
+      ) : null
+    return narrowRow(ui, nr, key, name, tipN?.mark ?? null, control, [descN, tipN?.card ?? null, ...extra])
+  }
   if (!has) return settingRow(ui, key, nm, null, control, extra, stack)
   const { Box, Text } = ui
   const tip = helpTip(ui, key, desc, 2, toggle?.onToggle)
@@ -865,7 +973,7 @@ export function section(
   if (fold && isCard) return foldCard(ui, key, title, fold, children, hint)
   const isOpen = fold?.isOpen ?? true
   return (
-    <Box key={key} flexDirection="column" marginTop={1} rowGap={0} {...(isCard ? CARD : {})}>
+    <Box key={key} flexDirection="column" marginTop={fold && narrowOf(ui) ? 0 : 1} rowGap={0} {...(isCard ? CARD : {})}>
       <Box columnGap={1} alignItems="center" flexWrap="wrap" marginBottom={isCard && isOpen ? 1 : 0} {...(isCard ? titleBand() : {})}>
         {fold ? foldButton(ui, key, fold) : null}
         {icon ? decoIcon(ui, icon, ICON_GRAY, title, `${key}-icon`) : null}

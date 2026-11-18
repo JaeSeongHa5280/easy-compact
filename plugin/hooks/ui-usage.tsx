@@ -71,7 +71,7 @@ import { ctxUnitNow, fitLine, rewriteNote } from './ui-band'
 import type { LineCell } from './ui-band'
 import { L, plural } from './i18n'
 import { iconOf, onDesktop, withIcon } from './glyph'
-import { BRAND_HEX, questionScope, rasterOf, ultraPieces } from './ui-common'
+import { BRAND_HEX, narrowOf, questionScope, rasterOf, ultraPieces } from './ui-common'
 import { flowCells, flowLayout, timingCells } from './cells'
 import { addModelCounts } from './turns'
 
@@ -1014,7 +1014,7 @@ export function drawHistory(
       </Text>
     )
   return (
-    <Box key="s-history" flexDirection="column" marginTop={1}>
+    <Box key="s-history" flexDirection="column" marginTop={narrowOf(ui) ? 0 : 1}>
       <Box key="s-history-head" columnGap={1} alignItems="center" flexWrap="wrap">
         {foldHead(ui, 's-history', L('질문별 비용', 'Cost per question'), fold)}
         {liveMark}
@@ -1274,7 +1274,7 @@ export function drawNow(
       ),
     )
   }
-  if (est.kind === 'unpriced') {
+  if (est.kind === 'unpriced' && (u.contextTokens ?? 0) > 0) {
     costRows.push(<Text key="k-none" dimColor wrap="wrap">{L(`요율을 모르는 모델(${u.model})이라 토큰만 보여 줍니다.`, `Unknown rates for this model (${u.model}) — showing tokens only.`)}</Text>)
   }
   const costEl =

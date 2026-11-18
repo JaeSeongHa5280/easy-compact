@@ -4,6 +4,15 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.5.1] — 2026-11-18
+
+### Changed
+- **A folded pane in VS Code's narrow box** — when the Claude window is narrow (under 800 px) and the pane sits above the input in its 12-line box, the overview cards (in Detailed view: this session, cost per question, compact, reference, all sessions) open folded, showing only their names and a one-line summary. The settings tab shows each row's name and current value; press one to open its buttons and help. The bar preview starts folded too (the real bar right below shows the change). What you open is remembered for that session only. The header takes fewer lines and the version button moved to the settings tab. The wide pane, the desktop app's pane and the terminal look the same as before.
+- **The desktop app's small pane: a three-line summary** — when the desktop app shows the Easy Compact pane in its small form (a widget), it shows three lines with nothing to press: context and total, question total and today, cache time left. Open the pane full size and it's as before.
+
+### Fixed
+- Before the first question, an empty session's pane said "Unknown rates for this model — showing tokens only" even for a model with known rates (Opus 5.5 and others).
+
 ## [1.5.0] — 2026-11-18
 
 ### Added

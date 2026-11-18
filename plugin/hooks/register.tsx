@@ -93,7 +93,7 @@ import { kindDirect, kindTidy, compactKindOf, markGo, tidyPrompt, compactKeep, d
 import { autoChipText, autoDraftNote, autoFromStore, autoKey, autoLossOf, autoNoteText, autoRangeText, autoStep, autoToggleNote, freshAuto, isAutoActive } from './auto'
 import type { AutoAction, AutoEvent, AutoFacts, AutoMachine } from './auto'
 import { drawAutoNote } from './ui-auto'
-import { CH_PX, oldEngineNote, questionScope, setGaugeShape, setMotion, row, gridOf, CARD_INSET, SVG_MAX_PX } from './ui-common'
+import { CH_PX, oldEngineNote, questionScope, setGaugeShape, setMotion, row, gridOf, CARD_INSET, SVG_MAX_PX, withNarrow } from './ui-common'
 import type { Ui } from './ui-common'
 import { setBandOrder, setCtxUnit, slimButtonText, slimParts } from './ui-band'
 import type { SpendShown } from './ui-band'
@@ -103,14 +103,14 @@ import { drawSettingsView, drawUpdateDrawer } from './ui-settings'
 import { cellMark, drawAnswerChip, liveStrip, sampleTurn, sampleUsage, spinnerCost } from './ui-answer'
 import { deskRows, drawBar } from './ui-bar'
 import type { BarActions, BarData } from './ui-bar'
-import { drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
+import { drawPaneGlance, drawPaneHead, drawPaneMain, settingsPreviews } from './ui-pane'
 import type { PaneMainActions } from './ui-pane'
 import { statusLineText } from './status-line'
 import { diagHead, dumpText, nativePath, redactDump, revealArgv } from './diag'
 import type { DiagCounts, DiagView } from './diag'
 import { isKorean, L, lang, plural, setLang } from './i18n'
 import { setSurface } from './glyph'
-import { foldsInBand, isVscodeSession, paneYieldsToCard, slimInBand, vscodeBarLook } from './vscode'
+import { foldsInBand, isVscodeSession, paneIsCondensed, paneYieldsToCard, slimInBand, vscodeBarLook } from './vscode'
 import type { Lang } from './i18n'
 import { changeRange, changelogItems, changelogVersionsBetween, engineBelow, installedFrom, marketVersionOf, MIN_ENGINE, pluginDataId, syncedFrom, versionGt } from './paths'
 import type { SettingsActions, SettingsTab } from './ui-settings'
@@ -614,6 +614,8 @@ const diagCard = atom({ plugin: 'easy-compact', key: 'diagCard' } as const, DIAG
 let diagSnap: { text: string; head: string; lines: number; turns: number; counts: DiagCounts; samples: string[] } | null = null
 
 const cardsOpen = atom({ plugin: 'easy-compact', key: 'cardsOpen' } as const, CARDS_OPEN_DEFAULT)
+
+const narrowOpen = atom({ plugin: 'easy-compact', key: 'narrowOpen' } as const, {} as Record<string, boolean>)
 
 const spend = atom({ plugin: 'easy-compact', key: 'spend' } as const, null)
 
@@ -3051,6 +3053,12 @@ async function toggleCard($: EngineInterface, which: 'now' | 'history' | 'compac
   $.ui.invalidate('ui.render')
 }
 
+async function toggleNarrow($: EngineInterface, key: string): Promise<void> {
+  const cur = await read($, narrowOpen)
+  await update($, narrowOpen, () => ({ ...cur, [key]: !cur[key] }))
+  $.ui.invalidate('ui.render')
+}
+
 
 async function saveFromSettings($: EngineInterface, chosen: Settings): Promise<void> {
   const wasFolded = (await currentSettings($)).bandFolded
@@ -3597,7 +3605,9 @@ export const register: Register = on => {
     try {
     await ensureLang($)
     setSurface(e.surface)
-    const ui = $.ui.resolve(e)
+    const isCondensed = paneIsCondensed(e.surface, e.props.placement)
+    const narrowNow = isCondensed ? await read($, narrowOpen) : null
+    const ui = narrowNow ? withNarrow($.ui.resolve(e), { isOpen: k => narrowNow[k] === true, toggle: k => void toggleNarrow($, k) }) : $.ui.resolve(e)
     const wantTitle = paneTitle()
     if (typeof e.props.title === 'string' && e.props.title !== wantTitle && retitledTo !== wantTitle) {
       retitledTo = wantTitle
@@ -3626,6 +3636,16 @@ export const register: Register = on => {
     const ctxForPerm = u?.contextTokens ?? null
     const perm = permRaw && ctxForPerm !== null && ctxForPerm > 0 ? { ...permRaw, tokens: Math.min(permRaw.tokens, ctxForPerm) } : permRaw
     const g = gridOf(e.surface)
+    if (e.props.placement === 'widget') {
+      const liveG = await read($, live)
+      return drawPaneGlance(ui, {
+        u,
+        sums: allSums,
+        nowMs: nowMs || (await $.clock.now()),
+        tally: { older: await read($, turnsOlder), liveUsd: liveG?.cost.usd ?? 0, costUsd: u?.costUsd ?? null },
+        allLine: await allSpendOf($, sNowPane, await paneModeNow($)),
+      })
+    }
     let body: unknown
     if (isSettings) {
       const sSet = sNowPane
@@ -3732,7 +3752,7 @@ export const register: Register = on => {
           { openTab: which => void openUsageTab($, which), setMode: mode => void setPaneMode($, mode), toggleDrawer: () => void toggleUpdateDrawer($) },
         )}
         {isDrawerOpen ? drawUpdateDrawer(settingsActs($), ui, upd, await $.clock.now(), e.surface, await diagViewOf($, 'drawer')) : null}
-        <Box marginTop={1} flexDirection="column">
+        <Box marginTop={isCondensed ? 0 : 1} flexDirection="column">
           {body}
         </Box>
       </Box>

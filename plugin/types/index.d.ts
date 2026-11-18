@@ -305,6 +305,7 @@ declare module 'claude-code' {
       settingsTab: 'bar' | 'chip' | 'pane' | 'compact' | 'gen'
       diagCard: { open: boolean; where: 'drawer' | 'gen'; redact: boolean; copiedLines: number | null; savedPath: string | null }
       cardsOpen: { now: boolean; history: boolean; compact: boolean }
+      narrowOpen: Record<string, boolean>
       spend: SpendTotals | null
       spendFailed: boolean
       update: UpdateState

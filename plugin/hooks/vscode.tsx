@@ -22,6 +22,10 @@ export function paneYieldsToCard(surface: string, placement: string): boolean {
   return surface === VSCODE_SURFACE && placement === 'inline'
 }
 
+export function paneIsCondensed(surface: string, placement: string): boolean {
+  return surface === VSCODE_SURFACE && placement === 'inline'
+}
+
 export function foldsInBand(surface: string): boolean {
   return surface === VSCODE_SURFACE
 }
