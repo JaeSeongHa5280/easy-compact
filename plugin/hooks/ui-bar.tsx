@@ -39,6 +39,8 @@ export type BarData = {
   stackButtons?: boolean
   actionsFirst?: boolean
   revealAbove?: boolean
+  textCols?: number
+  wrapsCells?: boolean
 }
 
 export type BarActions = {
@@ -271,6 +273,10 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         )
       : null
   const W = e.props.bodyColumns
+  const fitW = d.textCols ?? W
+  const wrapsCells = d.wrapsCells === true && !isConfirming && clearAsk === null
+  const overOf = (f: ReturnType<typeof fitLine>, w: number) => ({ ...f, over: f.width > w })
+  const fitCells = (cells: Parameters<typeof fitLine>[1], w: number) => (wrapsCells ? overOf(fitLine(ui, cells, null, null), w) : fitLine(ui, cells, w))
   const isTerm = e.surface === 'terminal'
   const btnW = (label: string) => (isTerm ? cellsOf(label) + 4 : Math.ceil((textCh(label) * 12) / 13 + 1.6))
   const txtW = (text: string) => widthOf(text, isTerm)
@@ -304,19 +310,21 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
   const hasLimitsLine = hasLimitsRow && u !== null
   const onCost = !show.lastTurn && (!hasLimitsLine || u === null || fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', null, spendNow).el !== null)
   const lastSum = sums.length > 0 ? sums[sums.length - 1]! : null
-  const availOf = (right: number) => (right > 0 ? W - right - 2 : W)
+  const availOf = (right: number) => (right > 0 ? fitW - right - 2 : fitW)
   const isRegroup = mode === 'full' && hasLimitsLine && show.lastTurn && u !== null
   const layoutFor = (label: string) => {
     const cw = compactW(mode === 'min' && !isTerm ? shortLabel : label)
     if (isRegroup && u) {
       const g = costGroups(ui, u, nowMs, show, sNow.sessionColors, false, spendNow)
       const q = showLastLine ? afterCells(ui, lastTurnCells(ui, lastSum) ?? []) : []
-      const last = fitLine(ui, [...g.now, ...q], availOf(cw))
-      return { cost: fitLine(ui, g.money, availOf(0)), last, isOver: last.over }
+      const last = fitCells([...g.now, ...q], availOf(cw))
+      return { cost: fitCells(g.money, availOf(0)), last, isOver: last.over }
     }
     const costRight = d.stackButtons ? 0 : mode === 'min' ? cw + 2 + controlsW : hasLimitsLine ? (onCost ? cw : 0) : onCost ? cw + 2 + controlsW : controlsW
-    const cost = u ? fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', availOf(costRight), spendNow) : null
-    const last = showLastLine ? fitLastTurnLine(ui, lastSum, availOf(onCost || d.stackButtons ? 0 : cw)) : null
+    const costW = availOf(costRight)
+    const cost = !u ? null : wrapsCells ? overOf(fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', null, spendNow, null), costW) : fitEstimateLine(ui, u, nowMs, show, sNow.sessionColors, mode !== 'full', costW, spendNow)
+    const lastW = availOf(onCost || d.stackButtons ? 0 : cw)
+    const last = !showLastLine ? null : wrapsCells ? fitCells(lastTurnCells(ui, lastSum) ?? [], lastW) : fitLastTurnLine(ui, lastSum, lastW)
     const isOver = onCost || mode === 'min' ? (cost?.over ?? false) : (last?.over ?? false)
     return { cost, last, isOver }
   }
@@ -696,7 +704,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     )
   }
   const row = (key: string, left: unknown, rightEl: unknown, align: 'center' | 'flex-start', isUnderWindow = false) => (
-    <Box key={key} flexWrap="nowrap" alignItems={align} columnGap={2} {...(isUnderWindow && !isTerm ? { marginTop: 1 } : {})}>
+    <Box key={key} flexWrap="nowrap" alignItems={wrapsCells ? 'flex-start' : align} columnGap={2} {...(isUnderWindow && !isTerm ? { marginTop: 1 } : {})}>
       <Box flexGrow={1} flexShrink={1} minWidth={0}>
         {left ?? <Text> </Text>}
       </Box>
@@ -782,7 +790,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     const rightW = isBusyPhase ? 0 : ICON_W + (showBtn || isConfirming ? btnW(`${btnLabel} ▾`) + 1 + autoCtlW : 0) + 5 + btnW('✕')
     const lineCells = isSum && u ? slimSummaryCells(ui, u, nowMs, sv, sNow.sessionColors, spendNow) : over
     if (d.stackButtons && !isBusyPhase) {
-      const full = lineCells.length > 0 ? fitLine(ui, lineCells, W - 2).el : null
+      const full = lineCells.length > 0 ? fitCells(lineCells, fitW - 2).el : null
       const stackRow = (
         <Box key={isSum ? 'b-slim-sum' : 'b-slim'} flexDirection="column">
           <Box key="b-slim-top" justifyContent="flex-end">{right}</Box>
@@ -798,10 +806,10 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
       )
     }
     const sideW = availOf(rightW + 2) - (whyText ? txtW(`${whyText} · `) + 1 : 0) - 3
-    const side = lineCells.length > 0 ? fitLine(ui, lineCells, Math.max(0, sideW), null) : null
+    const side = lineCells.length === 0 ? null : wrapsCells ? overOf(fitLine(ui, lineCells, null, null), Math.max(0, sideW)) : fitLine(ui, lineCells, Math.max(0, sideW), null)
     const isBelow = side !== null && side.over
     const cells = side === null || isBelow ? null : side.el
-    const more = isBelow ? fitLine(ui, lineCells, W - 2).el : null
+    const more = isBelow ? fitCells(lineCells, fitW - 2).el : null
     const slimRow = (
       <Box key={isSum ? 'b-slim-sum' : 'b-slim'} columnGap={2} alignItems="center" justifyContent="space-between" flexWrap="nowrap">
         <Box key="b-slim-left" columnGap={1} alignItems="center" flexShrink={1} minWidth={0} flexWrap="wrap">

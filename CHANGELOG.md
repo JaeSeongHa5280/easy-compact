@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.5.4] — 2026-11-24
+
+### Fixed
+- In VS Code, bar items you turned on (Today, This month, Compact range and others) were left out even when there was room — VS Code's bar width was counted narrower than it really is, so items turned on by a screen preset or Custom looked like they wouldn't fit and were dropped. Now the bar counts real text width, and when the items don't fit on one line it wraps them onto the next line (starting with *·*) instead of dropping them. While the compact confirm card is open it doesn't wrap, so the card's buttons keep their room. The desktop app and terminal look the same as before.
+
 ## [1.5.3] — 2026-11-23
 
 ### Fixed

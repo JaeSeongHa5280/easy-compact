@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.5.3-4c9be8" alt="Version 1.5.3">
+  <img src="https://img.shields.io/badge/version-1.5.4-4c9be8" alt="Version 1.5.4">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code plugin">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Requires Claude Code 2.1.295 or later">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
@@ -19,7 +19,7 @@
 <p align="center">
   <b>English</b> · <a href="README.ko.md">한국어</a>
   &nbsp;|&nbsp;
-  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-153">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
+  <a href="#requirements">Requirements</a> · <a href="#install">Install</a> · <a href="#update">Update</a> · <a href="#whats-new-in-154">What's new</a> · <a href="#features">Features</a> · <a href="#hide-fold-bring-it-back">Hide · bring back</a> · <a href="#bar-not-showing">Bar not showing?</a> · <a href="#something-wrong--report-it">Report a problem</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,10 @@ claude plugin uninstall easy-compact@easy-compact
 No cloning into `~/.claude` and no `settings.json` edits are involved. Just want a break? [Turn the bar off](#hide-fold-bring-it-back) instead.
 
 </details>
+
+## What's new in 1.5.4
+
+- **Fixed** — in VS Code, bar items you turned on (Today, This month, Compact range and others) were left out even when there was room. Now they're never dropped: when they don't fit on one line, they wrap onto the next.
 
 ## What's new in 1.5.3
 
@@ -511,7 +515,7 @@ Open it with **▯ Compact pane** at the bar's top right (in a terminal, **[Pane
 
 **The same bar and pane in the Claude Code extension's chat panel.** If you installed from the desktop app or a terminal, just restart VS Code. How it differs from the desktop app:
 
-- **Narrow panel: buttons on top** — in a narrow panel (about 300 px, docked in a side bar) the **[Compact]** · **[Easy Auto]** · **◔** · **□** · **✕** row sits on top, with session, context and cache on the line below. On the confirm card the buttons come right under the title.
+- **Narrow panel: buttons on top** — in a narrow panel (about 300 px, docked in a side bar) the **[Compact]** · **[Easy Auto]** · **◔** · **□** · **✕** row sits on top, with session, context and cache on the line below. Bar items that don't fit on one line wrap onto the next instead of being left out. On the confirm card the buttons come right under the title.
 - **The pane opens with ◔** — a **◔** text button opens the Easy Compact pane instead of the gauge picture. A pane placed above the input keeps only its header while the confirm card is open.
 - **Narrow box: a folded pane** — a pane placed in the 12-line box above the input opens with its cards and setting rows folded. Cards show their name and a one-line summary (total, today's cost and so on); setting rows show their name and current value. Press one to open just that; what you open is remembered for that session only. The version button is in the settings tab, and the bar preview starts folded too — the real bar right below shows the change.
 - **✕ leaves a chip in the bar's place** — there's no toolbar below the input, so a folded bar stays as a **🟦 140k** chip (with Easy Auto) in the bar's place. Press it to open the bar again. No toast for folding or for turning Easy Auto on and off — the chip and the switch change right away.

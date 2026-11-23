@@ -13,9 +13,11 @@ export async function isVscodeSession($: EngineInterface): Promise<boolean> {
 
 export const VSCODE_STACK_COLS = 40
 
-export function vscodeBarLook(surface: string, bodyColumns: number): Pick<BarData, 'stackButtons' | 'actionsFirst' | 'revealAbove'> {
+export const VSCODE_TEXT_SCALE = 1.25
+
+export function vscodeBarLook(surface: string, bodyColumns: number): Pick<BarData, 'stackButtons' | 'actionsFirst' | 'revealAbove' | 'textCols' | 'wrapsCells'> {
   if (surface !== VSCODE_SURFACE) return {}
-  return { stackButtons: bodyColumns < VSCODE_STACK_COLS, actionsFirst: true, revealAbove: true }
+  return { stackButtons: bodyColumns < VSCODE_STACK_COLS, actionsFirst: true, revealAbove: true, textCols: Math.floor(bodyColumns * VSCODE_TEXT_SCALE), wrapsCells: true }
 }
 
 export function paneYieldsToCard(surface: string, placement: string): boolean {
