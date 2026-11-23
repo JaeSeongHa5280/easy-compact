@@ -4,6 +4,11 @@ All notable changes to easy-compact. Versions follow [Semantic Versioning](https
 
 **Update:** send Claude `Update this plugin: easy-compact (claude plugin marketplace update easy-compact, then claude plugin update easy-compact@easy-compact)`, or run those two lines in a shell, then restart Claude — see [Update](README.md#update).
 
+## [1.5.3] — 2026-11-23
+
+### Fixed
+- The bar's hint chips (what shows when you hover a button) piled up and stayed — after you pressed the pane button especially, several were left behind, and they stayed put when the pane opened and the bar moved. Now a chip shows inside the bar, left of its button, one at a time, and closes when you leave the button or move onto the chip. The ⚠ chip next to the session cost works the same way.
+
 ## [1.5.2] — 2026-11-18
 
 ### Fixed

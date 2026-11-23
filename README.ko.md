@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.5.2-4c9be8" alt="버전 1.5.2">
+  <img src="https://img.shields.io/badge/version-1.5.3-4c9be8" alt="버전 1.5.3">
   <img src="https://img.shields.io/badge/Claude_Code-plugin-D97757" alt="Claude Code 플러그인">
   <img src="https://img.shields.io/badge/requires-Claude_Code_2.1.295%2B-4c9be8" alt="Claude Code 2.1.295 이상 필요">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT 라이선스">
@@ -19,7 +19,7 @@
 <p align="center">
   <a href="README.md">English</a> · <b>한국어</b>
   &nbsp;|&nbsp;
-  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#152-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
+  <a href="#필요한-것">필요한 것</a> · <a href="#설치">설치</a> · <a href="#업데이트-받기">업데이트 받기</a> · <a href="#153-에서-바뀐-것">바뀐 것</a> · <a href="#기능">기능</a> · <a href="#숨기기--접기--다시-켜기">숨기기 · 다시 켜기</a> · <a href="#바가-안-보이면">바가 안 보이면</a> · <a href="#문제가-생기면--제보">제보</a>
 </p>
 
 <p align="center">
@@ -112,6 +112,10 @@ claude plugin uninstall easy-compact@easy-compact
 `~/.claude` 에 clone 하거나 `settings.json` 을 고친 것이 없어 이것으로 끝입니다. 잠깐 쉬고 싶을 뿐이면 지우는 대신 [바를 끄세요](#숨기기--접기--다시-켜기).
 
 </details>
+
+## 1.5.3 에서 바뀐 것
+
+- **고침** — 바 단추의 설명 칩이 단추를 누른 뒤(특히 패널 단추) 여러 개 겹쳐 남던 것. 이제 단추 왼쪽에 한 번에 하나만 뜨고, 단추를 떠나거나 칩 위로 옮기면 닫힙니다.
 
 ## 1.5.2 에서 바뀐 것
 

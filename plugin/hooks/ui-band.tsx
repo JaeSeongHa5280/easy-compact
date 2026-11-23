@@ -5,7 +5,7 @@ import { bandShowOf, DEFAULT_SETTINGS, REVEAL_SQUARE, SESSION_COLORS_DEFAULT } f
 import { agentPart, agentSum, callsOf, ctxNumText, limitName, rangeNumText, widthOf } from './text'
 import type { CtxUnit } from './text'
 import { iconOf, onDesktop, onTerminal, withIcon } from './glyph'
-import { agentText, bar, CH_PX, decoIcon, gaugeEl, gaugeShapeNow, previewFrame, previewLabel, stageText, TILE } from './ui-common'
+import { agentText, bar, barTipBody, barTipScope, CH_PX, decoIcon, gaugeEl, gaugeShapeNow, HOVER_LIT_BG, previewFrame, previewLabel, stageText, TILE } from './ui-common'
 import { gaugeWidth } from './gauge'
 import type { Ui } from './ui-common'
 import type { FlashKey } from './flash'
@@ -163,9 +163,10 @@ function costCellsRaw(
     const usd = u.costUsd
     const color = sessionColorOf(usd, colors)
     const warns = priceWarnings(u.model, u.window)
+    const sessionText = `${L('세션 ', 'Session ')}${fmtUsd(usd)}${warns.length > 0 ? ' ⚠' : ''}`
     cells.push({
       key: 'c-session',
-      text: `${L('세션 ', 'Session ')}${fmtUsd(usd)}${warns.length > 0 ? ' ⚠' : ''}`,
+      text: sessionText,
       el: isFirst => {
         const line = (
           <Text>
@@ -177,10 +178,10 @@ function costCellsRaw(
         )
         if (warns.length === 0 || onTerminal()) return line
         return (
-          <Box key="c-session-warn">
+          <Box key="c-session-warn" hover={{ scope: barTipScope('c-session-warn'), backgroundColor: HOVER_LIT_BG }}>
             {line}
-            <Box position="absolute" top={0} left={0} display="none" hover={{ display: 'flex' }} backgroundColor="promptBorder" paddingX={1}>
-              <Text wrap="truncate-end">{warns.join(' · ')}</Text>
+            <Box position="absolute" top={0} left={widthOf(sessionText, false) + (isFirst ? 0 : 3) + 1} display="none" hover={{ display: 'flex', scope: barTipScope('c-session-warn') }}>
+              {barTipBody(ui, <Text wrap="truncate-end">{warns.join(' · ')}</Text>)}
             </Box>
           </Box>
         )

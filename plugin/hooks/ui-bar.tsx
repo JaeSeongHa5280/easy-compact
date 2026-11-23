@@ -9,7 +9,7 @@ import { directKeep, isAutoSaveKind, kindAuto } from './tidy'
 import { cardCalc, clearDescEl, clearLeadEl, coldLineEl, costLineEl, easyParts, keepEl, plainParts, tidyPickerEl } from './ui-ask'
 import { afterCells, bandGrid, costGroups, drawLimitsLine, limitsLineW, fitEstimateLine, fitLastTurnLine, fitLine, lastTurnCells, minShowOf, setCtxUnit, SLIM_BUTTON_PARTS, slimButtonText, slimParts, slimSummaryCells, bandShowNow } from './ui-band'
 import type { SpendShown } from './ui-band'
-import { ACCENT, CH_PX, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, nameColW, phaseLook, pulseDot, stageText } from './ui-common'
+import { ACCENT, barTipBody, barTipScope, CH_PX, decoIcon, emptyLine, gaugeEl, gaugeShapeNow, HOVER_LIT_BG, nameColW, phaseLook, pulseDot, stageText } from './ui-common'
 import { gaugeWidth } from './gauge'
 import { autoBarChip, autoBarChipW } from './ui-auto'
 import type { IconName, Ui } from './ui-common'
@@ -163,14 +163,17 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
     e.surface === 'terminal' ? (
       <Box key={key}>{button}</Box>
     ) : (
-      <Box key={key}>
+      <Box key={key} hover={{ scope: barTipScope(key), backgroundColor: HOVER_LIT_BG }}>
         {button}
-        <Box position="absolute" top={0} right={right} display="none" flexDirection="column" hover={{ display: 'flex' }}>
-          {(typeof text === 'string' ? [text] : text).map((line, i) => (
-            <Text key={`tip-${i}`} wrap="truncate-end">
-              {line}
-            </Text>
-          ))}
+        <Box position="absolute" top={0} right={right} display="none" flexDirection="column" hover={{ display: 'flex', scope: barTipScope(key) }}>
+          {barTipBody(
+            ui,
+            (typeof text === 'string' ? [text] : text).map((line, i) => (
+              <Text key={`tip-${i}`} wrap="truncate-end">
+                {line}
+              </Text>
+            )),
+          )}
         </Box>
       </Box>
     )
@@ -339,7 +342,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
             {hasWord && stateWord ? stageText(ui, 'ctx', shownLevel === 'cut' ? 'error' : LEVEL_HEX.warn, stateWord) : null}
           </Box>,
           [ctxTip ?? L('컨텍스트 아직 모름', 'Context not known yet')],
-          ICON_W,
+          ICON_W + (hasWord && stateWord ? txtW(stateWord) + 1 : 0),
         )
   const paneIcon = (isOpen: boolean) => {
     const Svg = (ui as unknown as { Svg?: (p: Record<string, unknown>) => unknown }).Svg
@@ -357,6 +360,7 @@ export function drawBar(ui: Ui, e: BarEvent, d: BarData, act: BarActions) {
         </Box>
       </Box>,
       isPaneOpen ? L(`${paneTitle()} 패널 닫기`, `Close the ${paneTitle()} pane`) : L(`${paneTitle()} 패널 열기`, `Open the ${paneTitle()} pane`),
+      tipRight(hasLabel ? txtW(paneName) + 5 : 4),
     )
   const busyName = (name: string, icon: unknown) =>
     e.surface === 'terminal' ? (

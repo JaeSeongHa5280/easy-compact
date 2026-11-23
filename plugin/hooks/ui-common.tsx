@@ -23,6 +23,25 @@ export function questionScope(atMs: number): string {
   return `q-${Math.round(atMs)}`
 }
 
+export const HOVER_LIT_BG = '#0000'
+
+export const BAR_TIP_BG = 'userMessageBackgroundHover'
+
+export function barTipScope(key: string): string {
+  return `ec-bar-${key}`.slice(0, 64)
+}
+
+export const BAR_TIP_OFF = 'ec-bar-tip-off'
+
+export function barTipBody(ui: Ui, children: unknown) {
+  const { Box } = ui
+  return (
+    <Box flexDirection="column" backgroundColor={BAR_TIP_BG} paddingX={1} hover={{ scope: BAR_TIP_OFF, backgroundColor: BAR_TIP_BG }}>
+      {children}
+    </Box>
+  )
+}
+
 export const STAR_COLOR = 'success'
 
 export const PEN_WARN_PCT = 10
